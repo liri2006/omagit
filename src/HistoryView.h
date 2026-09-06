@@ -31,9 +31,12 @@ public:
     bool currentFile(Commit *commit, FileChange *change) const;
     // What the diff pane should say when currentFile() is false.
     QString emptyMessage() const;
+    // The files list of the current commit (model + selection shared with the Mini rail).
+    QTableView *filesTable() const { return m_filesTable; }
 
 signals:
     void currentFileChanged();
+    void refreshRequested();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

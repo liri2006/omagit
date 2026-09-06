@@ -14,6 +14,10 @@ SOURCES += \
     src/ChangesModel.cpp \
     src/HistoryModel.cpp \
     src/HistoryView.cpp \
+    src/MiniRail.cpp \
+    src/RemoteSync.cpp \
+    src/BadgeButton.cpp \
+    src/Toolbar.cpp \
     src/MainWindow.cpp
 
 HEADERS += \
@@ -24,6 +28,11 @@ HEADERS += \
     src/ChangesModel.h \
     src/HistoryModel.h \
     src/HistoryView.h \
+    src/MiniRail.h \
+    src/PaneLayout.h \
+    src/RemoteSync.h \
+    src/BadgeButton.h \
+    src/Toolbar.h \
     src/MainWindow.h
 
 RESOURCES += data/omagit.qrc

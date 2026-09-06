@@ -15,7 +15,12 @@ class ChangesModel : public QAbstractTableModel
 {
     Q_OBJECT
 public:
-    enum Column { Path, Extension, Status, LinesAdded, LinesRemoved, ColumnCount };
+    // Number is painted by the view (1-based position in the visible, sorted list).
+    enum Column { Number, Path, Extension, Size, Status, LinesAdded, LinesRemoved, ColumnCount };
+    // Extra roles (any column): the repo-relative path and the FileChange::Kind.
+    // SortRole is what a proxy should sort by: the display text, except that
+    // Size sorts by the byte count rather than its "1.2 KiB" rendering.
+    enum Role { PathRole = Qt::UserRole + 1, KindRole, SortRole };
 
     explicit ChangesModel(QObject *parent = nullptr);
 

@@ -25,13 +25,19 @@ int main(int argc, char *argv[])
     QCommandLineOption screenshotOpt(QStringLiteral("screenshot"), QStringLiteral("Render the window to <file> and exit (for testing)."), QStringLiteral("file"));
     QCommandLineOption selectOpt(QStringLiteral("select"), QStringLiteral("Pre-select the given repo-relative path."), QStringLiteral("path"));
     QCommandLineOption historyOpt(QStringLiteral("history"), QStringLiteral("Open the history view instead of the commit dialog."));
-    QCommandLineOption fullOpt(QStringLiteral("full"), QStringLiteral("Start with the left section filling the window (no diff pane)."));
+    QCommandLineOption fullOpt(QStringLiteral("full"), QStringLiteral("Start with the diff pane hidden: the left section fills the window."));
+    QCommandLineOption miniOpt(QStringLiteral("mini"), QStringLiteral("Start in the Mini layout: a rail of file miniatures next to the diff pane."));
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
+    QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
+    QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
     parser.addOption(screenshotOpt);
+    parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
     parser.addOption(historyOpt);
     parser.addOption(fullOpt);
+    parser.addOption(miniOpt);
     parser.addOption(amendOpt);
+    parser.addOption(noFetchOpt);
     parser.process(app);
 
     const QStringList args = parser.positionalArguments();
@@ -50,21 +56,28 @@ int main(int argc, char *argv[])
 
     GitRepo repo(root);
     MainWindow window(&repo);
-    QObject::connect(&app, &QApplication::aboutToQuit, [&window] {
-        QSettings().setValue(QStringLiteral("window/geometry"), window.saveGeometry());
-    });
+    // A --screenshot run is a test: it must not leave its offscreen geometry behind.
+    if (!parser.isSet(screenshotOpt)) {
+        QObject::connect(&app, &QApplication::aboutToQuit, [&window] {
+            QSettings().setValue(QStringLiteral("window/geometry"), window.saveGeometry());
+        });
+    }
     if (parser.isSet(selectOpt))
         window.setInitialSelection(parser.value(selectOpt));
+    if (parser.isSet(miniOpt))
+        window.setPaneLayout(PaneLayout::Mini, false);
     if (parser.isSet(fullOpt))
-        window.setLeftFull(true, false);
+        window.setDiffPaneVisible(false, false);
     if (parser.isSet(historyOpt))
         window.setMode(MainWindow::HistoryMode);
+    if (parser.isSet(noFetchOpt))
+        window.setAutoFetchEnabled(false);
     window.show();
     if (parser.isSet(amendOpt))
         QTimer::singleShot(0, &window, [&window] { window.setAmend(true); });
     if (parser.isSet(screenshotOpt)) {
         const QString file = parser.value(screenshotOpt);
-        QTimer::singleShot(800, &window, [&window, file] {
+        QTimer::singleShot(parser.value(screenshotAfterOpt).toInt(), &window, [&window, file] {
             window.grab().save(file);
             QCoreApplication::exit(0);
         });

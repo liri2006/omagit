@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QTimer>
 
 #include <algorithm>
 
@@ -87,6 +88,48 @@ QByteArray GitRepo::run(const QStringList &args, int *exitCode, QByteArray *err,
     return p.readAllStandardOutput();
 }
 
+QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs,
+                            const QStringList &env)
+{
+    auto *p = new QProcess(this);
+    p->setWorkingDirectory(m_root);
+    QProcessEnvironment pe = QProcessEnvironment::systemEnvironment();
+    pe.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
+    for (const QString &kv : env) {
+        const int eq = kv.indexOf(QLatin1Char('='));
+        pe.insert(kv.left(eq), kv.mid(eq + 1));
+    }
+    p->setProcessEnvironment(pe);
+    QStringList full{QStringLiteral("-c"), QStringLiteral("core.quotepath=off"),
+                     QStringLiteral("-c"), QStringLiteral("color.ui=never")};
+    full += args;
+
+    auto *timeout = new QTimer(p);
+    timeout->setSingleShot(true);
+    timeout->setInterval(timeoutMs);
+    connect(timeout, &QTimer::timeout, p, &QProcess::kill);
+    connect(p, &QProcess::finished, context, [p, done](int code, QProcess::ExitStatus status) {
+        const QByteArray out = p->readAllStandardOutput();
+        QByteArray err = p->readAllStandardError();
+        if (status != QProcess::NormalExit) {
+            code = -1;
+            if (err.trimmed().isEmpty())
+                err = "git did not finish (killed after the timeout)";
+        }
+        p->deleteLater();
+        done(code, out, err);
+    });
+    connect(p, &QProcess::errorOccurred, context, [p, done](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return; // every other error is followed by finished()
+        p->deleteLater();
+        done(-1, QByteArray(), "could not start git");
+    });
+    p->start(gitExecutable(), full);
+    timeout->start();
+    return p;
+}
+
 QString GitRepo::branch() const
 {
     int code = 0;
@@ -120,6 +163,65 @@ QString GitRepo::emptyTree() const
 QString GitRepo::gitDir() const
 {
     return QString::fromUtf8(run({QStringLiteral("rev-parse"), QStringLiteral("--absolute-git-dir")})).trimmed();
+}
+
+QStringList GitRepo::remotes() const
+{
+    int code = 0;
+    const QByteArray out = run({QStringLiteral("remote")}, &code);
+    QStringList list;
+    if (code != 0)
+        return list;
+    for (const QByteArray &line : out.split('\n')) {
+        const QString name = QString::fromUtf8(line).trimmed();
+        if (!name.isEmpty())
+            list << name;
+    }
+    return list;
+}
+
+UpstreamState GitRepo::upstreamState() const
+{
+    UpstreamState s;
+    s.remotes = remotes();
+    int code = 0;
+    const QByteArray head = run({QStringLiteral("symbolic-ref"), QStringLiteral("--short"), QStringLiteral("HEAD")}, &code);
+    if (code != 0) {
+        s.detached = hasHead();
+        return s;
+    }
+    s.branch = QString::fromUtf8(head).trimmed();
+    const QByteArray track = run({QStringLiteral("for-each-ref"),
+                                  QStringLiteral("--format=%(upstream:short)%00%(upstream:remotename)"),
+                                  QStringLiteral("refs/heads/") + s.branch},
+                                 &code);
+    const QList<QByteArray> parts = track.trimmed().split('\0');
+    if (code == 0 && !parts.isEmpty()) {
+        s.upstream = QString::fromUtf8(parts[0]);
+        if (parts.size() > 1)
+            s.remote = QString::fromUtf8(parts[1]);
+    }
+    if (s.remote.isEmpty()) {
+        if (s.remotes.contains(QStringLiteral("origin")))
+            s.remote = QStringLiteral("origin");
+        else if (s.remotes.size() == 1)
+            s.remote = s.remotes.first();
+    }
+    if (s.upstream.isEmpty())
+        return s;
+    const QByteArray counts = run({QStringLiteral("rev-list"), QStringLiteral("--left-right"), QStringLiteral("--count"),
+                                   QStringLiteral("HEAD...") + s.upstream},
+                                  &code);
+    if (code != 0) {
+        s.upstreamGone = true;
+        return s;
+    }
+    const QList<QByteArray> cols = counts.trimmed().split('\t');
+    if (cols.size() == 2) {
+        s.ahead = cols[0].toInt();
+        s.behind = cols[1].toInt();
+    }
+    return s;
 }
 
 QString GitRepo::baseRef() const
@@ -227,6 +329,37 @@ void GitRepo::applyNumstat(const QByteArray &numstat, QList<FileChange> &changes
     }
 }
 
+// Blob sizes from `git ls-tree -l -z <commit> -- <paths>`: "mode type sha size\tpath\0",
+// with the size right-aligned. Paths missing from the commit (deleted) stay -1.
+void GitRepo::applyTreeSizes(const QString &commit, QList<FileChange> &changes) const
+{
+    QHash<QString, int> rowOf;
+    for (int i = 0; i < changes.size(); ++i)
+        if (changes[i].kind != FileChange::Deleted)
+            rowOf.insert(changes[i].path, i);
+    const QStringList paths = rowOf.keys();
+    constexpr int kChunk = 200; // keeps the command line short
+    for (int start = 0; start < paths.size(); start += kChunk) {
+        QStringList args{QStringLiteral("ls-tree"), QStringLiteral("-l"), QStringLiteral("-z"), commit, QStringLiteral("--")};
+        args += paths.mid(start, kChunk);
+        int code = 0;
+        const QByteArray out = run(args, &code, nullptr, 60000);
+        if (code != 0)
+            continue;
+        for (const QByteArray &entry : out.split('\0')) {
+            const int tab = entry.indexOf('\t');
+            if (tab < 0)
+                continue;
+            const QList<QByteArray> meta = entry.left(tab).simplified().split(' ');
+            if (meta.size() < 4 || meta[1] != "blob")
+                continue;
+            const auto it = rowOf.constFind(QString::fromUtf8(entry.mid(tab + 1)));
+            if (it != rowOf.constEnd())
+                changes[it.value()].size = meta[3].toLongLong();
+        }
+    }
+}
+
 static void sortByPath(QList<FileChange> &changes)
 {
     std::sort(changes.begin(), changes.end(), [](const FileChange &a, const FileChange &b) {
@@ -328,6 +461,16 @@ QList<FileChange> GitRepo::status() const
                 }
             }
         }
+    }
+
+    // The size of the file as it is in the working tree; deleted files have none.
+    const QDir root(m_root);
+    for (FileChange &c : result) {
+        if (c.kind == FileChange::Deleted)
+            continue;
+        const QFileInfo info(root.filePath(c.path));
+        if (info.exists())
+            c.size = info.size();
     }
 
     sortByPath(result);
@@ -666,6 +809,7 @@ QList<FileChange> GitRepo::commitChanges(const Commit &commit) const
                                    &code, nullptr, 60000);
     if (code == 0)
         applyNumstat(numstat, result);
+    applyTreeSizes(commit.hash, result);
     sortByPath(result);
     return result;
 }

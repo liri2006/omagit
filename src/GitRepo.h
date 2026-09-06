@@ -7,6 +7,10 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
+class QProcess;
+
 struct FileChange {
     enum Kind { Modified, Added, Deleted, Renamed, Copied, TypeChanged, Unmerged, Untracked, Unknown };
 
@@ -18,6 +22,7 @@ struct FileChange {
     int linesAdded = -1;
     int linesRemoved = -1;
     bool binary = false;
+    qint64 size = -1;  // bytes of the file on the new side; -1 when it has none (deleted) or is unknown
 
     bool isUntracked() const { return kind == Untracked; }
     bool isStaged() const { return index != ' ' && index != '?' && index != '!'; }
@@ -46,6 +51,20 @@ struct RefLabel {
     bool head = false; // the ref HEAD points at
 };
 
+// Where the current branch stands relative to its upstream.
+struct UpstreamState {
+    QString branch;        // empty when HEAD is detached or unborn
+    bool detached = false;
+    QString upstream;      // e.g. "origin/main"; empty when none is configured
+    QString remote;        // the upstream's remote, else the remote a push would publish to
+    bool upstreamGone = false; // configured, but the remote branch no longer exists
+    int ahead = -1;        // commits to push, -1 when unknown
+    int behind = -1;       // commits to pull, -1 when unknown
+    QStringList remotes;
+
+    bool hasUpstream() const { return !upstream.isEmpty() && !upstreamGone; }
+};
+
 class GitRepo : public QObject
 {
     Q_OBJECT
@@ -58,6 +77,21 @@ public:
     QString root() const { return m_root; }
     QString branch() const;
     bool hasHead() const;
+    QString gitDir() const; // absolute path of the .git directory (also for worktrees)
+
+    // --- Remotes ------------------------------------------------------------
+
+    QStringList remotes() const;
+    UpstreamState upstreamState() const;
+
+    // Runs git without blocking; `done(exitCode, stdout, stderr)` is called from
+    // the event loop when it finishes (exitCode -1: crashed, killed, or not
+    // started), and not at all once `context` is gone. Credential prompts are
+    // disabled, so a missing login fails instead of hanging. The returned
+    // process is owned by this object.
+    using Callback = std::function<void(int exitCode, const QByteArray &out, const QByteArray &err)>;
+    QProcess *runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs = 120000,
+                       const QStringList &env = QStringList());
 
     // --- Working tree -------------------------------------------------------
 
@@ -105,9 +139,9 @@ public:
 
 private:
     QString emptyTree() const;
-    QString gitDir() const;
     QStringList stageablePaths(const QStringList &paths, const QStringList &env) const;
     void applyNumstat(const QByteArray &numstat, QList<FileChange> &changes) const;
+    void applyTreeSizes(const QString &commit, QList<FileChange> &changes) const;
 
     QString m_root;
     bool m_amend = false;

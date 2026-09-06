@@ -1,15 +1,19 @@
 // Exercises GitRepo against throw-away repositories: status/diff bases, amend.
 // Build: cd tests && qmake6 tests.pro && make && ./gitrepo_test
 #include "../src/GitRepo.h"
+#include "../src/RemoteSync.h"
 
 #include <QCoreApplication>
+#include <QEventLoop>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QTextStream>
 
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 
 static int failures = 0;
@@ -88,8 +92,10 @@ static void testAmend(const QString &base)
     CHECK(st.size() == 4);
     CHECK(find(st, "a.txt") && find(st, "a.txt")->kind == FileChange::Modified);
     CHECK(find(st, "b.txt") && find(st, "b.txt")->kind == FileChange::Deleted);
+    CHECK(find(st, "b.txt") && find(st, "b.txt")->size == -1);
     CHECK(find(st, "c.txt") && find(st, "c.txt")->kind == FileChange::Added);
     CHECK(find(st, "c.txt") && find(st, "c.txt")->linesAdded == 1);
+    CHECK(find(st, "c.txt") && find(st, "c.txt")->size == QFileInfo(dir + "/c.txt").size());
     CHECK(find(st, "d.txt") && find(st, "d.txt")->kind == FileChange::Untracked);
     CHECK(repo.headMessage() == "second");
     CHECK(repo.headPaths().contains("a.txt") && repo.headPaths().contains("b.txt") && repo.headPaths().contains("c.txt"));
@@ -188,6 +194,7 @@ static void testStatusAndHistory(const QString &base)
 
     const QList<FileChange> renamed = repo.commitChanges(log.first());
     CHECK(renamed.size() == 1 && renamed.first().kind == FileChange::Renamed && renamed.first().oldPath == "README");
+    CHECK(renamed.first().size == qint64(strlen("hello world\n")));
     const QList<FileChange> initial = repo.commitChanges(log.last());
     CHECK(initial.size() == 2 && initial.first().kind == FileChange::Added && initial.first().linesAdded == 1);
     CHECK(repo.commitDiff(log.last(), initial.first()).contains("+hello"));
@@ -206,6 +213,117 @@ static void testStatusAndHistory(const QString &base)
     CHECK(find(st, "notes.txt") && find(st, "notes.txt")->isUntracked());
 }
 
+// Runs one RemoteSync operation to completion and returns whether it succeeded.
+static bool runOp(RemoteSync &sync, void (RemoteSync::*op)(), QString *message = nullptr)
+{
+    QEventLoop loop;
+    bool ok = false;
+    QObject::connect(&sync, &RemoteSync::finished, &loop,
+                     [&](RemoteSync::Op, bool success, bool, const QString &msg) {
+                         ok = success;
+                         if (message)
+                             *message = msg;
+                         loop.quit();
+                     });
+    (sync.*op)();
+    if (!sync.busy())
+        return false; // refused (canPull/canPush false)
+    loop.exec();
+    return ok;
+}
+
+static void testRemote(const QString &base)
+{
+    // A bare "server", a clone that is ours, and a second clone that plays the colleague.
+    const QString server = base + "/server.git";
+    QDir().mkpath(server);
+    git(server, {"init", "-q", "--bare", "-b", "main"});
+    const QString seed = initRepo(base + "/seed");
+    write(seed, "a.txt", "a\n");
+    git(seed, {"add", "."});
+    git(seed, {"commit", "-q", "-m", "one"});
+    git(seed, {"push", "-q", server, "main"});
+
+    const QString mine = base + "/mine", theirs = base + "/theirs";
+    git(base, {"clone", "-q", server, mine});
+    git(base, {"clone", "-q", server, theirs});
+    for (const QString &d : {mine, theirs}) {
+        git(d, {"config", "user.name", "Tester"});
+        git(d, {"config", "user.email", "tester@example.com"});
+        git(d, {"config", "commit.gpgsign", "false"});
+        git(d, {"config", "pull.rebase", "false"});
+    }
+
+    GitRepo repo(mine);
+    UpstreamState s = repo.upstreamState();
+    CHECK(s.branch == "main");
+    CHECK(s.upstream == "origin/main" && s.remote == "origin" && s.hasUpstream());
+    CHECK(s.ahead == 0 && s.behind == 0);
+    CHECK(s.remotes == QStringList{"origin"});
+
+    // Two local commits: ahead 2.
+    write(mine, "b.txt", "b\n");
+    git(mine, {"add", "."});
+    git(mine, {"commit", "-q", "-m", "two"});
+    write(mine, "c.txt", "c\n");
+    git(mine, {"add", "."});
+    git(mine, {"commit", "-q", "-m", "three"});
+    s = repo.upstreamState();
+    CHECK(s.ahead == 2 && s.behind == 0);
+
+    // The colleague pushes one: behind 1 after a fetch, not before.
+    write(theirs, "d.txt", "d\n");
+    git(theirs, {"add", "."});
+    git(theirs, {"commit", "-q", "-m", "theirs"});
+    git(theirs, {"push", "-q"});
+    RemoteSync sync(&repo);
+    CHECK(sync.state().behind == 0);
+    CHECK(sync.canFetch() && sync.canPull() && sync.canPush() && !sync.pushPublishes());
+    QString message;
+    CHECK(runOp(sync, &RemoteSync::fetch, &message));
+    CHECK(sync.state().behind == 1 && sync.state().ahead == 2);
+    CHECK(message.contains("1 commit"));
+    CHECK(sync.lastFetchOk() && sync.lastFetch().isValid());
+
+    CHECK(runOp(sync, &RemoteSync::pull, &message));
+    CHECK(sync.state().behind == 0 && sync.state().ahead == 3); // merge commit
+    CHECK(QFile::exists(mine + "/d.txt"));
+    CHECK(runOp(sync, &RemoteSync::push, &message));
+    CHECK(sync.state().behind == 0 && sync.state().ahead == 0);
+    CHECK(message.contains("3 commit"));
+    CHECK(git(server, {"rev-parse", "main"}) == git(mine, {"rev-parse", "HEAD"}));
+
+    // A new branch without upstream: push publishes it.
+    git(mine, {"checkout", "-q", "-b", "topic"});
+    s = repo.upstreamState();
+    CHECK(s.branch == "topic" && s.upstream.isEmpty() && s.remote == "origin" && !s.hasUpstream());
+    sync.refreshState();
+    CHECK(!sync.canPull() && sync.canPush() && sync.pushPublishes());
+    CHECK(sync.pushArgs() == QStringList({"push", "-u", "origin", "topic"}));
+    CHECK(runOp(sync, &RemoteSync::push, &message));
+    CHECK(sync.state().upstream == "origin/topic" && sync.state().ahead == 0);
+
+    // Upstream deleted on the server: reported as gone.
+    git(server, {"branch", "-D", "topic"});
+    CHECK(runOp(sync, &RemoteSync::fetch, &message));
+    git(mine, {"fetch", "-q", "--prune"});
+    sync.refreshState();
+    CHECK(sync.state().upstreamGone && !sync.canPull() && sync.pushPublishes());
+
+    // Detached HEAD: neither pull nor push.
+    git(mine, {"checkout", "-q", "--detach", "main"});
+    sync.refreshState();
+    CHECK(sync.state().detached && !sync.canPull() && !sync.canPush() && sync.canFetch());
+
+    // A failing operation reports an error and leaves the state readable.
+    git(mine, {"checkout", "-q", "main"});
+    git(mine, {"remote", "set-url", "origin", base + "/does-not-exist.git"});
+    sync.refreshState();
+    CHECK(!runOp(sync, &RemoteSync::fetch, &message));
+    CHECK(!sync.lastFetchOk() && !message.isEmpty());
+    CHECK(!sync.busy());
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -213,6 +331,7 @@ int main(int argc, char **argv)
     testAmend(tmp.path());
     testAmendRoot(tmp.path());
     testStatusAndHistory(tmp.path());
+    testRemote(tmp.path());
     if (failures == 0)
         printf("all checks passed\n");
     return failures == 0 ? 0 : 1;

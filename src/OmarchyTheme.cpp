@@ -370,6 +370,8 @@ QPushButton:default { background: %fill8%; color: %acc%; border: 1px solid %acc%
 QPushButton:default:hover { background: %fill18%; }
 QPushButton:disabled, QToolButton:disabled { color: %disabled%; background: transparent; border-color: %hair20%; }
 QPushButton:focus, QToolButton:focus { border-color: %bd25%; background: %fill8%; }
+QToolButton::menu-indicator { image: none; width: 0; height: 0; }
+QToolButton#smallButton { padding: 1px 5px; }
 
 QCheckBox { spacing: 8px; }
 QCheckBox::indicator, QTableView::indicator, QTreeView::indicator {

@@ -2,11 +2,61 @@
 #include "OmarchyTheme.h"
 
 #include <QColor>
+#include <QLocale>
 #include <QEvent>
 #include <QFont>
 #include <QFrame>
 #include <QHeaderView>
+#include <QPainter>
+#include <QStyledItemDelegate>
 #include <QTableView>
+
+namespace {
+// Paints the row's 1-based position in the view (so it follows sorting and
+// filtering) in the muted colour, with a tighter left padding than the
+// stylesheet gives ordinary cells so the column can stay narrow.
+class RowNumberDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem bg = option;
+        bg.text.clear();
+        QStyledItemDelegate::paint(painter, bg, index); // selection / hover background only
+        const OmarchyTheme *t = OmarchyTheme::instance();
+        painter->save();
+        painter->setFont(option.font);
+        painter->setPen(option.state & QStyle::State_Selected ? t->accent() : t->mutedText());
+        painter->drawText(option.rect.adjusted(4, 0, -8, 0), Qt::AlignRight | Qt::AlignVCenter,
+                          QString::number(index.row() + 1));
+        painter->restore();
+    }
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->text.clear();
+    }
+};
+
+// "812 B", "1.2 KiB", "34 MiB": short enough for a narrow column.
+QString compactSize(qint64 bytes)
+{
+    static const char *const units[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+    double value = bytes;
+    int unit = 0;
+    while (value >= 1024 && unit < 4) {
+        value /= 1024;
+        ++unit;
+    }
+    const QString number = unit == 0 ? QString::number(bytes)
+                                     : QLocale().toString(value, 'f', value < 10 ? 1 : 0);
+    return number + QLatin1Char(' ') + QLatin1String(units[unit]);
+}
+} // namespace
 
 ChangesModel::ChangesModel(QObject *parent)
     : QAbstractTableModel(parent)
@@ -116,11 +166,16 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
     const OmarchyTheme *t = OmarchyTheme::instance();
 
     switch (role) {
+    case PathRole: return c.path;
+    case KindRole: return int(c.kind);
+    case SortRole:
+        return index.column() == Size ? QVariant(c.size) : data(index, Qt::DisplayRole);
     case Qt::DisplayRole:
         switch (index.column()) {
         case Path:
             return c.oldPath.isEmpty() ? c.path : QStringLiteral("%1 (from %2)").arg(c.path, c.oldPath);
         case Extension: return c.extension();
+        case Size: return c.size >= 0 ? QVariant(compactSize(c.size)) : QVariant();
         case Status: return c.statusText();
         case LinesAdded: return c.linesAdded >= 0 ? QVariant(c.linesAdded) : QVariant();
         case LinesRemoved: return c.linesRemoved >= 0 ? QVariant(c.linesRemoved) : QVariant();
@@ -131,7 +186,8 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
             return m_checked.contains(c.path) ? Qt::Checked : Qt::Unchecked;
         break;
     case Qt::TextAlignmentRole:
-        if (index.column() == LinesAdded || index.column() == LinesRemoved)
+        if (index.column() == Number || index.column() == Size || index.column() == LinesAdded
+            || index.column() == LinesRemoved)
             return int(Qt::AlignRight | Qt::AlignVCenter);
         break;
     case Qt::ForegroundRole: {
@@ -164,6 +220,8 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
             tip += QStringLiteral("\nindex: %1  worktree: %2").arg(QChar(c.index), QChar(c.worktree));
         if (c.binary)
             tip += QStringLiteral("\nbinary");
+        if (c.size >= 0)
+            tip += QStringLiteral("\n%1 bytes").arg(QLocale().toString(c.size));
         return tip;
     }
     }
@@ -189,8 +247,10 @@ QVariant ChangesModel::headerData(int section, Qt::Orientation orientation, int 
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
         return {};
     switch (section) {
+    case Number: return tr("#");
     case Path: return tr("Path");
     case Extension: return tr("Ext");
+    case Size: return tr("Size");
     case Status: return tr("Status");
     case LinesAdded: return tr("Added");
     case LinesRemoved: return tr("Removed");
@@ -223,7 +283,10 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->horizontalHeader()->setMinimumSectionSize(40);
     table->horizontalHeader()->setHighlightSections(false);
     table->setWordWrap(false);
+    table->setItemDelegateForColumn(ChangesModel::Number, new RowNumberDelegate(table));
+    table->setColumnWidth(ChangesModel::Number, 40);
     table->setColumnWidth(ChangesModel::Extension, 64);
+    table->setColumnWidth(ChangesModel::Size, 100);
     table->setColumnWidth(ChangesModel::Status, 104);
     table->setColumnWidth(ChangesModel::LinesAdded, 76);
     table->setColumnWidth(ChangesModel::LinesRemoved, 92);
@@ -250,7 +313,8 @@ bool ChangesTableSetup::eventFilter(QObject *watched, QEvent *event)
 void ChangesTableSetup::fitPathColumn()
 {
     int others = 0;
-    for (int c = ChangesModel::Extension; c < ChangesModel::ColumnCount; ++c)
-        others += m_table->columnWidth(c);
+    for (int c = 0; c < ChangesModel::ColumnCount; ++c)
+        if (c != ChangesModel::Path)
+            others += m_table->columnWidth(c);
     m_table->setColumnWidth(ChangesModel::Path, qMax(240, m_table->viewport()->width() - others));
 }

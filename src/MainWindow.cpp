@@ -1,20 +1,28 @@
 #include "MainWindow.h"
+#include "BadgeButton.h"
 #include "DiffModel.h"
 #include "DiffView.h"
 #include "HistoryView.h"
+#include "MiniRail.h"
 #include "OmarchyTheme.h"
+#include "Toolbar.h"
 
 #include <QAction>
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QDir>
+#include <QEvent>
 #include <QFileSystemWatcher>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
+#include <QMimeDatabase>
+#include <QProcess>
+#include <QStandardPaths>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
@@ -53,6 +61,7 @@ MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
 {
     setWindowTitle(QStringLiteral("OmaGit — %1").arg(QDir(repo->root()).dirName()));
     setWindowIcon(QIcon(QStringLiteral(":/omagit.svg")));
+    m_sync = new RemoteSync(repo, this);
     buildUi();
     applyTheme();
     connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &MainWindow::applyTheme);
@@ -61,7 +70,14 @@ MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     restoreGeometry(settings.value(QStringLiteral("window/geometry")).toByteArray());
     if (!settings.contains(QStringLiteral("window/geometry")))
         resize(1400, 850);
-    setLeftFull(settings.value(QStringLiteral("window/leftFull"), false).toBool());
+    // "full" (pre-0.4) and window/leftFull (pre-0.3) meant the left section
+    // alone; both become Docked with the diff pane hidden (and are re-saved so).
+    const QString layoutKey = settings.value(QStringLiteral("window/layout")).toString();
+    const bool legacyFull = layoutKey == QLatin1String("full")
+        || (layoutKey.isEmpty() && settings.value(QStringLiteral("window/leftFull"), false).toBool());
+    setPaneLayout(paneLayoutFromKey(layoutKey));
+    setDiffPaneVisible(!legacyFull && settings.value(QStringLiteral("window/diffPane"), true).toBool());
+    m_sync->setAutoFetchInterval(settings.value(QStringLiteral("remote/autoFetchSeconds"), 180).toInt());
 
     QTimer::singleShot(0, this, &MainWindow::refresh);
 }
@@ -74,8 +90,64 @@ QString icon(uint cp, const QString &fallback = QString())
     return g.isEmpty() ? fallback : g + QStringLiteral("  ");
 }
 constexpr uint kRefresh = 0xF0450, kArrowUp = 0xF005D, kArrowDown = 0xF0045, kCommit = 0xF0718,
-               kBranch = 0xF062C, kSplit = 0xF0BCC, kPilcrow = 0xF06D8, kHistory = 0xF02DA,
-               kExpand = 0xF084E, kCollapse = 0xF084C;
+               kBranch = 0xF062C, kSplit = 0xF0BCC, kPilcrow = 0xF06D8, kHistory = 0xF02DA;
+// md-cloud_download, md-tray_arrow_down, md-tray_arrow_up, md-dock_right
+constexpr uint kFetch = 0xF0162, kPull = 0xF0120, kPush = 0xF011D, kDockRight = 0xF10AB;
+
+// The program the desktop opens a file with (what QDesktopServices::openUrl
+// will use): `xdg-mime query default <mime>` names a desktop file, whose
+// Name and Icon are read here. Empty when nothing is registered.
+struct DefaultApp {
+    QString name, icon;
+};
+
+DefaultApp defaultAppFor(const QString &filePath)
+{
+    static QHash<QString, DefaultApp> cache; // by MIME type; the query runs a shell script
+    const QString mime = QMimeDatabase().mimeTypeForFile(filePath).name();
+    const auto cached = cache.constFind(mime);
+    if (cached != cache.constEnd())
+        return *cached;
+    DefaultApp app;
+    QProcess query;
+    query.start(QStringLiteral("xdg-mime"), {QStringLiteral("query"), QStringLiteral("default"), mime});
+    if (query.waitForFinished(1500) && query.exitCode() == 0) {
+        const QString desktopId = QString::fromUtf8(query.readAllStandardOutput()).trimmed();
+        const QString file = desktopId.isEmpty() ? QString()
+                                                 : QStandardPaths::locate(QStandardPaths::ApplicationsLocation, desktopId);
+        QFile f(file);
+        if (!file.isEmpty() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            bool inEntry = false;
+            while (!f.atEnd()) {
+                const QString line = QString::fromUtf8(f.readLine()).trimmed();
+                if (line.startsWith(QLatin1Char('['))) {
+                    inEntry = line == QLatin1String("[Desktop Entry]");
+                    continue;
+                }
+                if (!inEntry)
+                    continue;
+                if (line.startsWith(QLatin1String("Name=")))
+                    app.name = line.mid(5);
+                else if (line.startsWith(QLatin1String("Icon=")))
+                    app.icon = line.mid(5);
+            }
+        }
+        if (app.name.isEmpty() && !desktopId.isEmpty()) // no desktop file found: show the id
+            app.name = desktopId.endsWith(QLatin1String(".desktop")) ? desktopId.chopped(8) : desktopId;
+    }
+    cache.insert(mime, app);
+    return app;
+}
+
+QString ago(const QDateTime &when)
+{
+    const qint64 secs = when.secsTo(QDateTime::currentDateTime());
+    if (secs < 60)
+        return QCoreApplication::translate("MainWindow", "just now");
+    if (secs < 3600)
+        return QCoreApplication::translate("MainWindow", "%n minute(s) ago", nullptr, int(secs / 60));
+    return QCoreApplication::translate("MainWindow", "%n hour(s) ago", nullptr, int(secs / 3600));
+}
 
 QLabel *sectionLabel(const QString &text)
 {
@@ -93,14 +165,23 @@ QLabel *dimLabel(const QString &text = QString())
     return l;
 }
 
-QToolButton *toolButton(const QString &text, const QString &tip = QString())
+template <typename Button = QToolButton>
+Button *toolButton(const QString &text, const QString &tip = QString())
 {
-    auto *b = new QToolButton;
+    auto *b = new Button;
     b->setText(text);
     b->setToolButtonStyle(Qt::ToolButtonTextOnly);
     b->setToolTip(tip);
     b->setCursor(Qt::PointingHandCursor);
     b->setFocusPolicy(Qt::NoFocus);
+    return b;
+}
+
+// Icon-only button with less padding, for a row of labels.
+QToolButton *smallButton(uint glyph, const QString &fallback, const QString &tip)
+{
+    auto *b = toolButton(icon(glyph, fallback).trimmed(), tip);
+    b->setObjectName(QStringLiteral("smallButton"));
     return b;
 }
 } // namespace
@@ -113,43 +194,81 @@ void MainWindow::buildUi()
     rootLayout->setContentsMargins(14, 12, 14, 8);
     rootLayout->setSpacing(8);
 
-    // ---- Left section: mode switch + (commit dialog | history)
+    // ---- Left section: toolbar above (commit dialog | history)
     auto *left = new QWidget;
+    m_left = left;
+    // The pane may be dragged as narrow as the user likes: the toolbar folds
+    // its buttons away, everything else just gets cut off at the edge.
+    left->setMinimumWidth(1);
     auto *leftLayout = new QVBoxLayout(left);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(8);
 
-    auto *headerRow = new QHBoxLayout;
-    headerRow->setSpacing(8);
-    m_commitModeButton = toolButton(icon(kCommit) + tr("Commit"), tr("Pending changes and commit dialog (Ctrl+1)"));
-    m_historyModeButton = toolButton(icon(kHistory) + tr("History"), tr("Commit history of the repository (Ctrl+2)"));
+    // The toolbar: Docked/Mini toggle | Commit, History | Pull, Push, Fetch.
+    // Labels give way to icons, then to a "more" menu, as the pane narrows.
+    m_toolbar = new Toolbar;
+    m_layoutButton = toolButton(QString());
+    m_layoutButton->setCheckable(true); // checked = Mini; the glyph shows the current layout
+    connect(m_layoutButton, &QToolButton::clicked, this, [this](bool mini) {
+        setPaneLayout(mini ? PaneLayout::Mini : PaneLayout::Docked);
+    });
+    m_toolbar->setLeading(m_layoutButton);
+
+    m_commitModeButton = toolButton(QString(), tr("Pending changes and commit dialog (Ctrl+1)"));
+    m_historyModeButton = toolButton(QString(), tr("Commit history of the repository (Ctrl+2)"));
     auto *modes = new QButtonGroup(this);
     modes->setExclusive(true);
     for (QToolButton *b : {m_commitModeButton, m_historyModeButton}) {
         b->setCheckable(true);
         modes->addButton(b);
-        headerRow->addWidget(b);
     }
     m_commitModeButton->setChecked(true);
-    m_commitModeButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_1));
-    m_historyModeButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
+    m_toolbar->addButton(m_commitModeButton, icon(kCommit) + tr("Commit"), icon(kCommit, tr("C")).trimmed(), tr("Commit"));
+    m_toolbar->addButton(m_historyModeButton, icon(kHistory) + tr("History"), icon(kHistory, tr("H")).trimmed(), tr("History"));
     connect(m_commitModeButton, &QToolButton::clicked, this, [this] { setMode(CommitMode); });
     connect(m_historyModeButton, &QToolButton::clicked, this, [this] { setMode(HistoryMode); });
-    headerRow->addStretch();
-    m_layoutButton = toolButton(QString());
-    m_layoutButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_B));
-    connect(m_layoutButton, &QToolButton::clicked, this, [this] { setLeftFull(m_rightPane->isVisible()); });
-    headerRow->addWidget(m_layoutButton);
-    auto *refreshButton = toolButton(icon(kRefresh) + tr("Refresh"), tr("Re-read the repository (F5)"));
-    refreshButton->setShortcut(QKeySequence::Refresh);
-    connect(refreshButton, &QToolButton::clicked, this, &MainWindow::refresh);
-    headerRow->addWidget(refreshButton);
-    leftLayout->addLayout(headerRow);
+    // Shortcuts live on the window, not the buttons: a hidden button's shortcut
+    // is inactive, and the toolbar is hidden in the Mini layout.
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_1), this, this, [this] { setMode(CommitMode); });
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_2), this, this, [this] { setMode(HistoryMode); });
+    new QShortcut(QKeySequence::Refresh, this, this, &MainWindow::refresh);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_B), this, this, [this] {
+        setPaneLayout(m_layout == PaneLayout::Mini ? PaneLayout::Docked : PaneLayout::Mini);
+    });
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B), this, this, [this] {
+        setDiffPaneVisible(!m_diffVisible);
+    });
+
+    // Pull / Push / Fetch act on the whole repository, so they are the same
+    // in both modes. The Pull badge is the number of commits waiting on the
+    // upstream, the Push badge the number not pushed yet. Buttons fold into
+    // the more menu from the right, so Pull is the last of the three to go
+    // and Fetch (which happens by itself anyway) the first.
+    m_toolbar->addSeparator();
+    SyncButtons bar{toolButton<BadgeButton>(QString()), toolButton<BadgeButton>(QString()), toolButton<BadgeButton>(QString())};
+    m_toolbar->addButton(bar.pull, icon(kPull) + tr("Pull"), icon(kPull, QStringLiteral("↓")).trimmed(), tr("Pull"));
+    m_toolbar->addButton(bar.push, icon(kPush) + tr("Push"), icon(kPush, QStringLiteral("↑")).trimmed(), tr("Push"));
+    m_toolbar->addButton(bar.fetch, icon(kFetch) + tr("Fetch"), icon(kFetch, tr("F")).trimmed(), tr("Fetch"));
+    m_syncButtons << bar;
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F), this, m_sync, &RemoteSync::fetch);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), this, m_sync, &RemoteSync::pull);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P), this, m_sync, &RemoteSync::push);
+    connect(m_sync, &RemoteSync::stateChanged, this, &MainWindow::updateSyncButtons);
+    connect(m_sync, &RemoteSync::finished, this, &MainWindow::onSyncFinished);
+    m_toolbarRow = new QHBoxLayout;
+    m_toolbarRow->setSpacing(8);
+    m_toolbarRow->addWidget(m_toolbar, 1);
+    leftLayout->addLayout(m_toolbarRow);
 
     m_stack = new QStackedWidget;
     m_stack->addWidget(buildCommitPage());
     m_history = new HistoryView(m_repo);
     connect(m_history, &HistoryView::currentFileChanged, this, &MainWindow::showHistoryDiff);
+    connect(m_history, &HistoryView::refreshRequested, this, &MainWindow::refresh);
+    connect(m_history->filesTable(), &QTableView::doubleClicked, this, [this] {
+        if (!m_diffVisible)
+            setDiffPaneVisible(true);
+    });
     m_stack->addWidget(m_history);
     leftLayout->addWidget(m_stack, 1);
     new QShortcut(QKeySequence::Find, this, this, [this] {
@@ -159,11 +278,15 @@ void MainWindow::buildUi()
 
     // ---- Right pane: diff view with navigation toolbar
     m_rightPane = new QWidget;
+    // Like the left section, the diff pane may be dragged as narrow as the
+    // user likes; its buttons just get cut off at the edge.
+    m_rightPane->setMinimumWidth(1);
     auto *rightLayout = new QVBoxLayout(m_rightPane);
     rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->setSpacing(8);
 
     auto *navRow = new QHBoxLayout;
+    m_navRow = navRow;
     navRow->setSpacing(8);
     m_prevButton = toolButton(icon(kArrowUp) + tr("Prev"), tr("Previous change (Shift+F8)"));
     m_nextButton = toolButton(icon(kArrowDown) + tr("Next"), tr("Next change (F8)"));
@@ -183,6 +306,12 @@ void MainWindow::buildUi()
     auto *wsButton = toolButton(icon(kPilcrow) + tr("Whitespace"), tr("Show whitespace and line endings"));
     wsButton->setCheckable(true);
     navRow->addWidget(wsButton);
+    // The diff toggle ends this row; while the pane is hidden it moves to the
+    // end of the toolbar row, which is the same top-right spot (see applyPanes).
+    m_diffToggle = toolButton(icon(kDockRight, tr("D")).trimmed(), tr("Show or hide the diff pane (Ctrl+Shift+B)"));
+    m_diffToggle->setCheckable(true);
+    connect(m_diffToggle, &QToolButton::clicked, this, [this](bool on) { setDiffPaneVisible(on); });
+    navRow->addWidget(m_diffToggle);
     rightLayout->addLayout(navRow);
 
     m_diff = new DiffView;
@@ -215,14 +344,44 @@ void MainWindow::buildUi()
     new QShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F8), this, m_diff, &DiffView::previousChange);
 
     auto *splitter = new QSplitter(Qt::Horizontal);
+    m_splitter = splitter;
     splitter->setHandleWidth(8);
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(left);
     splitter->addWidget(m_rightPane);
-    splitter->setStretchFactor(0, 2);
-    splitter->setStretchFactor(1, 3);
-    splitter->setSizes({620, 780});
-    rootLayout->addWidget(splitter, 1);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1); // the diff pane takes window resizes
+    // The left width is chosen on first show (see showEvent) and remembered.
+    connect(splitter, &QSplitter::splitterMoved, this, [this] {
+        if (m_shown && m_left->isVisible())
+            QSettings().setValue(QStringLiteral("window/leftWidth"), m_splitter->sizes().first());
+    });
+
+    // ---- Mini rail: replaces the left section in the Mini layout
+    m_rail = new MiniRail;
+    m_rail->setSource(m_proxy, m_table->selectionModel());
+    connect(m_rail, &MiniRail::commitModeRequested, this, [this] { setMode(CommitMode); });
+    connect(m_rail, &MiniRail::historyModeRequested, this, [this] { setMode(HistoryMode); });
+    connect(m_rail, &MiniRail::dockRequested, this, [this] { setPaneLayout(PaneLayout::Docked); });
+    connect(m_rail, &MiniRail::refreshRequested, this, &MainWindow::refresh);
+    connect(m_rail, &MiniRail::activated, this, [this] {
+        if (m_mode == CommitMode)
+            openInEditor();
+    });
+    m_syncButtons << SyncButtons{m_rail->fetchButton(), m_rail->pullButton(), m_rail->pushButton()};
+    for (const SyncButtons &set : std::as_const(m_syncButtons)) {
+        connect(set.fetch, &QToolButton::clicked, m_sync, &RemoteSync::fetch);
+        connect(set.pull, &QToolButton::clicked, m_sync, &RemoteSync::pull);
+        connect(set.push, &QToolButton::clicked, m_sync, &RemoteSync::push);
+    }
+    updateSyncButtons();
+
+    auto *body = new QHBoxLayout;
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(8);
+    body->addWidget(m_rail);
+    body->addWidget(splitter, 1);
+    rootLayout->addLayout(body, 1);
 
     setCentralWidget(central);
     statusBar()->setSizeGripEnabled(false);
@@ -245,6 +404,8 @@ void MainWindow::buildUi()
             watcher->addPath(indexFile);
         debounce->start();
     });
+    // ... and when refs move (a fetch, pull or push, also one made in a terminal).
+    connect(m_sync, &RemoteSync::repositoryChanged, debounce, qOverload<>(&QTimer::start));
 }
 
 // The commit dialog: branch, message, changes list, options, buttons.
@@ -277,22 +438,54 @@ QWidget *MainWindow::buildCommitPage()
     changesRow->addStretch();
     m_summaryLabel = dimLabel();
     changesRow->addWidget(m_summaryLabel);
+    changesRow->addSpacing(4);
+    auto *refreshButton = smallButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
+    connect(refreshButton, &QToolButton::clicked, this, &MainWindow::refresh);
+    changesRow->addWidget(refreshButton);
     layout->addLayout(changesRow);
 
     m_model = new ChangesModel(this);
     auto *proxy = new UnversionedFilter(this);
     proxy->setSourceModel(m_model);
-    proxy->setSortRole(Qt::DisplayRole);
+    proxy->setSortRole(ChangesModel::SortRole);
     m_proxy = proxy;
 
     m_table = new QTableView;
     m_table->setModel(m_proxy);
     m_tableSetup = new ChangesTableSetup(m_table);
     connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &MainWindow::onCurrentRowChanged);
-    connect(m_table, &QTableView::doubleClicked, this, &MainWindow::openInEditor);
+    // Double-click: with the diff pane hidden, show it for the file (which the
+    // click already made current); otherwise open the file in its own program.
+    connect(m_table, &QTableView::doubleClicked, this, [this] {
+        if (m_diffVisible)
+            openInEditor();
+        else
+            setDiffPaneVisible(true);
+    });
     connect(m_model, &ChangesModel::checkedChanged, this, &MainWindow::onCheckedChanged);
-    layout->addWidget(m_table, 1);
+    // Right-click: "Open with <the default program>" (deleted files have nothing to open).
+    m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_table, &QTableView::customContextMenuRequested, this, [this](const QPoint &pos) {
+        const QModelIndex index = m_table->indexAt(pos);
+        if (!index.isValid())
+            return;
+        m_table->setCurrentIndex(index);
+        const FileChange &c = m_model->change(m_proxy->mapToSource(index).row());
+        const QString path = QDir(m_repo->root()).filePath(c.path);
+        const DefaultApp app = c.kind == FileChange::Deleted ? DefaultApp() : defaultAppFor(path);
+        QMenu menu(m_table);
+        QAction *open = menu.addAction(app.name.isEmpty() ? tr("Open") : tr("Open with %1").arg(app.name));
+        if (!app.icon.isEmpty())
+            open->setIcon(QIcon::fromTheme(app.icon));
+        open->setEnabled(c.kind != FileChange::Deleted);
+        open->setToolTip(c.kind == FileChange::Deleted ? tr("The file no longer exists") : path);
+        connect(open, &QAction::triggered, this, &MainWindow::openInEditor);
+        menu.setToolTipsVisible(true);
+        menu.exec(m_table->viewport()->mapToGlobal(pos));
+    });
 
+    // Options above the list (above keeps them
+    // next to the "n / m selected" count they act on).
     auto *optionsRow = new QHBoxLayout;
     optionsRow->setSpacing(16);
     m_showUnversioned = new QCheckBox(tr("Show unversioned files"));
@@ -315,10 +508,10 @@ QWidget *MainWindow::buildCommitPage()
     optionsRow->addWidget(m_amend);
     optionsRow->addStretch();
     layout->addLayout(optionsRow);
+    layout->addWidget(m_table, 1);
 
     auto *buttonRow = new QHBoxLayout;
     buttonRow->setSpacing(10);
-    buttonRow->addWidget(dimLabel(tr("double-click a file to open it")));
     buttonRow->addStretch();
     m_commitButton = new QPushButton(icon(kCommit) + tr("Commit"));
     m_commitButton->setDefault(true);
@@ -344,6 +537,11 @@ void MainWindow::setMode(Mode mode)
         m_commitModeButton->setChecked(mode == CommitMode);
         m_historyModeButton->setChecked(mode == HistoryMode);
     }
+    m_rail->setCommitMode(mode == CommitMode);
+    if (mode == CommitMode)
+        m_rail->setSource(m_proxy, m_table->selectionModel());
+    else
+        m_rail->setSource(m_history->filesTable()->model(), m_history->filesTable()->selectionModel());
     if (mode == HistoryMode) {
         if (m_historyDirty) {
             m_history->reload();
@@ -359,14 +557,52 @@ void MainWindow::setMode(Mode mode)
     }
 }
 
-void MainWindow::setLeftFull(bool full, bool persist)
+void MainWindow::setPaneLayout(PaneLayout layout, bool persist)
 {
-    m_rightPane->setVisible(!full);
-    m_layoutButton->setText(full ? icon(kCollapse) + tr("Sidebar") : icon(kExpand) + tr("Full"));
-    m_layoutButton->setToolTip(full ? tr("Show the diff pane again; the left section becomes a sidebar (Ctrl+B)")
-                                    : tr("Let the left section fill the window and hide the diff pane (Ctrl+B)"));
+    m_layout = layout;
+    if (layout == PaneLayout::Mini && !m_diffVisible)
+        setDiffPaneVisible(true, persist); // the rail only makes sense next to the diff
+    applyPanes();
+    if (layout == PaneLayout::Mini)
+        m_rail->list()->setFocus();
     if (persist)
-        QSettings().setValue(QStringLiteral("window/leftFull"), full);
+        QSettings().setValue(QStringLiteral("window/layout"), paneLayoutKey(layout));
+}
+
+void MainWindow::setDiffPaneVisible(bool on, bool persist)
+{
+    m_diffVisible = on;
+    if (!on && m_layout == PaneLayout::Mini)
+        setPaneLayout(PaneLayout::Docked, persist);
+    applyPanes();
+    if (persist)
+        QSettings().setValue(QStringLiteral("window/diffPane"), on);
+}
+
+// Shows the panes and buttons the current layout and diff toggle call for.
+void MainWindow::applyPanes()
+{
+    const bool mini = m_layout == PaneLayout::Mini;
+    m_left->setVisible(!mini);
+    m_rail->setVisible(mini);
+    m_rightPane->setVisible(m_diffVisible);
+    // The toggle keeps its top-right spot: the end of the diff pane's nav row
+    // while the pane shows, the end of the toolbar row while it is hidden.
+    QHBoxLayout *home = m_diffVisible ? m_navRow : m_toolbarRow;
+    if (home->indexOf(m_diffToggle) < 0) {
+        (m_diffVisible ? m_toolbarRow : m_navRow)->removeWidget(m_diffToggle);
+        home->addWidget(m_diffToggle);
+        m_diffToggle->show();
+    }
+    {
+        QSignalBlocker a(m_layoutButton), b(m_diffToggle);
+        m_layoutButton->setChecked(mini);
+        m_diffToggle->setChecked(m_diffVisible);
+    }
+    m_layoutButton->setText(icon(paneLayoutGlyph(m_layout), paneLayoutName(m_layout).left(1)).trimmed());
+    m_layoutButton->setToolTip(tr("Layout: %1").arg(paneLayoutTip(m_layout)));
+    m_diffToggle->setToolTip(m_diffVisible ? tr("Hide the diff pane so the left section fills the window (Ctrl+Shift+B)")
+                                           : tr("Show the diff pane (Ctrl+Shift+B)"));
 }
 
 void MainWindow::setAmend(bool on)
@@ -375,10 +611,50 @@ void MainWindow::setAmend(bool on)
         m_amend->setChecked(on);
 }
 
+void MainWindow::setAutoFetchEnabled(bool on)
+{
+    m_sync->setAutoFetchInterval(on ? QSettings().value(QStringLiteral("remote/autoFetchSeconds"), 180).toInt() : 0);
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange)
+        m_sync->setActive(isVisible() && !isMinimized());
+    else if (event->type() == QEvent::ActivationChange && isActiveWindow())
+        m_sync->nudge();
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    if (!m_shown) {
+        m_shown = true;
+        // Neither pane has a minimum width of its own, so the splitter's first
+        // layout would split the window evenly; give the left section its
+        // remembered width (or 45%) instead. The splitter has not been laid
+        // out yet, so its width comes from the window's, less the rail.
+        const QMargins m = centralWidget()->layout()->contentsMargins();
+        const int total = width() - m.left() - m.right() - (m_rail->isVisibleTo(this) ? MiniRail::kWidth + 8 : 0);
+        const int rightMin = m_rightPane->isVisibleTo(this) ? 1 + m_splitter->handleWidth() : 0;
+        const int wanted = QSettings().value(QStringLiteral("window/leftWidth"), total * 45 / 100).toInt();
+        const int left = qBound(1, wanted, qMax(1, total - rightMin));
+        m_splitter->setSizes({left, qMax(1, total - left)});
+    }
+    m_sync->setActive(!isMinimized());
+}
+
+void MainWindow::hideEvent(QHideEvent *event)
+{
+    QMainWindow::hideEvent(event);
+    m_sync->setActive(false);
+}
+
 void MainWindow::applyTheme()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
     m_diff->refreshTheme();
+    m_toolbar->applyTheme();
     m_message->setFont(theme->uiFont());
     m_message->setFixedHeight(theme->fontBase() * 7);
     m_branchLabel->setFont(theme->titleFont());
@@ -389,6 +665,7 @@ void MainWindow::applyTheme()
     statusBar()->setFont(theme->captionFont());
     m_tableSetup->applyTheme();
     m_history->applyTheme();
+    m_rail->applyTheme();
 }
 
 void MainWindow::refresh()
@@ -412,6 +689,7 @@ void MainWindow::refresh()
     if (m_repo->amending() && head.isValid())
         branch += tr("   ·   amending %1").arg(head.shortHash);
     m_branchLabel->setText(branch);
+    m_sync->refreshState();
     m_model->setChanges(m_repo->status());
 
     // Restore selection
@@ -505,6 +783,11 @@ void MainWindow::showHistoryDiff()
 {
     if (m_mode != HistoryMode)
         return;
+    {
+        bool ok = false;
+        const Commit cur = m_history->currentCommit(&ok);
+        m_rail->setCommitLabel(ok ? cur.shortHash : QString(), ok ? cur.subject : QString());
+    }
     Commit c;
     FileChange f;
     if (!m_history->currentFile(&c, &f)) {
@@ -601,6 +884,107 @@ void MainWindow::commit()
         statusBar()->showMessage(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
         refresh();
     }
+}
+
+void MainWindow::updateSyncButtons()
+{
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    const UpstreamState &s = m_sync->state();
+    const RemoteSync::Op op = m_sync->runningOp();
+
+    QString fetchTip;
+    if (s.remotes.isEmpty()) {
+        fetchTip = tr("No remote configured — nothing to fetch from");
+    } else {
+        fetchTip = tr("Fetch from all remotes (Ctrl+Shift+F)");
+        if (op == RemoteSync::Fetch)
+            fetchTip += tr("\nFetching…");
+        else if (m_sync->lastFetch().isValid() && m_sync->lastFetchOk())
+            fetchTip += tr("\nLast fetched %1").arg(ago(m_sync->lastFetch()));
+        else if (m_sync->lastFetch().isValid())
+            fetchTip += tr("\nLast fetch failed %1: %2").arg(ago(m_sync->lastFetch()), m_sync->lastFetchError());
+        const int every = m_sync->autoFetchInterval();
+        if (every > 0)
+            fetchTip += tr("\nFetches by itself every %n minute(s) while the window is open", nullptr, qMax(1, every / 60));
+        else
+            fetchTip += tr("\nAutomatic fetching is off (remote/autoFetchSeconds in omagit.conf)");
+    }
+
+    QString pullTip;
+    if (s.detached)
+        pullTip = tr("HEAD is detached — check out a branch to pull");
+    else if (s.branch.isEmpty())
+        pullTip = tr("Nothing to pull into yet");
+    else if (s.upstreamGone)
+        pullTip = tr("%1 no longer exists on the remote").arg(s.upstream);
+    else if (!s.hasUpstream())
+        pullTip = tr("%1 has no upstream branch to pull from").arg(s.branch);
+    else if (op == RemoteSync::Fetch)
+        pullTip = tr("Checking %1 for new commits…").arg(s.upstream);
+    else if (op == RemoteSync::Pull)
+        pullTip = tr("Pulling from %1…").arg(s.upstream);
+    else if (s.behind > 0)
+        pullTip = tr("Pull %n commit(s) from %1 into %2 (Ctrl+Shift+L)", nullptr, s.behind).arg(s.upstream, s.branch);
+    else
+        pullTip = tr("Pull from %1 — nothing new since the last fetch (Ctrl+Shift+L)").arg(s.upstream);
+
+    QString pushTip;
+    if (s.detached)
+        pushTip = tr("HEAD is detached — check out a branch to push");
+    else if (s.branch.isEmpty())
+        pushTip = tr("Nothing to push yet");
+    else if (s.remote.isEmpty())
+        pushTip = tr("No remote to push to");
+    else if (op == RemoteSync::Push)
+        pushTip = tr("Pushing to %1…").arg(s.remote);
+    else if (m_sync->pushPublishes())
+        pushTip = tr("Publish %1 on %2 and track it from now on — git %3 (Ctrl+Shift+P)")
+                      .arg(s.branch, s.remote, m_sync->pushArgs().join(QLatin1Char(' ')));
+    else if (s.ahead > 0)
+        pushTip = tr("Push %n commit(s) from %1 to %2 (Ctrl+Shift+P)", nullptr, s.ahead).arg(s.branch, s.upstream);
+    else
+        pushTip = tr("Push to %1 — nothing to push (Ctrl+Shift+P)").arg(s.upstream);
+
+    const QColor red = theme->color(QStringLiteral("red"));
+    for (const SyncButtons &b : std::as_const(m_syncButtons)) {
+        b.fetch->setEnabled(m_sync->canFetch());
+        b.fetch->setToolTip(fetchTip);
+        b.fetch->setMark(m_sync->lastFetch().isValid() && !m_sync->lastFetchOk() ? QStringLiteral("!") : QString(), red);
+        b.pull->setEnabled(m_sync->canPull());
+        b.pull->setToolTip(pullTip);
+        b.pull->setBusy(op == RemoteSync::Fetch || op == RemoteSync::Pull);
+        b.pull->setCount(s.hasUpstream() ? s.behind : 0);
+        b.pull->setMark(s.upstreamGone ? QStringLiteral("!") : QString(), red);
+        b.push->setEnabled(m_sync->canPush());
+        b.push->setToolTip(pushTip);
+        b.push->setBusy(op == RemoteSync::Push);
+        b.push->setCount(s.hasUpstream() ? s.ahead : 0);
+    }
+
+    // The branch name tells about its upstream on hover.
+    QString upstream;
+    if (s.upstreamGone)
+        upstream = tr("Upstream %1 no longer exists on the remote").arg(s.upstream);
+    else if (s.hasUpstream())
+        upstream = tr("Upstream %1 — %2 to push, %3 to pull").arg(s.upstream).arg(qMax(0, s.ahead)).arg(qMax(0, s.behind));
+    else if (!s.branch.isEmpty() && !s.remote.isEmpty())
+        upstream = tr("No upstream — Push publishes %1 on %2").arg(s.branch, s.remote);
+    else if (!s.branch.isEmpty() && s.remotes.isEmpty())
+        upstream = tr("No remote configured");
+    m_branchLabel->setToolTip(upstream);
+}
+
+void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, const QString &message)
+{
+    if (!ok && !automatic) {
+        const QString title = op == RemoteSync::Fetch ? tr("Fetch failed")
+                            : op == RemoteSync::Pull  ? tr("Pull failed")
+                                                      : tr("Push failed");
+        QMessageBox::critical(this, title, message);
+    }
+    statusBar()->showMessage(message.section(QLatin1Char('\n'), 0, 0), ok ? 8000 : 15000);
+    if (op != RemoteSync::Fetch || ok)
+        refresh();
 }
 
 void MainWindow::openInEditor()
