@@ -4,9 +4,13 @@
 
 #include <QAbstractTableModel>
 #include <QList>
+#include <QObject>
 #include <QSet>
 
-// The list of changes in the commit dialog.
+class QTableView;
+
+// The list of changes in the commit dialog. Also used, without
+// checkboxes, for the files of a commit in the history view.
 class ChangesModel : public QAbstractTableModel
 {
     Q_OBJECT
@@ -19,10 +23,14 @@ public:
     const FileChange &change(int row) const { return m_changes.at(row); }
     int count() const { return m_changes.size(); }
 
+    void setCheckable(bool on);
+    bool checkable() const { return m_checkable; }
+
     QStringList checkedPaths() const;
     int checkedCount() const;
     void setAllChecked(bool checked);
     void setUnversionedChecked(bool checked);
+    void setPathsChecked(const QStringList &paths, bool checked);
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -37,4 +45,23 @@ signals:
 private:
     QList<FileChange> m_changes;
     QSet<QString> m_checked;
+    bool m_checkable = true;
+};
+
+// Applies the shared look of a changes table (column widths, row height, no
+// grid) and keeps the Path column filling the leftover width, never narrower
+// than 240 px (then the view scrolls horizontally).
+class ChangesTableSetup : public QObject
+{
+    Q_OBJECT
+public:
+    explicit ChangesTableSetup(QTableView *table);
+    void applyTheme();
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
+private:
+    void fitPathColumn();
+    QTableView *m_table;
 };

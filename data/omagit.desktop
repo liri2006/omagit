@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Omagit
+Name=OmaGit
 Comment=Review pending changes and diffs of a git repository
 Exec=omagit %f
 Icon=omagit

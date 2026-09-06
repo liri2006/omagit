@@ -1,0 +1,11 @@
+QT       += core
+QT       -= gui
+CONFIG   += c++17 console
+CONFIG   -= app_bundle
+TARGET    = gitrepo_test
+TEMPLATE  = app
+SOURCES  += gitrepo_test.cpp ../src/GitRepo.cpp
+HEADERS  += ../src/GitRepo.h
+OBJECTS_DIR = ../build/tests/obj
+MOC_DIR     = ../build/tests/moc
+DESTDIR     = ../build/tests

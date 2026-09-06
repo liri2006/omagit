@@ -3,7 +3,7 @@ CONFIG   += c++17 release
 TARGET    = omagit
 TEMPLATE  = app
 
-DEFINES += QT_DEPRECATED_WARNINGS OMAGIT_VERSION=\\\"0.1.0\\\"
+DEFINES += QT_DEPRECATED_WARNINGS OMAGIT_VERSION=\\\"0.2.0\\\"
 
 SOURCES += \
     src/main.cpp \
@@ -12,6 +12,8 @@ SOURCES += \
     src/DiffModel.cpp \
     src/DiffView.cpp \
     src/ChangesModel.cpp \
+    src/HistoryModel.cpp \
+    src/HistoryView.cpp \
     src/MainWindow.cpp
 
 HEADERS += \
@@ -20,6 +22,8 @@ HEADERS += \
     src/DiffModel.h \
     src/DiffView.h \
     src/ChangesModel.h \
+    src/HistoryModel.h \
+    src/HistoryView.h \
     src/MainWindow.h
 
 RESOURCES += data/omagit.qrc
