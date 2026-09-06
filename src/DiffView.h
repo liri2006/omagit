@@ -27,6 +27,17 @@ public:
     void clear(const QString &message = QString());
     const DiffDocument &document() const { return m_doc; }
 
+    // Where the user is in the document: the scroll offsets and the current
+    // change. A refresh that shows the same file again restores it so the
+    // view does not jump back to the first change.
+    struct ViewState {
+        int row = 0;
+        int column = 0;
+        int block = -1;
+    };
+    ViewState viewState() const;
+    void restoreViewState(const ViewState &state);
+
     Mode mode() const { return m_mode; }
     void setTabWidth(int spaces);
     int tabWidth() const { return m_tabWidth; }

@@ -94,6 +94,7 @@ private:
     FileChange currentChange(bool *ok) const;
     void checkoutBranch(const QString &name);
     void watchWorkingTree();
+    void watchChangedFiles(); // the files in the changes list, for edits made in place
     void updateRepoLabels();
     void setGenerating(bool on);
     void onMessageGenerated(bool ok, const QString &text);
@@ -129,7 +130,7 @@ private:
     QLabel *m_statusLabel;       // the footer's message, the repository path when there is none
     QTimer *m_statusTimer;
     QWidget *m_footerLine;
-    QFileSystemWatcher *m_watcher; // the working tree and the index
+    QFileSystemWatcher *m_watcher; // the working tree root, the index and the changed files
     QString m_indexFile;
     QLabel *m_summaryLabel;
     QLabel *m_changeLabel;
@@ -149,6 +150,8 @@ private:
     QList<SyncButtons> m_syncButtons; // the toolbar's and the Mini rail's
     QString m_initialSelection;
     QString m_diffSummary;
+    QString m_shownDiffKey;    // what the diff pane shows, to skip re-setting an identical document
+    bool m_refreshing = false; // the model reset momentarily leaves no row current
     QString m_headMessage;
     bool m_shown = false;
     bool m_historyDirty = true;

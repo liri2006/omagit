@@ -24,6 +24,12 @@ struct FileChange {
     bool binary = false;
     qint64 size = -1;  // bytes of the file on the new side; -1 when it has none (deleted) or is unknown
 
+    bool operator==(const FileChange &o) const
+    {
+        return path == o.path && oldPath == o.oldPath && index == o.index && worktree == o.worktree && kind == o.kind
+            && linesAdded == o.linesAdded && linesRemoved == o.linesRemoved && binary == o.binary && size == o.size;
+    }
+    bool operator!=(const FileChange &o) const { return !(*this == o); }
     bool isUntracked() const { return kind == Untracked; }
     bool isStaged() const { return index != ' ' && index != '?' && index != '!'; }
     QString statusText() const;
@@ -49,6 +55,9 @@ struct RefLabel {
     Type type = Branch;
     QString name;
     bool head = false; // the ref HEAD points at
+
+    bool operator==(const RefLabel &o) const { return type == o.type && name == o.name && head == o.head; }
+    bool operator!=(const RefLabel &o) const { return !(*this == o); }
 };
 
 // Where the current branch stands relative to its upstream.
@@ -167,6 +176,7 @@ signals:
     void rootChanged(const QString &root);
 
 private:
+    static void traceCommand(const QStringList &args);
     QString emptyTree() const;
     QStringList stageablePaths(const QStringList &paths, const QStringList &env) const;
     void applyNumstat(const QByteArray &numstat, QList<FileChange> &changes) const;

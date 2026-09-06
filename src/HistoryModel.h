@@ -33,7 +33,7 @@ public:
     explicit HistoryModel(GitRepo *repo, QObject *parent = nullptr);
 
     // Re-reads refs and the commits (at least as many as were loaded before).
-    void reload();
+    void reload(bool force = false); // force: re-read even if no ref moved
     // Appends the next batch. Returns false when the history is exhausted.
     bool loadMore();
     bool exhausted() const { return m_exhausted; }
@@ -64,6 +64,7 @@ private:
     QHash<QString, QList<RefLabel>> m_refs;
     QString m_head;
     bool m_allRefs = false;
+    bool m_loaded = false;
     bool m_exhausted = false;
     bool m_failed = false;
     int m_batch = 500;

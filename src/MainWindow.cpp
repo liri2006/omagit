@@ -14,6 +14,7 @@
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFileInfo>
 #include <QEvent>
 #include <QFileDialog>
 #include <QFileSystemWatcher>
@@ -498,9 +499,11 @@ void MainWindow::buildUi()
     debounce->setInterval(500);
     connect(debounce, &QTimer::timeout, this, &MainWindow::refresh);
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, debounce, qOverload<>(&QTimer::start));
-    connect(m_watcher, &QFileSystemWatcher::fileChanged, this, [this, debounce] {
-        if (!m_watcher->files().contains(m_indexFile) && QFile::exists(m_indexFile))
-            m_watcher->addPath(m_indexFile);
+    connect(m_watcher, &QFileSystemWatcher::fileChanged, this, [this, debounce](const QString &path) {
+        // A file written through a rename (most editors, git itself for the
+        // index) drops out of the watch: put it back.
+        if (!m_watcher->files().contains(path) && QFile::exists(path))
+            m_watcher->addPath(path);
         debounce->start();
     });
     watchWorkingTree();
@@ -567,6 +570,7 @@ QWidget *MainWindow::buildCommitPage()
     m_proxy = proxy;
 
     m_table = new QTableView;
+    m_table->setObjectName(QStringLiteral("changesTable"));
     m_table->setModel(m_proxy);
     m_tableSetup = new ChangesTableSetup(m_table);
     connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &MainWindow::onCurrentRowChanged);
@@ -812,20 +816,28 @@ void MainWindow::refresh()
         branch += tr("   ·   amending %1").arg(head.shortHash);
     m_branchButton->setText(branch);
     m_sync->refreshState();
-    // Re-selecting the row below scrolls the views to it; the user may have
-    // scrolled it out of view on purpose, so put the scroll offsets back after.
+    // Re-selecting the row below scrolls the views to it and reloads the
+    // diff from its first change; the user may have scrolled either on
+    // purpose, so put the scroll offsets (and the current change) back after.
     QScrollBar *const tableBar = m_table->verticalScrollBar();
+    QScrollBar *const tableHBar = m_table->horizontalScrollBar();
     QScrollBar *const railBar = m_rail->list()->verticalScrollBar();
     const int tableScroll = tableBar->value();
+    const int tableHScroll = tableHBar->value();
     const int railScroll = railBar->value();
+    const DiffView::ViewState diffState = m_diff->viewState();
+    m_refreshing = true;
     m_model->setChanges(m_repo->status());
+    m_refreshing = false;
+    watchChangedFiles();
 
     // Restore selection
     bool restored = false;
     for (int r = 0; r < m_proxy->rowCount(); ++r) {
         const int src = m_proxy->mapToSource(m_proxy->index(r, 0)).row();
         if (m_model->change(src).path == selectedPath) {
-            m_table->selectRow(r);
+            if (m_table->currentIndex().row() != r) // unchanged rows keep their current cell
+                m_table->selectRow(r);
             restored = true;
             break;
         }
@@ -838,14 +850,33 @@ void MainWindow::refresh()
     }
     if (restored) {
         tableBar->setValue(tableScroll);
+        tableHBar->setValue(tableHScroll);
         railBar->setValue(railScroll);
+        if (ok && cur.path == selectedPath && m_mode == CommitMode) {
+            // The row may still be current (no reset happened), so show the
+            // diff again by hand: identical content is left alone, changed
+            // content is put back where the user was reading.
+            showDiffFor(m_model->change(m_proxy->mapToSource(m_table->currentIndex()).row()));
+            m_diff->restoreViewState(diffState);
+        }
     }
     onCheckedChanged();
 
     m_historyDirty = true;
     if (m_mode == HistoryMode) {
+        Commit commit;
+        FileChange file;
+        const bool hadFile = m_history->currentFile(&commit, &file);
         m_history->reload();
         m_historyDirty = false;
+        Commit newCommit;
+        FileChange newFile;
+        if (hadFile && m_history->currentFile(&newCommit, &newFile) && newCommit.hash == commit.hash
+            && newFile.path == file.path) {
+            showHistoryDiff();
+            railBar->setValue(railScroll);
+            m_diff->restoreViewState(diffState);
+        }
     }
 }
 
@@ -865,7 +896,8 @@ void MainWindow::onCurrentRowChanged(const QModelIndex &current)
     if (m_mode != CommitMode)
         return;
     if (!current.isValid()) {
-        m_diff->clear();
+        if (!m_refreshing) // refresh() selects a row again right after the reset
+            m_diff->clear();
         return;
     }
     showDiffFor(m_model->change(m_proxy->mapToSource(current).row()));
@@ -874,6 +906,12 @@ void MainWindow::onCurrentRowChanged(const QModelIndex &current)
 void MainWindow::presentDiff(const QString &unified, const FileChange &change, bool binary, const QString &leftLabel,
                              const QString &rightLabel, const QString &emptyMessage)
 {
+    const QString key = QStringList{change.path, change.statusText(), leftLabel, rightLabel, emptyMessage,
+                                    binary ? QStringLiteral("1") : QStringLiteral("0"), unified}
+                            .join(QChar(0));
+    if (key == m_shownDiffKey && !m_diff->document().lines.isEmpty())
+        return; // the same document is on screen: keep the selection and the scroll position
+    m_shownDiffKey = key;
     DiffDocument doc = DiffModel::parse(unified);
     if (binary && doc.lines.isEmpty()) {
         doc.binary = true;
@@ -1408,6 +1446,37 @@ void MainWindow::watchWorkingTree()
     m_indexFile = m_repo->gitDir() + QStringLiteral("/index");
     if (QFile::exists(m_indexFile))
         m_watcher->addPath(m_indexFile);
+}
+
+// The root directory watch only sees files appearing, disappearing or being
+// renamed; an edit written in place shows up only through the file itself.
+// Watching every file of the tree is out of the question, but the changed
+// ones (the ones whose diff is on screen) are few.
+void MainWindow::watchChangedFiles()
+{
+    constexpr int kMaxWatchedFiles = 500;
+    QStringList wanted;
+    if (QFile::exists(m_indexFile))
+        wanted << m_indexFile;
+    const QDir root(m_repo->root());
+    for (int i = 0; i < m_model->rowCount() && wanted.size() <= kMaxWatchedFiles; ++i) {
+        const QString path = root.filePath(m_model->change(i).path);
+        if (QFileInfo(path).isFile())
+            wanted << path;
+    }
+    QStringList stale;
+    const QStringList watched = m_watcher->files();
+    for (const QString &p : watched)
+        if (!wanted.contains(p))
+            stale << p;
+    if (!stale.isEmpty())
+        m_watcher->removePaths(stale);
+    QStringList fresh;
+    for (const QString &p : std::as_const(wanted))
+        if (!watched.contains(p))
+            fresh << p;
+    if (!fresh.isEmpty())
+        m_watcher->addPaths(fresh);
 }
 
 void MainWindow::updateRepoLabels()

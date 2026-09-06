@@ -152,6 +152,22 @@ void DiffView::setDocument(const DiffDocument &doc, const QString &title, const 
     emit changeIndexChanged(m_currentBlock, m_blockStarts.size());
 }
 
+DiffView::ViewState DiffView::viewState() const
+{
+    return {verticalScrollBar()->value(), horizontalScrollBar()->value(), m_currentBlock};
+}
+
+void DiffView::restoreViewState(const ViewState &state)
+{
+    if (m_doc.lines.isEmpty())
+        return;
+    m_currentBlock = m_blockStarts.isEmpty() ? -1 : qBound(-1, state.block, int(m_blockStarts.size()) - 1);
+    verticalScrollBar()->setValue(state.row); // the bars clamp to their ranges
+    horizontalScrollBar()->setValue(state.column);
+    viewport()->update();
+    emit changeIndexChanged(m_currentBlock, m_blockStarts.size());
+}
+
 void DiffView::clear(const QString &message)
 {
     m_doc = DiffDocument();

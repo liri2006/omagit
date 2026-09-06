@@ -2,6 +2,7 @@
 #include "MainWindow.h"
 #include "OmarchyTheme.h"
 
+#include <QAbstractScrollArea>
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
@@ -10,6 +11,7 @@
 #include <QKeySequence>
 #include <QPainter>
 #include <QSettings>
+#include <QScrollBar>
 #include <QTimer>
 #include <QWindow>
 
@@ -44,7 +46,7 @@ int main(int argc, char *argv[])
     parser.addOption(amendOpt);
     parser.addOption(noFetchOpt);
     parser.addOption(screenshotMenuOpt);
-    QCommandLineOption screenshotKeysOpt(QStringLiteral("screenshot-keys"), QStringLiteral("Comma-separated keys (m,a,Down,Return) sent to the focused widget once the --screenshot-menu dropdown is open, or to the window (for testing)."), QStringLiteral("keys"));
+    QCommandLineOption screenshotKeysOpt(QStringLiteral("screenshot-keys"), QStringLiteral("Comma-separated keys (m,a,Down,Return) sent to the focused widget once the --screenshot-menu dropdown is open, or to the window; @objectName[:vbar] or @ClassName[:vbar] focuses that (first visible) widget or its vertical scrollbar first (for testing)."), QStringLiteral("keys"));
     parser.addOption(screenshotKeysOpt);
     parser.process(app);
 
@@ -114,6 +116,20 @@ int main(int argc, char *argv[])
                 if (!target)
                     return;
                 for (const QString &name : keys) {
+                    if (name.startsWith(QLatin1Char('@'))) {
+                        // Deliver the keys so far, then move the focus for the rest.
+                        QCoreApplication::sendPostedEvents();
+                        const QString wanted = name.mid(1).section(QLatin1Char(':'), 0, 0);
+                        const bool vbar = name.endsWith(QLatin1String(":vbar"));
+                        for (QWidget *w : window.findChildren<QWidget *>()) {
+                            if (!w->isVisible() || (w->objectName() != wanted && QLatin1String(w->metaObject()->className()) != wanted))
+                                continue;
+                            auto *area = qobject_cast<QAbstractScrollArea *>(w);
+                            (vbar && area ? static_cast<QWidget *>(area->verticalScrollBar()) : w)->setFocus();
+                            break;
+                        }
+                        continue;
+                    }
                     const QKeyCombination combo = QKeySequence::fromString(name)[0];
                     const QString text = name.size() == 1 ? name : QString();
                     QApplication::postEvent(target, new QKeyEvent(QEvent::KeyPress, combo.key(), combo.keyboardModifiers(), text));

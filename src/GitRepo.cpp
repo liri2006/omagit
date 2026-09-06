@@ -1,5 +1,7 @@
 #include "GitRepo.h"
 
+#include <cstdio>
+
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
@@ -56,22 +58,37 @@ QString GitRepo::findRoot(const QString &path, QString *error)
     return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
 }
 
+// OMAGIT_TRACE_GIT=1 in the environment prints every git command to stderr
+// (to see, for instance, what keeps refreshing the window).
+void GitRepo::traceCommand(const QStringList &args)
+{
+    static const bool trace = qEnvironmentVariableIsSet("OMAGIT_TRACE_GIT");
+    if (!trace)
+        return;
+    // Straight to stderr: Qt's own logging may be routed to the journal.
+    fprintf(stderr, "git %s\n", qPrintable(args.join(QLatin1Char(' '))));
+    fflush(stderr);
+}
+
 QByteArray GitRepo::run(const QStringList &args, int *exitCode, QByteArray *err, int timeoutMs,
                         const QStringList &env) const
 {
     QProcess p;
     p.setWorkingDirectory(m_root);
-    if (!env.isEmpty()) {
-        QProcessEnvironment pe = QProcessEnvironment::systemEnvironment();
-        for (const QString &kv : env) {
-            const int eq = kv.indexOf(QLatin1Char('='));
-            pe.insert(kv.left(eq), kv.mid(eq + 1));
-        }
-        p.setProcessEnvironment(pe);
+    QProcessEnvironment pe = QProcessEnvironment::systemEnvironment();
+    // status and diff would otherwise take .git/index.lock to refresh the
+    // index, and that alone wakes the .git watcher, which asks for another
+    // status: an endless refresh loop.
+    pe.insert(QStringLiteral("GIT_OPTIONAL_LOCKS"), QStringLiteral("0"));
+    for (const QString &kv : env) {
+        const int eq = kv.indexOf(QLatin1Char('='));
+        pe.insert(kv.left(eq), kv.mid(eq + 1));
     }
+    p.setProcessEnvironment(pe);
     QStringList full{QStringLiteral("-c"), QStringLiteral("core.quotepath=off"),
                      QStringLiteral("-c"), QStringLiteral("color.ui=never")};
     full += args;
+    traceCommand(args);
     p.start(gitExecutable(), full);
     if (!p.waitForFinished(timeoutMs)) {
         p.kill();
@@ -95,6 +112,7 @@ QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback 
     p->setWorkingDirectory(m_root);
     QProcessEnvironment pe = QProcessEnvironment::systemEnvironment();
     pe.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
+    pe.insert(QStringLiteral("GIT_OPTIONAL_LOCKS"), QStringLiteral("0"));
     for (const QString &kv : env) {
         const int eq = kv.indexOf(QLatin1Char('='));
         pe.insert(kv.left(eq), kv.mid(eq + 1));
@@ -103,6 +121,7 @@ QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback 
     QStringList full{QStringLiteral("-c"), QStringLiteral("core.quotepath=off"),
                      QStringLiteral("-c"), QStringLiteral("color.ui=never")};
     full += args;
+    traceCommand(args);
 
     auto *timeout = new QTimer(p);
     timeout->setSingleShot(true);

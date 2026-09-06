@@ -244,6 +244,7 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_proxy = proxy;
 
     m_table = new QTableView;
+    m_table->setObjectName(QStringLiteral("commitsTable"));
     m_table->setModel(m_proxy);
     m_table->setItemDelegate(new CommitDelegate(m_model, m_proxy, m_table));
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -284,6 +285,7 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     filesProxy->setSourceModel(m_files);
     filesProxy->setSortRole(ChangesModel::SortRole);
     m_filesTable = new QTableView;
+    m_filesTable->setObjectName(QStringLiteral("filesTable"));
     m_filesTable->setModel(filesProxy);
     m_filesSetup = new ChangesTableSetup(m_filesTable);
     connect(m_filesTable->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
@@ -374,22 +376,47 @@ void HistoryView::reload()
     const Commit current = currentCommit(&ok);
     if (ok)
         m_pendingHash = current.hash;
+    {
+        Commit c;
+        FileChange f;
+        if (currentFile(&c, &f))
+            m_pendingFile = f.path;
+    }
+    // Re-selecting the commit and the file scrolls both tables to them; the
+    // user may have scrolled away on purpose, so put the offsets back after.
+    QScrollBar *const commitsBar = m_table->verticalScrollBar();
+    QScrollBar *const filesBar = m_filesTable->verticalScrollBar();
+    const int commitsScroll = commitsBar->value();
+    const int filesScroll = filesBar->value();
+    m_reloading = true;
     m_model->reload();
+    m_reloading = false;
     fitColumns();
     updateFooter();
 
     if (!m_pendingHash.isEmpty()) {
+        const Commit still = currentCommit(&ok);
+        if (ok && still.hash == m_pendingHash) {
+            // No ref moved, so the model kept its rows: everything is as it was.
+            m_pendingHash.clear();
+            m_pendingFile.clear();
+            return;
+        }
         for (int r = 0; r < m_proxy->rowCount(); ++r) {
             const int src = m_proxy->mapToSource(m_proxy->index(r, 0)).row();
             if (m_model->commit(src).hash == m_pendingHash) {
                 m_table->selectRow(r);
                 m_pendingHash.clear();
                 onCommitChanged();
+                m_pendingFile.clear();
+                commitsBar->setValue(commitsScroll);
+                filesBar->setValue(filesScroll);
                 return;
             }
         }
     }
     m_pendingHash.clear();
+    m_pendingFile.clear();
     selectFirstCommit();
 }
 
@@ -471,6 +498,8 @@ void HistoryView::onCommitChanged()
     bool ok = false;
     const Commit c = currentCommit(&ok);
     if (!ok) {
+        if (m_reloading)
+            return; // reload() selects a commit again right after the reset
         m_files->setChanges({});
         m_details->clear();
         m_emptyMessage = tr("No commit selected.");
@@ -500,8 +529,17 @@ void HistoryView::onCommitChanged()
     m_details->setPlainText(text);
 
     m_files->setChanges(m_repo->commitChanges(c));
-    if (m_filesTable->model()->rowCount() > 0) {
-        m_filesTable->selectRow(0); // emits currentFileChanged via the selection model
+    auto *filesProxy = static_cast<QSortFilterProxyModel *>(m_filesTable->model());
+    if (filesProxy->rowCount() > 0) {
+        int row = 0; // after a reload, the file that was selected before
+        for (int r = 0; !m_pendingFile.isEmpty() && r < filesProxy->rowCount(); ++r) {
+            if (m_files->change(filesProxy->mapToSource(filesProxy->index(r, 0)).row()).path == m_pendingFile) {
+                row = r;
+                break;
+            }
+        }
+        if (m_filesTable->currentIndex().row() != row)
+            m_filesTable->selectRow(row); // emits currentFileChanged via the selection model
     } else {
         m_emptyMessage = tr("This commit changes no files.");
         emit currentFileChanged();

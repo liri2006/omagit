@@ -7,8 +7,15 @@ HistoryModel::HistoryModel(GitRepo *repo, QObject *parent)
 {
 }
 
-void HistoryModel::reload()
+void HistoryModel::reload(bool force)
 {
+    const QHash<QString, QList<RefLabel>> refs = m_repo->refs();
+    int code = 0;
+    QString head = QString::fromUtf8(m_repo->run({QStringLiteral("rev-parse"), QStringLiteral("HEAD")}, &code)).trimmed();
+    if (code != 0)
+        head.clear();
+    if (!force && m_loaded && !m_failed && refs == m_refs && head == m_head)
+        return; // nothing moved: keep the rows, the selection and the scroll position
     const int wanted = qMax(m_batch, m_commits.size());
     beginResetModel();
     m_commits.clear();
@@ -19,11 +26,9 @@ void HistoryModel::reload()
     m_maxLanes = 0;
     m_exhausted = false;
     m_failed = false;
-    m_refs = m_repo->refs();
-    int code = 0;
-    m_head = QString::fromUtf8(m_repo->run({QStringLiteral("rev-parse"), QStringLiteral("HEAD")}, &code)).trimmed();
-    if (code != 0)
-        m_head.clear();
+    m_refs = refs;
+    m_head = head;
+    m_loaded = true;
     bool ok = false;
     const QList<Commit> commits = m_repo->log(0, wanted, m_allRefs, &ok);
     m_failed = !ok;
@@ -56,7 +61,7 @@ void HistoryModel::setAllRefs(bool on)
     if (m_allRefs == on)
         return;
     m_allRefs = on;
-    reload();
+    reload(true);
 }
 
 void HistoryModel::append(const QList<Commit> &commits)

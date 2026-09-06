@@ -28,8 +28,17 @@ RemoteSync::RemoteSync(GitRepo *repo, QObject *parent)
     m_debounce.setSingleShot(true);
     m_debounce.setInterval(400);
     connect(&m_debounce, &QTimer::timeout, this, &RemoteSync::repositoryChanged);
-    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] {
+    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString &path) {
         watchGitDir(); // new ref directories (first fetch of a remote) need a watch too
+        if (path == m_gitDir) {
+            // Every status or diff (ours or an editor's) creates and removes
+            // .git/index.lock, which counts as a change of the directory;
+            // only react when something that matters has changed.
+            const QString stamp = gitDirStamp();
+            if (stamp == m_gitDirStamp)
+                return;
+            m_gitDirStamp = stamp;
+        }
         m_debounce.start();
     });
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this] {
@@ -38,6 +47,7 @@ RemoteSync::RemoteSync(GitRepo *repo, QObject *parent)
     });
     connect(m_repo, &GitRepo::rootChanged, this, &RemoteSync::reset);
     m_gitDir = m_repo->gitDir();
+    m_gitDirStamp = gitDirStamp();
     watchGitDir();
     refreshState();
 }
@@ -64,6 +74,7 @@ void RemoteSync::reset()
     if (!m_watcher.files().isEmpty())
         m_watcher.removePaths(m_watcher.files());
     m_gitDir = m_repo->gitDir();
+    m_gitDirStamp = gitDirStamp();
     watchGitDir();
     refreshState();
     nudge();
@@ -82,6 +93,26 @@ RemoteSync::~RemoteSync()
 
 // Loose refs change by rename inside refs/heads and refs/remotes/<remote>,
 // packed refs and HEAD by rename inside the git directory itself, and
+// The entries of .git that say where the refs stand (HEAD, FETCH_HEAD,
+// packed-refs, ORIG_HEAD, the refs and logs directories...) with their sizes
+// and times. Lock files come and go with every git command and the index is
+// the working tree's business, so they are left out.
+QString RemoteSync::gitDirStamp() const
+{
+    if (m_gitDir.isEmpty())
+        return QString();
+    QStringList parts;
+    const QFileInfoList entries = QDir(m_gitDir).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden, QDir::Name);
+    for (const QFileInfo &fi : entries) {
+        const QString name = fi.fileName();
+        if (name.endsWith(QLatin1String(".lock")) || name == QLatin1String("index") || name == QLatin1String("objects"))
+            continue;
+        parts << name + QLatin1Char(':') + QString::number(fi.size()) + QLatin1Char(':')
+                + QString::number(fi.lastModified().toMSecsSinceEpoch());
+    }
+    return parts.join(QLatin1Char('\n'));
+}
+
 // FETCH_HEAD is rewritten by every fetch (also one that brought nothing).
 void RemoteSync::watchGitDir()
 {

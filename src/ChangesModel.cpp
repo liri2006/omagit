@@ -86,6 +86,8 @@ ChangesModel::ChangesModel(QObject *parent)
 
 void ChangesModel::setChanges(const QList<FileChange> &changes)
 {
+    if (changes == m_changes)
+        return; // a reset would drop the selection and the scroll position for nothing
     beginResetModel();
     const bool firstLoad = m_changes.isEmpty() && m_checked.isEmpty();
     QSet<QString> previous = m_checked;

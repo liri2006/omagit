@@ -82,6 +82,7 @@ private:
     void scheduleAutoFetch();
     void autoFetch();
     void watchGitDir();
+    QString gitDirStamp() const;
 
     GitRepo *m_repo;
     UpstreamState m_state;
@@ -99,4 +100,5 @@ private:
     QFileSystemWatcher m_watcher;
     QTimer m_debounce;
     QString m_gitDir;
+    QString m_gitDirStamp; // gitDirStamp() at the last change that counted
 };

@@ -66,4 +66,6 @@ private:
     ChangesTableSetup *m_filesSetup;
     QString m_emptyMessage;
     QString m_pendingHash; // commit to select after a reload
+    QString m_pendingFile; // ... and the file to select in it
+    bool m_reloading = false; // the model reset momentarily leaves no commit current
 };
