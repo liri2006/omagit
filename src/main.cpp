@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo or agent dropdown before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent or keybindings panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -100,6 +100,7 @@ int main(int argc, char *argv[])
             // The dropdown runs its own event loop; the grab below happens inside it.
             QTimer::singleShot(after, &window, [&window, menu] {
                 const char *slot = menu == QLatin1String("repo") ? "showRepoMenu"
+                    : menu == QLatin1String("keybindings")       ? "showKeybindings"
                     : menu == QLatin1String("agent")             ? "showAgentMenu"
                                                                  : "showBranchMenu";
                 QMetaObject::invokeMethod(&window, slot);

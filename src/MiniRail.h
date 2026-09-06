@@ -1,6 +1,5 @@
 #pragma once
 
-#include "PaneLayout.h"
 
 #include <QListView>
 #include <QPersistentModelIndex>
@@ -66,14 +65,12 @@ public:
 signals:
     void commitModeRequested();
     void historyModeRequested();
-    void dockRequested(); // back to the Docked layout
     void refreshRequested();
     void activated(const QModelIndex &index);
 
 private:
     QToolButton *m_commitButton;
     QToolButton *m_historyButton;
-    QToolButton *m_dockButton;
     QToolButton *m_refreshButton;
     BadgeButton *m_fetchButton;
     BadgeButton *m_pullButton;

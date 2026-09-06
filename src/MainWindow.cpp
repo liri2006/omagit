@@ -14,6 +14,10 @@
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDialog>
+#include <QHeaderView>
+#include <QTreeWidget>
+#include <QRegularExpression>
 #include <QFileInfo>
 #include <QEvent>
 #include <QFileDialog>
@@ -293,15 +297,14 @@ void MainWindow::buildUi()
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(8);
 
-    // The toolbar: Docked/Mini toggle | Commit, History | Pull, Push, Fetch.
+    // The toolbar: Commit, History | Pull, Push, Fetch.
     // Labels give way to icons, then to a "more" menu, as the pane narrows.
     m_toolbar = new Toolbar;
-    m_layoutButton = toolButton(QString());
+    m_layoutButton = dropdownButton(QStringLiteral("layoutButton"));
     m_layoutButton->setCheckable(true); // checked = Mini; the glyph shows the current layout
     connect(m_layoutButton, &QToolButton::clicked, this, [this](bool mini) {
         setPaneLayout(mini ? PaneLayout::Mini : PaneLayout::Docked);
     });
-    m_toolbar->setLeading(m_layoutButton);
 
     m_commitModeButton = toolButton(QString(), tr("Pending changes and commit dialog (Ctrl+1)"));
     m_historyModeButton = toolButton(QString(), tr("Commit history of the repository (Ctrl+2)"));
@@ -348,6 +351,14 @@ void MainWindow::buildUi()
     m_toolbarRow->setSpacing(8);
     m_toolbarRow->addWidget(m_toolbar, 1);
     leftLayout->addLayout(m_toolbarRow);
+
+    // Repository and branch selectors stay available in both modes.
+    m_repoButton = dropdownButton(QStringLiteral("repoButton"));
+    connect(m_repoButton, &QToolButton::clicked, this, &MainWindow::showRepoMenu);
+    new QShortcut(QKeySequence::Open, this, this, &MainWindow::openRepositoryDialog);
+    m_branchButton = dropdownButton(QStringLiteral("branchButton"));
+    m_branchButton->setFont(OmarchyTheme::instance()->titleFont());
+    connect(m_branchButton, &QToolButton::clicked, this, &MainWindow::showBranchMenu);
 
     m_stack = new QStackedWidget;
     m_stack->addWidget(buildCommitPage());
@@ -451,7 +462,6 @@ void MainWindow::buildUi()
     m_rail->setSource(m_proxy, m_table->selectionModel());
     connect(m_rail, &MiniRail::commitModeRequested, this, [this] { setMode(CommitMode); });
     connect(m_rail, &MiniRail::historyModeRequested, this, [this] { setMode(HistoryMode); });
-    connect(m_rail, &MiniRail::dockRequested, this, [this] { setPaneLayout(PaneLayout::Docked); });
     connect(m_rail, &MiniRail::refreshRequested, this, &MainWindow::refresh);
     connect(m_rail, &MiniRail::activated, this, [this] {
         if (m_mode == CommitMode)
@@ -472,22 +482,27 @@ void MainWindow::buildUi()
     body->addWidget(splitter, 1);
     rootLayout->addLayout(body, 1);
 
-    // ---- Footer: the repository (a dropdown of recent ones) and messages
+    // ---- Footer: sidebar toggle, repository and branch selectors, path and messages
     m_footerLine = hairline();
     rootLayout->addWidget(m_footerLine);
     auto *footer = new QHBoxLayout;
     footer->setSpacing(8);
-    m_repoButton = dropdownButton(QStringLiteral("repoButton"));
-    connect(m_repoButton, &QToolButton::clicked, this, &MainWindow::showRepoMenu);
-    new QShortcut(QKeySequence::Open, this, this, &MainWindow::openRepositoryDialog);
+    footer->addWidget(m_layoutButton);
+    footer->addWidget(m_repoButton);
+    footer->addWidget(m_branchButton);
     m_statusLabel = dimLabel();
     m_statusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_statusLabel->setMinimumWidth(0);
     m_statusTimer = new QTimer(this);
     m_statusTimer->setSingleShot(true);
     connect(m_statusTimer, &QTimer::timeout, this, [this] { m_statusLabel->setText(tildePath(m_repo->root())); });
-    footer->addWidget(m_repoButton);
     footer->addWidget(m_statusLabel, 1);
+    auto *infoButton = smallButton(0xF02FC, tr("i"), tr("Keybindings (Ctrl+K)"));
+    infoButton->setObjectName(QStringLiteral("keybindingsButton"));
+    infoButton->setAccessibleName(tr("Keybindings"));
+    connect(infoButton, &QToolButton::clicked, this, &MainWindow::showKeybindings);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this, this, &MainWindow::showKeybindings);
+    footer->addWidget(infoButton);
     rootLayout->addLayout(footer);
 
     setCentralWidget(central);
@@ -511,7 +526,7 @@ void MainWindow::buildUi()
     connect(m_sync, &RemoteSync::repositoryChanged, debounce, qOverload<>(&QTimer::start));
 }
 
-// The commit dialog: branch, message, changes list, options, buttons.
+// The commit dialog: message, changes list, options, buttons.
 QWidget *MainWindow::buildCommitPage()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
@@ -519,18 +534,6 @@ QWidget *MainWindow::buildCommitPage()
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
-
-    // The branch name is a dropdown: clicking it lists the local and remote
-    // branches, picking one checks it out.
-    auto *branchRow = new QHBoxLayout;
-    branchRow->setSpacing(8);
-    branchRow->addWidget(sectionLabel(tr("Branch")));
-    m_branchButton = dropdownButton(QStringLiteral("branchButton"));
-    m_branchButton->setFont(theme->titleFont());
-    connect(m_branchButton, &QToolButton::clicked, this, &MainWindow::showBranchMenu);
-    branchRow->addWidget(m_branchButton);
-    branchRow->addStretch();
-    layout->addLayout(branchRow);
 
     // MESSAGE, with the agent settings at the far right; the message box has
     // the generate button in its top right corner.
@@ -639,13 +642,112 @@ QWidget *MainWindow::buildCommitPage()
     m_commitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
     m_commitButton->setToolTip(tr("Commit the checked files (Ctrl+Enter)"));
     connect(m_commitButton, &QPushButton::clicked, this, &MainWindow::commit);
-    auto *closeButton = new QPushButton(tr("Close"));
-    closeButton->setCursor(Qt::PointingHandCursor);
-    connect(closeButton, &QPushButton::clicked, this, &QWidget::close);
     buttonRow->addWidget(m_commitButton);
-    buttonRow->addWidget(closeButton);
     layout->addLayout(buttonRow);
     return page;
+}
+
+void MainWindow::showKeybindings()
+{
+    auto *panel = new QDialog(this, Qt::Popup);
+    panel->setObjectName(QStringLiteral("keybindingsPanel"));
+    panel->setWindowTitle(tr("Keybindings"));
+    panel->setAttribute(Qt::WA_DeleteOnClose);
+    auto *layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(16, 16, 16, 12);
+    layout->setSpacing(12);
+    layout->addWidget(sectionLabel(tr("Keybindings")));
+    auto *search = new QLineEdit;
+    search->setObjectName(QStringLiteral("keybindingsSearch"));
+    search->setPlaceholderText(tr("Search keybindings…"));
+    search->setAccessibleName(tr("Search keybindings"));
+    search->setClearButtonEnabled(true);
+    layout->addWidget(search);
+    auto *list = new QTreeWidget;
+    list->setObjectName(QStringLiteral("keybindingsList"));
+    list->setColumnCount(2);
+    list->setHeaderLabels({tr("Action / context"), tr("Keys")});
+    list->setRootIsDecorated(false);
+    list->setWordWrap(true);
+    list->setSelectionMode(QAbstractItemView::NoSelection);
+    list->setFocusPolicy(Qt::NoFocus);
+    list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    list->header()->setStretchLastSection(false);
+    list->header()->setSectionResizeMode(1, QHeaderView::Fixed);
+    list->setColumnWidth(1, qMin(260, qMin(800, width()) * 2 / 5));
+    auto add = [list](const QString &action, const QString &keys, const QString &context) {
+        auto *item = new QTreeWidgetItem(list, {action + QStringLiteral("\n") + context, keys});
+        item->setToolTip(0, action + QStringLiteral(" — ") + context);
+    };
+    const QString app = tr("App"), diff = tr("Diff"), text = tr("Text fields");
+    add(tr("Show keybindings"), "Ctrl+K", app);
+    add(tr("Open repository"), "Ctrl+O", app);
+    add(tr("Refresh repository"), "F5", app);
+    add(tr("Show pending changes"), "Ctrl+1", app);
+    add(tr("Show commit history"), "Ctrl+2", app);
+    add(tr("Toggle Docked / Mini layout"), "Ctrl+B", app);
+    add(tr("Show / hide diff pane"), "Ctrl+Shift+B", app);
+    add(tr("Fetch"), "Ctrl+Shift+F", app);
+    add(tr("Pull"), "Ctrl+Shift+L", app);
+    add(tr("Push"), "Ctrl+Shift+P", app);
+    add(tr("Generate commit message"), "Ctrl+G", app);
+    add(tr("Commit checked files"), "Ctrl+Enter", tr("Commit view"));
+    add(tr("Focus history filter"), "Ctrl+F", tr("History"));
+    add(tr("Toggle one / two panes"), "Ctrl+T", tr("Diff visible"));
+    add(tr("Next change"), "F8", app);
+    add(tr("Previous change"), "Shift+F8", app);
+    add(tr("Copy selection"), "Ctrl+C", diff);
+    add(tr("Select all"), "Ctrl+A", diff);
+    add(tr("Scroll one line"), "↑ / ↓", diff);
+    add(tr("Scroll horizontally"), "← / →", diff);
+    add(tr("Scroll page down"), "Page Down / Space", diff);
+    add(tr("Scroll page up"), "Page Up", diff);
+    add(tr("Go to beginning / end"), "Ctrl+Home / Ctrl+End", diff);
+    add(tr("Clear selection"), "Esc", diff);
+    add(tr("Zoom"), tr("Ctrl+Mouse wheel"), diff);
+    add(tr("Toggle file for commit"), "Space", tr("Changes / Mini list"));
+    add(tr("Toggle file for commit"), tr("Ctrl+Click"), tr("Mini list"));
+    add(tr("Navigate items"), "↑ / ↓ / Home / End", tr("Lists / menus"));
+    add(tr("Scroll a page"), "Page Up / Page Down", tr("Lists"));
+    add(tr("Choose branch / menu item"), "Enter", tr("Menus"));
+    add(tr("Close menu / panel"), "Esc", tr("Menus / panels"));
+    add(tr("Focus next / previous control"), "Tab / Shift+Tab", app);
+    add(tr("Copy / cut / paste"), "Ctrl+C / Ctrl+X / Ctrl+V", text);
+    add(tr("Undo / redo"), "Ctrl+Z / Ctrl+Shift+Z", text);
+    add(tr("Select all"), "Ctrl+A", text);
+    add(tr("Move by word"), "Ctrl+← / Ctrl+→", text);
+    add(tr("Select while moving"), tr("Shift+Navigation key"), text);
+    add(tr("Delete previous / next word"), "Ctrl+Backspace / Ctrl+Delete", text);
+    add(tr("Go to line beginning / end"), "Home / End", text);
+    add(tr("Go to text beginning / end"), "Ctrl+Home / Ctrl+End", text);
+    layout->addWidget(list, 1);
+    auto *hint = dimLabel(tr("Type to filter · Esc to close"));
+    layout->addWidget(hint);
+    connect(search, &QLineEdit::textChanged, panel, [list, hint](const QString &query) {
+        const QStringList terms = query.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+        int count = 0;
+        for (int i = 0; i < list->topLevelItemCount(); ++i) {
+            auto *item = list->topLevelItem(i);
+            const QString haystack = item->text(0) + ' ' + item->text(1);
+            const bool matches = std::all_of(terms.cbegin(), terms.cend(), [&haystack](const QString &term) {
+                return haystack.contains(term, Qt::CaseInsensitive);
+            });
+            item->setHidden(!matches);
+            count += matches;
+        }
+        list->scrollToTop();
+        hint->setText(count ? tr("%1 keybindings · Esc to close").arg(count) : tr("No matching keybindings · Esc to close"));
+    });
+    new QShortcut(QKeySequence(Qt::Key_Down), search, list->verticalScrollBar(), [list] {
+        list->verticalScrollBar()->triggerAction(QAbstractSlider::SliderSingleStepAdd);
+    }, Qt::WidgetShortcut);
+    new QShortcut(QKeySequence(Qt::Key_Up), search, list->verticalScrollBar(), [list] {
+        list->verticalScrollBar()->triggerAction(QAbstractSlider::SliderSingleStepSub);
+    }, Qt::WidgetShortcut);
+    panel->resize(qMin(800, width()), qMin(500, height()));
+    panel->move(mapToGlobal(rect().center()) - panel->rect().center());
+    panel->show();
+    search->setFocus();
 }
 
 void MainWindow::setMode(Mode mode)
@@ -1324,7 +1426,8 @@ void MainWindow::showBranchMenu()
     // The field has the keyboard from the start, so typing filters right away.
     search->setFocus();
     QTimer::singleShot(0, search, [search] { search->setFocus(); });
-    menu.exec(m_branchButton->mapToGlobal(QPoint(0, m_branchButton->height())));
+    const int menuY = -menu.sizeHint().height();
+    menu.exec(m_branchButton->mapToGlobal(QPoint(0, menuY)));
 }
 
 void MainWindow::checkoutBranch(const QString &name)
@@ -1396,8 +1499,8 @@ void MainWindow::showRepoMenu()
     QAction *open = menu.addAction(icon(kFolderOpen) + tr("Open…"));
     open->setToolTip(tr("Pick a folder inside a git repository (Ctrl+O)"));
     connect(open, &QAction::triggered, this, &MainWindow::openRepositoryDialog);
-    // The button sits at the bottom, so the menu opens upwards from it.
-    menu.exec(m_repoButton->mapToGlobal(QPoint(0, -menu.sizeHint().height())));
+    const int menuY = -menu.sizeHint().height();
+    menu.exec(m_repoButton->mapToGlobal(QPoint(0, menuY)));
 }
 
 void MainWindow::openRepositoryDialog()

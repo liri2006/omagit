@@ -407,10 +407,11 @@ QStatusBar { background: %bg%; color: %dim%; border-top: 1px solid %hair%; }
 QStatusBar::item { border: none; }
 QLabel#sectionLabel { color: %dim%; }
 QLabel#dimLabel { color: %dim%; }
-QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
+QToolButton#keybindingsButton, QToolButton#layoutButton, QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
+QToolButton#layoutButton { color: %fg%; }
 QToolButton#branchButton { color: %acc%; }
-QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
-QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
+QToolButton#keybindingsButton:hover, QToolButton#layoutButton:hover, QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
+QToolButton#keybindingsButton:pressed, QToolButton#layoutButton:pressed, QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
 QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: 6px; }
 QMenu::item { padding: 6px 14px; border-radius: 0; }
 QMenu::item:selected { background: %fill8%; color: %acc%; }

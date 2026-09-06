@@ -336,11 +336,6 @@ MiniRail::MiniRail(QWidget *parent)
     m_hairlines << hairline();
     layout->addWidget(m_hairlines.last());
 
-    m_dockButton = railButton(paneLayoutGlyph(PaneLayout::Docked), QStringLiteral("D"),
-                              tr("Back to the Docked layout — the full left section (Ctrl+B)"));
-    connect(m_dockButton, &QToolButton::clicked, this, &MiniRail::dockRequested);
-    layout->addWidget(m_dockButton);
-
     m_refreshButton = railButton(kRefreshGlyph, QStringLiteral("R"), tr("Re-read the repository (F5)"));
     connect(m_refreshButton, &QToolButton::clicked, this, &MiniRail::refreshRequested);
     layout->addSpacing(4);
@@ -399,6 +394,5 @@ void MiniRail::applyTheme()
     m_fetchButton->setText(glyphOr(kFetchGlyph, QStringLiteral("F")));
     m_pullButton->setText(glyphOr(kPullGlyph, QStringLiteral("↓")));
     m_pushButton->setText(glyphOr(kPushGlyph, QStringLiteral("↑")));
-    m_dockButton->setText(glyphOr(paneLayoutGlyph(PaneLayout::Docked), QStringLiteral("D")));
     m_list->viewport()->update();
 }

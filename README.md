@@ -110,10 +110,13 @@ omagit [path]            # any directory or file inside a repository (default: c
 `--history` opens the history view, `--amend` starts with *Amend last commit* ticked,
 `--mini` starts in the Mini layout, `--full` with the diff pane hidden, and `--no-fetch` leaves the network alone.
 
+The footer's info button or **Ctrl+K** opens a searchable keybindings panel in either
+layout. Search by action, key combination, or context; **Esc** closes the panel.
+
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;
 `--screenshot-after <ms>` sets the delay, e.g. to catch a running fetch; `--screenshot-menu
-branch|repo|agent` opens that dropdown first and includes it in the picture, `--screenshot-keys
+branch|repo|agent|keybindings` opens that panel first and includes it in the picture, `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message),
 and `OMAGIT_THEME_DIR=/usr/share/omarchy/themes/tokyo-night` previews another theme.

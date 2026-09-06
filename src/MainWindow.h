@@ -59,6 +59,7 @@ public slots:
     void setInitialSelection(const QString &path) { m_initialSelection = path; }
 
 private slots:
+    void showKeybindings();
     void onCurrentRowChanged(const QModelIndex &current);
     void onCheckedChanged();
     void onAmendToggled(bool on);
@@ -126,7 +127,7 @@ private:
     bool m_streaming = false;    // a partial answer already replaced the message text
     QString m_messageBefore;     // the text the user had before the agent started, for a failed run
     QToolButton *m_branchButton; // the branch name; clicking it lists the branches
-    QToolButton *m_repoButton;   // the repository name in the footer; clicking it lists recent ones
+    QToolButton *m_repoButton;   // the repository name beside the branch; clicking it lists recent ones
     QLabel *m_statusLabel;       // the footer's message, the repository path when there is none
     QTimer *m_statusTimer;
     QWidget *m_footerLine;
@@ -142,7 +143,7 @@ private:
     QToolButton *m_nextButton;
     QToolButton *m_commitModeButton;
     QToolButton *m_historyModeButton;
-    QToolButton *m_layoutButton; // Docked/Mini toggle in the toolbar, checked in Mini
+    QToolButton *m_layoutButton; // Docked/Mini toggle in the footer, checked in Mini
     QToolButton *m_diffToggle;   // top right corner, checked while the diff pane shows
     QHBoxLayout *m_toolbarRow;   // the toolbar (+ the diff toggle while the diff pane is hidden)
     QHBoxLayout *m_navRow;       // the diff pane's Prev/Next row (+ the diff toggle while it shows)
