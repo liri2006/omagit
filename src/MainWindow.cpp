@@ -25,6 +25,7 @@
 #include <QStandardPaths>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSettings>
 #include <QShortcut>
 #include <QSortFilterProxyModel>
@@ -690,6 +691,12 @@ void MainWindow::refresh()
         branch += tr("   ·   amending %1").arg(head.shortHash);
     m_branchLabel->setText(branch);
     m_sync->refreshState();
+    // Re-selecting the row below scrolls the views to it; the user may have
+    // scrolled it out of view on purpose, so put the scroll offsets back after.
+    QScrollBar *const tableBar = m_table->verticalScrollBar();
+    QScrollBar *const railBar = m_rail->list()->verticalScrollBar();
+    const int tableScroll = tableBar->value();
+    const int railScroll = railBar->value();
     m_model->setChanges(m_repo->status());
 
     // Restore selection
@@ -707,6 +714,10 @@ void MainWindow::refresh()
             m_table->selectRow(0);
         else if (m_mode == CommitMode)
             m_diff->clear(tr("Working tree clean — nothing to commit."));
+    }
+    if (restored) {
+        tableBar->setValue(tableScroll);
+        railBar->setValue(railScroll);
     }
     onCheckedChanged();
 
