@@ -149,7 +149,7 @@ void ChangesModel::setAllChecked(bool checked)
     if (checked)
         for (const FileChange &c : m_changes)
             m_checked.insert(c.path);
-    emit dataChanged(index(0, Path), index(rowCount() - 1, Path), {Qt::CheckStateRole});
+    emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
     emit checkedChanged();
 }
 
@@ -162,7 +162,7 @@ void ChangesModel::setUnversionedChecked(bool checked)
             else
                 m_checked.remove(c.path);
         }
-    emit dataChanged(index(0, Path), index(rowCount() - 1, Path), {Qt::CheckStateRole});
+    emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
     emit checkedChanged();
 }
 
@@ -176,7 +176,7 @@ void ChangesModel::setPathsChecked(const QStringList &paths, bool checked)
             else
                 m_checked.remove(c.path);
         }
-    emit dataChanged(index(0, Path), index(rowCount() - 1, Path), {Qt::CheckStateRole});
+    emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
     emit checkedChanged();
 }
 
@@ -204,8 +204,11 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
         return index.column() == Size ? QVariant(c.size) : data(index, Qt::DisplayRole);
     case Qt::DisplayRole:
         switch (index.column()) {
-        case Path:
-            return c.oldPath.isEmpty() ? c.path : QStringLiteral("%1 (from %2)").arg(c.path, c.oldPath);
+        case Name: return c.path.section(QLatin1Char('/'), -1);
+        case Path: {
+            const int separator = c.path.lastIndexOf(QLatin1Char('/'));
+            return separator < 0 ? QString() : c.path.left(separator);
+        }
         case Extension: return c.extension();
         case Size: return c.size >= 0 ? QVariant(compactSize(c.size)) : QVariant();
         case Status: return c.statusText();
@@ -214,7 +217,7 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
         }
         break;
     case Qt::CheckStateRole:
-        if (m_checkable && index.column() == Path)
+        if (m_checkable && index.column() == Name)
             return m_checked.contains(c.path) ? Qt::Checked : Qt::Unchecked;
         break;
     case Qt::TextAlignmentRole:
@@ -262,7 +265,7 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
 
 bool ChangesModel::setData(const QModelIndex &index, const QVariant &value, int role)
 {
-    if (!m_checkable || !index.isValid() || role != Qt::CheckStateRole || index.column() != Path)
+    if (!m_checkable || !index.isValid() || role != Qt::CheckStateRole || index.column() != Name)
         return false;
     const QString &path = m_changes[index.row()].path;
     if (value.toInt() == Qt::Checked)
@@ -280,6 +283,7 @@ QVariant ChangesModel::headerData(int section, Qt::Orientation orientation, int 
         return {};
     switch (section) {
     case Number: return tr("#");
+    case Name: return tr("Name");
     case Path: return tr("Path");
     case Extension: return tr("Ext");
     case Size: return tr("Size");
@@ -293,7 +297,7 @@ QVariant ChangesModel::headerData(int section, Qt::Orientation orientation, int 
 Qt::ItemFlags ChangesModel::flags(const QModelIndex &index) const
 {
     Qt::ItemFlags f = Qt::ItemIsEnabled | Qt::ItemIsSelectable;
-    if (m_checkable && index.column() == Path)
+    if (m_checkable && index.column() == Name)
         f |= Qt::ItemIsUserCheckable;
     return f;
 }
@@ -318,6 +322,7 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->setItemDelegate(new AccentSelectionDelegate(table));
     table->setItemDelegateForColumn(ChangesModel::Number, new RowNumberDelegate(table));
     table->setColumnWidth(ChangesModel::Number, 40);
+    table->setColumnWidth(ChangesModel::Name, 240);
     table->setColumnWidth(ChangesModel::Extension, 64);
     table->setColumnWidth(ChangesModel::Size, 100);
     table->setColumnWidth(ChangesModel::Status, 104);
@@ -325,7 +330,7 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->setColumnWidth(ChangesModel::LinesRemoved, 92);
     table->setTextElideMode(Qt::ElideMiddle);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->sortByColumn(ChangesModel::Path, Qt::AscendingOrder);
+    table->sortByColumn(ChangesModel::Name, Qt::AscendingOrder);
     table->horizontalHeader()->installEventFilter(this);
     applyTheme();
 }
