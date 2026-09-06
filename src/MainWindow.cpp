@@ -3,8 +3,10 @@
 #include "DiffModel.h"
 #include "DiffView.h"
 #include "HistoryView.h"
+#include "MessageEdit.h"
 #include "MiniRail.h"
 #include "OmarchyTheme.h"
+#include "TickMenu.h"
 #include "Toolbar.h"
 
 #include <QAction>
@@ -13,17 +15,20 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QEvent>
+#include <QFileDialog>
 #include <QFileSystemWatcher>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeySequence>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeDatabase>
 #include <QProcess>
 #include <QStandardPaths>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSettings>
@@ -31,12 +36,14 @@
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QStackedWidget>
-#include <QStatusBar>
 #include <QTableView>
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWidgetAction>
+
+#include <algorithm>
 
 namespace {
 class UnversionedFilter : public QSortFilterProxyModel
@@ -55,16 +62,34 @@ protected:
         return !m->change(row).isUntracked();
     }
 };
+QStringList spinnerFrames(const QFont &font);
 } // namespace
 
 MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     : QMainWindow(parent), m_repo(repo)
 {
-    setWindowTitle(QStringLiteral("OmaGit — %1").arg(QDir(repo->root()).dirName()));
     setWindowIcon(QIcon(QStringLiteral(":/omagit.svg")));
     m_sync = new RemoteSync(repo, this);
+    m_agent = new CommitMessageAgent(this);
+    connect(m_agent, &CommitMessageAgent::partial, this, [this](const QString &text) {
+        m_message->replaceText(text, m_streaming);
+        m_streaming = true;
+    });
+    connect(m_agent, &CommitMessageAgent::finished, this, &MainWindow::onMessageGenerated);
+    // The CLIs are asked for their models and levels ahead of the cog menu.
+    for (const AgentSpec &agent : CommitMessageAgent::installedAgents())
+        CommitMessageAgent::probeAsync(agent.id, this);
+    m_spinner = new QTimer(this);
+    m_spinner->setInterval(80);
+    connect(m_spinner, &QTimer::timeout, this, [this] {
+        const QStringList frames = spinnerFrames(m_message->font());
+        m_spinnerFrame = (m_spinnerFrame + 1) % frames.size();
+        m_message->cornerButton()->setText(frames.at(m_spinnerFrame));
+    });
     buildUi();
     applyTheme();
+    updateRepoLabels();
+    rememberRepository(repo->root());
     connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &MainWindow::applyTheme);
 
     QSettings settings;
@@ -94,6 +119,41 @@ constexpr uint kRefresh = 0xF0450, kArrowUp = 0xF005D, kArrowDown = 0xF0045, kCo
                kBranch = 0xF062C, kSplit = 0xF0BCC, kPilcrow = 0xF06D8, kHistory = 0xF02DA;
 // md-cloud_download, md-tray_arrow_down, md-tray_arrow_up, md-dock_right
 constexpr uint kFetch = 0xF0162, kPull = 0xF0120, kPush = 0xF011D, kDockRight = 0xF10AB;
+// md-chevron_down, md-folder, md-folder_open
+constexpr uint kChevron = 0xF0140, kFolder = 0xF024B, kFolderOpen = 0xF0770, kMagnify = 0xF0349;
+// md-creation (the sparkle of "generate"), md-cog, md-robot
+constexpr uint kSparkle = 0xF0674, kCog = 0xF0493, kRobot = 0xF06A9;
+
+// The frames of the generate button while an agent thinks: a braille spinner
+// when the font has one, a turning circle otherwise.
+QStringList spinnerFrames(const QFont &font)
+{
+    const QFontMetrics fm(font);
+    if (fm.inFont(QChar(0x280B)))
+        return {QStringLiteral("⠋"), QStringLiteral("⠙"), QStringLiteral("⠹"), QStringLiteral("⠸"), QStringLiteral("⠼"),
+                QStringLiteral("⠴"), QStringLiteral("⠦"), QStringLiteral("⠧"), QStringLiteral("⠇"), QStringLiteral("⠏")};
+    if (fm.inFont(QChar(0x25D0)))
+        return {QStringLiteral("◐"), QStringLiteral("◓"), QStringLiteral("◑"), QStringLiteral("◒")};
+    return {QStringLiteral("|"), QStringLiteral("/"), QStringLiteral("-"), QStringLiteral("\\")};
+}
+
+// The "this opens a list" mark at the end of a dropdown button's text.
+QString chevron()
+{
+    const QString g = OmarchyTheme::instance()->glyph(kChevron);
+    return QStringLiteral("  ") + (g.isEmpty() ? QStringLiteral("▾") : g);
+}
+
+// "/home/me/Projects/x" → "~/Projects/x"
+QString tildePath(const QString &path)
+{
+    const QString home = QDir::homePath();
+    if (path == home)
+        return QStringLiteral("~");
+    if (path.startsWith(home + QLatin1Char('/')))
+        return QStringLiteral("~") + path.mid(home.size());
+    return path;
+}
 
 // The program the desktop opens a file with (what QDesktopServices::openUrl
 // will use): `xdg-mime query default <mime>` names a desktop file, whose
@@ -185,11 +245,38 @@ QToolButton *smallButton(uint glyph, const QString &fallback, const QString &tip
     b->setObjectName(QStringLiteral("smallButton"));
     return b;
 }
+
+// A borderless button that reads like a label and drops a menu down on click.
+QToolButton *dropdownButton(const QString &objectName)
+{
+    auto *b = toolButton(QString());
+    b->setObjectName(objectName);
+    b->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    return b;
+}
+
+QWidget *hairline()
+{
+    auto *w = new QWidget;
+    w->setFixedHeight(1);
+    w->setAutoFillBackground(true);
+    return w;
+}
+
+// A dim caption inside a menu, like the section labels of the dialog.
+QAction *addMenuHeader(QMenu *menu, const QString &text)
+{
+    auto *action = new QWidgetAction(menu);
+    QLabel *label = sectionLabel(text);
+    label->setContentsMargins(14, 6, 14, 3);
+    action->setDefaultWidget(label);
+    menu->addAction(action);
+    return action;
+}
 } // namespace
 
 void MainWindow::buildUi()
 {
-    const OmarchyTheme *theme = OmarchyTheme::instance();
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
     rootLayout->setContentsMargins(14, 12, 14, 8);
@@ -384,27 +471,39 @@ void MainWindow::buildUi()
     body->addWidget(splitter, 1);
     rootLayout->addLayout(body, 1);
 
+    // ---- Footer: the repository (a dropdown of recent ones) and messages
+    m_footerLine = hairline();
+    rootLayout->addWidget(m_footerLine);
+    auto *footer = new QHBoxLayout;
+    footer->setSpacing(8);
+    m_repoButton = dropdownButton(QStringLiteral("repoButton"));
+    connect(m_repoButton, &QToolButton::clicked, this, &MainWindow::showRepoMenu);
+    new QShortcut(QKeySequence::Open, this, this, &MainWindow::openRepositoryDialog);
+    m_statusLabel = dimLabel();
+    m_statusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_statusLabel->setMinimumWidth(0);
+    m_statusTimer = new QTimer(this);
+    m_statusTimer->setSingleShot(true);
+    connect(m_statusTimer, &QTimer::timeout, this, [this] { m_statusLabel->setText(tildePath(m_repo->root())); });
+    footer->addWidget(m_repoButton);
+    footer->addWidget(m_statusLabel, 1);
+    rootLayout->addLayout(footer);
+
     setCentralWidget(central);
-    statusBar()->setSizeGripEnabled(false);
-    statusBar()->setFont(theme->captionFont());
-    statusBar()->showMessage(m_repo->root());
 
     // Refresh the list when the working tree changes (coarse: repo root + .git index).
-    auto *watcher = new QFileSystemWatcher(this);
-    watcher->addPath(m_repo->root());
-    const QString indexFile = m_repo->root() + QStringLiteral("/.git/index");
-    if (QFile::exists(indexFile))
-        watcher->addPath(indexFile);
+    m_watcher = new QFileSystemWatcher(this);
     auto *debounce = new QTimer(this);
     debounce->setSingleShot(true);
     debounce->setInterval(500);
     connect(debounce, &QTimer::timeout, this, &MainWindow::refresh);
-    connect(watcher, &QFileSystemWatcher::directoryChanged, debounce, qOverload<>(&QTimer::start));
-    connect(watcher, &QFileSystemWatcher::fileChanged, this, [watcher, debounce, indexFile] {
-        if (!watcher->files().contains(indexFile) && QFile::exists(indexFile))
-            watcher->addPath(indexFile);
+    connect(m_watcher, &QFileSystemWatcher::directoryChanged, debounce, qOverload<>(&QTimer::start));
+    connect(m_watcher, &QFileSystemWatcher::fileChanged, this, [this, debounce] {
+        if (!m_watcher->files().contains(m_indexFile) && QFile::exists(m_indexFile))
+            m_watcher->addPath(m_indexFile);
         debounce->start();
     });
+    watchWorkingTree();
     // ... and when refs move (a fetch, pull or push, also one made in a terminal).
     connect(m_sync, &RemoteSync::repositoryChanged, debounce, qOverload<>(&QTimer::start));
 }
@@ -418,21 +517,37 @@ QWidget *MainWindow::buildCommitPage()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
 
+    // The branch name is a dropdown: clicking it lists the local and remote
+    // branches, picking one checks it out.
     auto *branchRow = new QHBoxLayout;
     branchRow->setSpacing(8);
-    branchRow->addWidget(sectionLabel(tr("Commit to")));
-    m_branchLabel = new QLabel;
-    m_branchLabel->setObjectName(QStringLiteral("branchLabel"));
-    m_branchLabel->setFont(theme->titleFont());
-    branchRow->addWidget(m_branchLabel);
+    branchRow->addWidget(sectionLabel(tr("Branch")));
+    m_branchButton = dropdownButton(QStringLiteral("branchButton"));
+    m_branchButton->setFont(theme->titleFont());
+    connect(m_branchButton, &QToolButton::clicked, this, &MainWindow::showBranchMenu);
+    branchRow->addWidget(m_branchButton);
     branchRow->addStretch();
     layout->addLayout(branchRow);
 
-    layout->addWidget(sectionLabel(tr("Message")));
-    m_message = new QPlainTextEdit;
+    // MESSAGE, with the agent settings at the far right; the message box has
+    // the generate button in its top right corner.
+    auto *messageRow = new QHBoxLayout;
+    messageRow->addWidget(sectionLabel(tr("Message")));
+    messageRow->addStretch();
+    m_agentButton = smallButton(kCog, tr("⚙"), tr("Which coding agent writes the commit message, with which model and reasoning level"));
+    connect(m_agentButton, &QToolButton::clicked, this, &MainWindow::showAgentMenu);
+    messageRow->addWidget(m_agentButton);
+    layout->addLayout(messageRow);
+
+    m_message = new MessageEdit;
     m_message->setPlaceholderText(tr("Commit message"));
     m_message->setFixedHeight(theme->fontBase() * 7);
     layout->addWidget(m_message);
+    QToolButton *generate = m_message->cornerButton();
+    generate->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
+    connect(generate, &QToolButton::clicked, this, &MainWindow::generateMessage);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_G), this, this, &MainWindow::generateMessage);
+    setGenerating(false);
 
     auto *changesRow = new QHBoxLayout;
     changesRow->addWidget(sectionLabel(tr("Changes")));
@@ -658,12 +773,18 @@ void MainWindow::applyTheme()
     m_toolbar->applyTheme();
     m_message->setFont(theme->uiFont());
     m_message->setFixedHeight(theme->fontBase() * 7);
-    m_branchLabel->setFont(theme->titleFont());
+    m_message->applyTheme();
+    m_branchButton->setFont(theme->titleFont());
+    m_repoButton->setFont(theme->uiFont());
     for (QLabel *l : findChildren<QLabel *>()) {
         if (l->objectName() == QLatin1String("sectionLabel") || l->objectName() == QLatin1String("dimLabel"))
             l->setFont(theme->captionFont());
     }
-    statusBar()->setFont(theme->captionFont());
+    {
+        QPalette pal = m_footerLine->palette();
+        pal.setColor(QPalette::Window, theme->border());
+        m_footerLine->setPalette(pal);
+    }
     m_tableSetup->applyTheme();
     m_history->applyTheme();
     m_rail->applyTheme();
@@ -686,10 +807,10 @@ void MainWindow::refresh()
     m_amend->setToolTip(head.isValid() ? tr("Rewrite the last commit (%1: %2) with the checked files and the message above")
                                              .arg(head.shortHash, head.subject)
                                        : tr("There is no commit to amend yet"));
-    QString branch = icon(kBranch) + m_repo->branch();
+    QString branch = icon(kBranch) + m_repo->branch() + chevron();
     if (m_repo->amending() && head.isValid())
         branch += tr("   ·   amending %1").arg(head.shortHash);
-    m_branchLabel->setText(branch);
+    m_branchButton->setText(branch);
     m_sync->refreshState();
     // Re-selecting the row below scrolls the views to it; the user may have
     // scrolled it out of view on purpose, so put the scroll offsets back after.
@@ -890,9 +1011,9 @@ void MainWindow::commit()
     m_message->clear();
     if (amend) {
         m_amend->setChecked(false); // also refreshes
-        statusBar()->showMessage(tr("Amended the last commit on %1 with %2 file(s)").arg(m_repo->branch()).arg(count), 5000);
+        showStatus(tr("Amended the last commit on %1 with %2 file(s)").arg(m_repo->branch()).arg(count), 5000);
     } else {
-        statusBar()->showMessage(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
+        showStatus(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
         refresh();
     }
 }
@@ -982,7 +1103,9 @@ void MainWindow::updateSyncButtons()
         upstream = tr("No upstream — Push publishes %1 on %2").arg(s.branch, s.remote);
     else if (!s.branch.isEmpty() && s.remotes.isEmpty())
         upstream = tr("No remote configured");
-    m_branchLabel->setToolTip(upstream);
+    if (!upstream.isEmpty())
+        upstream += QLatin1Char('\n');
+    m_branchButton->setToolTip(upstream + tr("Click to switch to another branch"));
 }
 
 void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, const QString &message)
@@ -993,7 +1116,7 @@ void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, cons
                                                       : tr("Push failed");
         QMessageBox::critical(this, title, message);
     }
-    statusBar()->showMessage(message.section(QLatin1Char('\n'), 0, 0), ok ? 8000 : 15000);
+    showStatus(message.section(QLatin1Char('\n'), 0, 0), ok ? 8000 : 15000);
     if (op != RemoteSync::Fetch || ok)
         refresh();
 }
@@ -1005,4 +1128,480 @@ void MainWindow::openInEditor()
     if (!ok || c.kind == FileChange::Deleted)
         return;
     QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(m_repo->root()).filePath(c.path)));
+}
+
+// ---------------------------------------------------------------------------
+// Branches
+
+// The branch entries plus the search field above them: typing narrows the
+// list, Up/Down move the highlight without leaving the field, Return picks
+// the highlighted (else the first) match, Escape closes.
+class BranchSearch : public QObject
+{
+public:
+    BranchSearch(TickMenu *menu, QLineEdit *edit)
+        : QObject(menu), m_menu(menu), m_edit(edit)
+    {
+        edit->installEventFilter(this);
+        connect(edit, &QLineEdit::textChanged, this, &BranchSearch::apply);
+    }
+
+    void addHeader(QAction *header) { m_sections.append(Section{header, {}}); }
+    void addEntry(QAction *action, const QString &name)
+    {
+        m_entries.append(Entry{action, name});
+        if (!m_sections.isEmpty())
+            m_sections.last().entries.append(action);
+    }
+    void setNoMatch(QAction *action) { m_noMatch = action; }
+
+    void apply()
+    {
+        const QString text = m_edit->text().trimmed();
+        for (const Entry &e : std::as_const(m_entries))
+            e.action->setVisible(e.name.contains(text, Qt::CaseInsensitive));
+        for (const Section &s : std::as_const(m_sections)) {
+            const bool any = std::any_of(s.entries.cbegin(), s.entries.cend(), [](QAction *a) { return a->isVisible(); });
+            setVisible(s.header, any || text.isEmpty());
+        }
+        const QList<QAction *> shown = visible();
+        if (m_noMatch)
+            setVisible(m_noMatch, shown.isEmpty() && !text.isEmpty());
+        m_menu->setActiveAction(text.isEmpty() ? nullptr : shown.value(0));
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched != m_edit || event->type() != QEvent::KeyPress)
+            return false;
+        auto *key = static_cast<QKeyEvent *>(event);
+        switch (key->key()) {
+        case Qt::Key_Down:
+        case Qt::Key_Up: {
+            const QList<QAction *> shown = visible();
+            if (shown.isEmpty())
+                return true;
+            const int at = shown.indexOf(m_menu->activeAction());
+            const int step = key->key() == Qt::Key_Down ? 1 : -1;
+            const int next = at < 0 ? (step > 0 ? 0 : shown.size() - 1) : (at + step + shown.size()) % shown.size();
+            m_menu->setActiveAction(shown.at(next));
+            return true;
+        }
+        case Qt::Key_Return:
+        case Qt::Key_Enter: {
+            QAction *pick = m_menu->activeAction();
+            if (!pick || !visible().contains(pick))
+                pick = visible().value(0);
+            if (pick) {
+                m_menu->close(); // like a click: the menu is gone before the branch switches
+                pick->trigger();
+            }
+            return true;
+        }
+        default:
+            return false;
+        }
+    }
+
+private:
+    struct Entry {
+        QAction *action;
+        QString name;
+    };
+    struct Section {
+        QAction *header;
+        QList<QAction *> entries;
+    };
+    // QMenu leaves the widget of a hidden QWidgetAction where it was, so it is hidden by hand.
+    static void setVisible(QAction *action, bool on)
+    {
+        action->setVisible(on);
+        if (auto *wa = qobject_cast<QWidgetAction *>(action))
+            wa->defaultWidget()->setVisible(on);
+    }
+    QList<QAction *> visible() const
+    {
+        QList<QAction *> list;
+        for (const Entry &e : m_entries)
+            if (e.action->isVisible() && e.action->isEnabled())
+                list.append(e.action);
+        return list;
+    }
+
+    TickMenu *m_menu;
+    QLineEdit *m_edit;
+    QList<Entry> m_entries;
+    QList<Section> m_sections;
+    QAction *m_noMatch = nullptr;
+};
+
+void MainWindow::showBranchMenu()
+{
+    const BranchList branches = m_repo->branches();
+    TickMenu menu(this);
+    menu.setToolTipsVisible(true);
+
+    auto *search = new QLineEdit;
+    search->setPlaceholderText(icon(kMagnify) + tr("Search branches"));
+    search->setToolTip(tr("Type to narrow the list; Up/Down and Return pick a branch"));
+    auto *searchBox = new QWidget;
+    auto *searchLayout = new QHBoxLayout(searchBox);
+    searchLayout->setContentsMargins(8, 4, 8, 6);
+    searchLayout->addWidget(search);
+    auto *searchAction = new QWidgetAction(&menu);
+    searchAction->setDefaultWidget(searchBox);
+    menu.addAction(searchAction);
+    auto *filter = new BranchSearch(&menu, search);
+
+    // Every entry is checkable so the tick can mark the current branch.
+    auto add = [this, &menu, &branches, filter](const QString &name) {
+        QAction *a = menu.addAction(name);
+        a->setCheckable(true);
+        a->setChecked(name == branches.current);
+        connect(a, &QAction::triggered, this, [this, name] { checkoutBranch(name); });
+        filter->addEntry(a, name);
+        return a;
+    };
+    filter->addHeader(addMenuHeader(&menu, tr("Local")));
+    if (branches.local.isEmpty())
+        menu.addAction(tr("No branches yet"))->setEnabled(false);
+    for (const QString &name : branches.local)
+        add(name)->setToolTip(tr("Switch to %1").arg(name));
+    if (!branches.remote.isEmpty()) {
+        menu.addSeparator();
+        filter->addHeader(addMenuHeader(&menu, tr("Remote")));
+        for (const QString &name : branches.remote) {
+            const QString local = name.section(QLatin1Char('/'), 1);
+            add(name)->setToolTip(branches.local.contains(local)
+                                      ? tr("Switch to the local branch %1").arg(local)
+                                      : tr("Create the local branch %1 tracking %2 and switch to it").arg(local, name));
+        }
+    }
+    QAction *noMatch = menu.addAction(tr("No matching branch"));
+    noMatch->setEnabled(false);
+    noMatch->setVisible(false);
+    filter->setNoMatch(noMatch);
+
+    // The field has the keyboard from the start, so typing filters right away.
+    search->setFocus();
+    QTimer::singleShot(0, search, [search] { search->setFocus(); });
+    menu.exec(m_branchButton->mapToGlobal(QPoint(0, m_branchButton->height())));
+}
+
+void MainWindow::checkoutBranch(const QString &name)
+{
+    if (name == m_repo->branches().current)
+        return;
+    QString error;
+    if (!m_repo->checkout(name, &error)) {
+        QMessageBox::critical(this, tr("Switch branch"), tr("Could not switch to %1.\n\n%2").arg(name, error));
+        return;
+    }
+    refresh();
+    showStatus(tr("Switched to %1").arg(m_repo->branch()), 5000);
+}
+
+// ---------------------------------------------------------------------------
+// Repositories
+
+namespace {
+const auto kRecentKey = QStringLiteral("repos/recent");
+constexpr int kRecentMax = 15;
+} // namespace
+
+QStringList MainWindow::recentRepositories()
+{
+    QSettings settings;
+    const QStringList stored = settings.value(kRecentKey).toStringList();
+    QStringList list;
+    for (const QString &root : stored) {
+        if (QFileInfo(root).isDir() && !list.contains(root))
+            list << root;
+    }
+    if (list != stored)
+        settings.setValue(kRecentKey, list);
+    return list;
+}
+
+void MainWindow::rememberRepository(const QString &root)
+{
+    QStringList list = recentRepositories();
+    list.removeAll(root);
+    list.prepend(root);
+    while (list.size() > kRecentMax)
+        list.removeLast();
+    QSettings().setValue(kRecentKey, list);
+}
+
+void MainWindow::showRepoMenu()
+{
+    TickMenu menu(this);
+    menu.setToolTipsVisible(true);
+    const QStringList recent = recentRepositories();
+    QHash<QString, int> names; // two repositories called "app" are told apart by their parent
+    for (const QString &root : recent)
+        ++names[QDir(root).dirName()];
+    for (const QString &root : recent) {
+        const QString name = QDir(root).dirName();
+        QString text = icon(kFolder) + name;
+        if (names.value(name) > 1)
+            text += QStringLiteral("   ·   ") + tildePath(QFileInfo(root).path());
+        QAction *a = menu.addAction(text);
+        a->setCheckable(true);
+        a->setChecked(root == m_repo->root());
+        a->setToolTip(root);
+        connect(a, &QAction::triggered, this, [this, root] { openRepository(root); });
+    }
+    if (!recent.isEmpty())
+        menu.addSeparator();
+    QAction *open = menu.addAction(icon(kFolderOpen) + tr("Open…"));
+    open->setToolTip(tr("Pick a folder inside a git repository (Ctrl+O)"));
+    connect(open, &QAction::triggered, this, &MainWindow::openRepositoryDialog);
+    // The button sits at the bottom, so the menu opens upwards from it.
+    menu.exec(m_repoButton->mapToGlobal(QPoint(0, -menu.sizeHint().height())));
+}
+
+void MainWindow::openRepositoryDialog()
+{
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Open repository"), QFileInfo(m_repo->root()).path(),
+                                                          QFileDialog::ShowDirsOnly);
+    if (!dir.isEmpty())
+        openRepository(dir);
+}
+
+bool MainWindow::openRepository(const QString &path)
+{
+    QString error;
+    const QString root = GitRepo::findRoot(path, &error);
+    if (root.isEmpty()) {
+        QMessageBox::warning(this, tr("Open repository"),
+                             tr("%1 is not inside a git repository.\n\n%2").arg(tildePath(path), error));
+        return false;
+    }
+    if (root == m_repo->root())
+        return true;
+
+    m_initialSelection.clear();
+    m_repo->setRoot(root); // RemoteSync follows through rootChanged
+    {
+        // The amend state belonged to the old repository; onAmendToggled(false)
+        // also drops its message from the box and refreshes.
+        QSignalBlocker blocker(m_amend);
+        m_amend->setChecked(false);
+    }
+    onAmendToggled(false);
+    watchWorkingTree();
+    updateRepoLabels();
+    rememberRepository(root);
+    showStatus(tr("Opened %1").arg(tildePath(root)), 5000);
+    return true;
+}
+
+void MainWindow::watchWorkingTree()
+{
+    if (!m_watcher->directories().isEmpty())
+        m_watcher->removePaths(m_watcher->directories());
+    if (!m_watcher->files().isEmpty())
+        m_watcher->removePaths(m_watcher->files());
+    m_watcher->addPath(m_repo->root());
+    m_indexFile = m_repo->gitDir() + QStringLiteral("/index");
+    if (QFile::exists(m_indexFile))
+        m_watcher->addPath(m_indexFile);
+}
+
+void MainWindow::updateRepoLabels()
+{
+    const QString name = QDir(m_repo->root()).dirName();
+    setWindowTitle(QStringLiteral("OmaGit — %1").arg(name));
+    m_repoButton->setText(icon(kFolder) + name + chevron());
+    m_repoButton->setToolTip(tr("%1\nClick for the repositories opened lately, Ctrl+O to open another one")
+                                 .arg(m_repo->root()));
+    m_statusTimer->stop();
+    m_statusLabel->setText(tildePath(m_repo->root()));
+}
+
+// ---- Commit message from a coding agent -----------------------------------
+
+void MainWindow::setGenerating(bool on)
+{
+    QToolButton *b = m_message->cornerButton();
+    const AgentChoice choice = CommitMessageAgent::savedChoice();
+    const AgentSpec agent = CommitMessageAgent::spec(choice.agent);
+    if (on) {
+        m_spinnerFrame = 0;
+        b->setText(spinnerFrames(m_message->font()).first());
+        b->setToolTip(tr("%1 is writing the message… click to stop").arg(agent.name));
+        m_spinner->start();
+    } else {
+        m_spinner->stop();
+        b->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
+        if (agent.isValid()) {
+            const QString model = choice.model.isEmpty() ? tr("default model") : choice.model;
+            b->setToolTip(tr("Let %1 (%2) write a commit message for the checked changes (Ctrl+G)").arg(agent.name, model));
+        } else {
+            b->setToolTip(tr("Write a commit message with a coding agent — none is installed (Ctrl+G)"));
+        }
+    }
+}
+
+void MainWindow::generateMessage()
+{
+    if (m_agent->running()) {
+        m_agent->cancel();
+        setGenerating(false);
+        showStatus(tr("Stopped"), 3000);
+        return;
+    }
+    if (m_mode != CommitMode)
+        setMode(CommitMode);
+    const AgentChoice choice = CommitMessageAgent::savedChoice();
+    if (choice.agent.isEmpty()) {
+        showStatus(tr("Neither claude nor codex is installed — `omarchy default agent claude` sets one up"), 8000);
+        return;
+    }
+    // The checked files are what the message is for; with nothing checked,
+    // everything in the list (as an editor describes all changes when
+    // nothing is staged).
+    QList<FileChange> changes = m_model->checkedChanges();
+    if (changes.isEmpty()) {
+        for (int i = 0; i < m_model->count(); ++i) {
+            const FileChange &c = m_model->change(i);
+            if (m_showUnversioned->isChecked() || !c.isUntracked())
+                changes << c;
+        }
+    }
+    if (changes.isEmpty()) {
+        showStatus(tr("No changes to describe"), 4000);
+        return;
+    }
+    QString diff = tr("Branch: %1\n").arg(m_repo->branch());
+    if (m_amend->isChecked() && !m_headMessage.isEmpty())
+        diff += tr("The message of the commit being amended (rewrite it to cover the whole change):\n%1\n").arg(m_headMessage);
+    diff += QLatin1Char('\n') + m_repo->patch(changes);
+    m_streaming = false;
+    m_messageBefore = m_message->toPlainText();
+    setGenerating(true);
+    showStatus(tr("Asking %1 for a commit message…").arg(CommitMessageAgent::spec(choice.agent).name));
+    m_agent->generate(choice, m_repo->root(), diff);
+}
+
+void MainWindow::onMessageGenerated(bool ok, const QString &text)
+{
+    setGenerating(false);
+    if (!ok) {
+        // Whatever the agent streamed before failing is not a message.
+        if (m_streaming)
+            m_message->replaceText(m_messageBefore, true);
+        showStatus(tr("No commit message: %1").arg(text), 12000);
+        return;
+    }
+    m_message->replaceText(text, m_streaming);
+    m_message->setFocus();
+    showStatus(tr("Commit message written by %1").arg(CommitMessageAgent::spec(CommitMessageAgent::savedChoice().agent).name),
+               4000);
+}
+
+// The cog's menu: AGENT (Claude Code and Codex, whichever is installed),
+// MODEL and REASONING as the chosen agent's CLI names them (`claude --help`,
+// `codex debug models`; Codex has levels per model), or any model by name.
+void MainWindow::showAgentMenu()
+{
+    TickMenu menu(this);
+    menu.setToolTipsVisible(true);
+    AgentChoice choice = CommitMessageAgent::savedChoice();
+    const auto save = [this](const AgentChoice &c) {
+        CommitMessageAgent::saveChoice(c);
+        setGenerating(m_agent->running());
+    };
+
+    addMenuHeader(&menu, tr("Agent"));
+    const QList<AgentSpec> installed = CommitMessageAgent::installedAgents();
+    if (installed.isEmpty()) {
+        QAction *none = menu.addAction(tr("None installed"));
+        none->setEnabled(false);
+        none->setToolTip(tr("`omarchy default agent claude` (or codex) installs one"));
+    }
+    const QString omarchyDefault = CommitMessageAgent::omarchyDefaultAgent();
+    for (const AgentSpec &agent : installed) {
+        QAction *a = menu.addAction(icon(kRobot) + agent.name);
+        a->setCheckable(true);
+        a->setChecked(agent.id == choice.agent);
+        a->setToolTip(agent.id == omarchyDefault ? tr("%1 — Omarchy's default agent").arg(agent.binary) : agent.binary);
+        connect(a, &QAction::triggered, this, [save, agent] {
+            // A model and a level belong to the agent they were picked for.
+            save(AgentChoice{agent.id, QString(), QString()});
+        });
+    }
+
+    const AgentSpec current = CommitMessageAgent::spec(choice.agent);
+    if (current.isValid()) {
+        const AgentCatalog catalog = CommitMessageAgent::catalog(choice.agent);
+        menu.addSeparator();
+        addMenuHeader(&menu, tr("Model"));
+        QAction *def = menu.addAction(tr("Default"));
+        def->setCheckable(true);
+        def->setChecked(choice.model.isEmpty());
+        def->setToolTip(tr("Whatever %1 is set to use").arg(current.name));
+        connect(def, &QAction::triggered, this, [save, choice] { save(AgentChoice{choice.agent, QString(), choice.effort}); });
+        QList<AgentModel> models = catalog.models;
+        const bool known = std::any_of(models.cbegin(), models.cend(), [&](const AgentModel &m) { return m.id == choice.model; });
+        if (!choice.model.isEmpty() && !known)
+            models.prepend(AgentModel{choice.model, choice.model, {}, {}});
+        for (const AgentModel &m : std::as_const(models)) {
+            QAction *a = menu.addAction(m.name);
+            a->setCheckable(true);
+            a->setChecked(m.id == choice.model);
+            a->setToolTip(m.id);
+            connect(a, &QAction::triggered, this, [save, choice, m] {
+                // A level the new model does not have goes back to its default.
+                const QString effort = m.efforts.isEmpty() || m.efforts.contains(choice.effort) ? choice.effort : QString();
+                save(AgentChoice{choice.agent, m.id, effort});
+            });
+        }
+        if (models.isEmpty() && !catalog.error.isEmpty()) {
+            QAction *err = menu.addAction(tr("Could not read the models"));
+            err->setEnabled(false);
+            err->setToolTip(catalog.error);
+        }
+        QAction *other = menu.addAction(tr("Other…"));
+        other->setToolTip(tr("A model by name, as %1 --model takes it").arg(current.binary));
+        connect(other, &QAction::triggered, this, [this, save, choice, current] {
+            bool ok = false;
+            const QString id = QInputDialog::getText(this, tr("Model"), tr("Model name for %1:").arg(current.name),
+                                                     QLineEdit::Normal, choice.model, &ok)
+                                   .trimmed();
+            if (ok)
+                save(AgentChoice{choice.agent, id, choice.effort});
+        });
+
+        const QStringList efforts = catalog.effortsFor(choice.model);
+        if (!efforts.isEmpty()) {
+            menu.addSeparator();
+            addMenuHeader(&menu, tr("Reasoning"));
+            QAction *defEffort = menu.addAction(tr("Default"));
+            defEffort->setCheckable(true);
+            defEffort->setChecked(choice.effort.isEmpty());
+            connect(defEffort, &QAction::triggered, this,
+                    [save, choice] { save(AgentChoice{choice.agent, choice.model, QString()}); });
+            for (const QString &level : efforts) {
+                QAction *a = menu.addAction(level.at(0).toUpper() + level.mid(1));
+                a->setCheckable(true);
+                a->setChecked(level == choice.effort);
+                connect(a, &QAction::triggered, this,
+                        [save, choice, level] { save(AgentChoice{choice.agent, choice.model, level}); });
+            }
+        }
+    }
+    // The cog sits at the right edge, so the menu hangs from its right corner.
+    menu.exec(m_agentButton->mapToGlobal(QPoint(m_agentButton->width() - menu.sizeHint().width(), m_agentButton->height())));
+}
+
+void MainWindow::showStatus(const QString &text, int ms)
+{
+    m_statusLabel->setText(text);
+    if (ms > 0)
+        m_statusTimer->start(ms);
+    else
+        m_statusTimer->stop();
 }

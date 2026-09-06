@@ -18,6 +18,31 @@ history with a branch graph, and plugs into the Nautilus context menu as
   next/previous change navigation (F8 / Shift+F8), optional whitespace markers, text selection
   and copy, and Ctrl+wheel zoom.
 - Commit the checked files with a message (Ctrl+Enter).
+- **Commit message from a coding agent**: the sparkle in the top right corner of the message
+  box (Ctrl+G) hands the checked changes (all of them when none is checked) to a coding
+  agent CLI and puts its answer in the box, the way Cursor's generate button does; Ctrl+Z
+  brings your own text back, and a click on the spinner stops the run. The message is one
+  imperative subject line naming the essence of the change and, when the change delivers
+  more than one thing of value, a bullet per thing — as many as there are, none for details
+  or files. The cog at the right of the MESSAGE label picks the **agent** — Claude Code or
+  Codex, whichever is installed (Omarchy's default agent to begin with) — the **model** and
+  the **reasoning** level. Models and levels are what the CLI itself names: `claude --help`'s
+  model aliases and `--effort` levels, `codex debug models`' catalog with each model's own
+  levels; *Other…* takes any model by name. The agent runs without tools or a saved session
+  (`claude -p --tools ""`, `codex exec --ephemeral --sandbox read-only`); the choice lives
+  under `[agent]` in `~/.config/omagit/omagit.conf`.
+- **Branch dropdown**: the branch name above the message is a button; clicking it lists the
+  local and the remote branches (the current one ticked) and picking one checks it out. A
+  search field at the top has the keyboard right away: typing narrows the list, Up/Down move
+  the highlight, Return picks the highlighted (else the first) match, Escape closes. A
+  remote branch gets a local branch of the same name tracking it (or switches to that local
+  branch if it already exists); local changes are carried over, and if git would lose them
+  it refuses and says why.
+- **Repository dropdown** in the footer: the repository's name lists the repositories opened
+  lately (the last 15, checked = the current one) and *Open…* (Ctrl+O) picks a folder anywhere
+  inside another repository. Everything — changes, history, branch, Pull/Push counts, the
+  working-tree watch — follows the switch. Started outside a repository without a path,
+  OmaGit reopens the last one.
 - **Pull, Push and Fetch** in the toolbar above the left section (Ctrl+Shift+L / P / F), in
   both modes and on the Mini rail. The Pull button carries a badge with the number of commits waiting on the
   upstream, the Push button the number not pushed yet; a walking-dots badge shows while
@@ -87,7 +112,10 @@ omagit [path]            # any directory or file inside a repository (default: c
 
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;
-`--screenshot-after <ms>` sets the delay, e.g. to catch a running fetch),
+`--screenshot-after <ms>` sets the delay, e.g. to catch a running fetch; `--screenshot-menu
+branch|repo|agent` opens that dropdown first and includes it in the picture, `--screenshot-keys
+m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
+`--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message),
 and `OMAGIT_THEME_DIR=/usr/share/omarchy/themes/tokyo-night` previews another theme.
 
 The git wrapper has a self-contained test program that builds throw-away repositories:
@@ -101,17 +129,18 @@ cd tests && qmake6 tests.pro && make && ../build/tests/gitrepo_test
 | File | Purpose |
 |------|---------|
 | `src/OmarchyTheme.*` | Parses `colors.toml`, builds the palette/stylesheet, watches for theme switches |
-| `src/GitRepo.*` | Thin wrapper over the `git` CLI: status, diff, commit, amend, log, refs, upstream state, async runs |
+| `src/GitRepo.*` | Thin wrapper over the `git` CLI: status, diff, commit, amend, log, refs, branches and checkout, upstream state, async runs, switchable root |
 | `src/RemoteSync.*` | Fetch / pull / push, the ahead/behind counts, automatic fetching with backoff, git-dir watch |
 | `src/BadgeButton.*` | Tool button with a count badge, busy dots and a pop-in animation |
 | `src/Toolbar.*` | Width-adaptive button row: labels → icons → "more" menu |
+| `src/TickMenu.*` | Menu whose checked entries carry an accent tick at the right edge instead of a checkbox (branch, repository, "more" and diff menus) |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |
 | `src/ChangesModel.*` | Table model for the changes list (also the files of a commit) |
 | `src/HistoryModel.*` | Commit list model with incremental lane-graph layout |
 | `src/HistoryView.*` | History view: filter, commit table with graph and ref chips, details, files |
-| `src/MainWindow.*` | Window shell: modes and sync buttons, Docked/Mini layouts, diff pane and its toggle |
+| `src/MainWindow.*` | Window shell: modes and sync buttons, Docked/Mini layouts, diff pane and its toggle, branch and repository dropdowns, footer |
 | `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
-| `tests/gitrepo_test.cpp` | Checks for status, amend, history and fetch/pull/push against scratch repositories |
+| `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout and root switching against scratch repositories |
 | `nautilus/omagit.py` | Nautilus "Open in OmaGit" menu provider |

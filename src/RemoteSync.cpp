@@ -36,9 +36,37 @@ RemoteSync::RemoteSync(GitRepo *repo, QObject *parent)
         watchGitDir(); // files replaced by rename drop out of the watch
         m_debounce.start();
     });
+    connect(m_repo, &GitRepo::rootChanged, this, &RemoteSync::reset);
     m_gitDir = m_repo->gitDir();
     watchGitDir();
     refreshState();
+}
+
+void RemoteSync::reset()
+{
+    if (m_process) {
+        // The old repository's fetch is of no interest any more (and its
+        // result would be read as the new one's).
+        disconnect(m_process, nullptr, this, nullptr);
+        m_process->kill();
+        m_process->waitForFinished(2000);
+        m_process->deleteLater();
+        m_process = nullptr;
+    }
+    m_op = None;
+    m_autoOp = false;
+    m_lastFetch = QDateTime();
+    m_lastFetchOk = true;
+    m_lastFetchError.clear();
+    m_failures = 0;
+    if (!m_watcher.directories().isEmpty())
+        m_watcher.removePaths(m_watcher.directories());
+    if (!m_watcher.files().isEmpty())
+        m_watcher.removePaths(m_watcher.files());
+    m_gitDir = m_repo->gitDir();
+    watchGitDir();
+    refreshState();
+    nudge();
 }
 
 // A running fetch is not worth waiting for. Waiting emits finished(), so the

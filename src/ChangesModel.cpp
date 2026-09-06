@@ -8,6 +8,7 @@
 #include <QFrame>
 #include <QHeaderView>
 #include <QPainter>
+#include <QPalette>
 #include <QStyledItemDelegate>
 #include <QTableView>
 
@@ -39,6 +40,26 @@ protected:
     {
         QStyledItemDelegate::initStyleOption(option, index);
         option->text.clear();
+    }
+};
+
+// The model colours each row after its status (ForegroundRole), which would
+// otherwise win over the stylesheet's selected-item colour: paint the selected
+// row's text in the accent like every other selected item in the app.
+class AccentSelectionDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        if (option->state & QStyle::State_Selected) {
+            const QColor acc = OmarchyTheme::instance()->accent();
+            option->palette.setColor(QPalette::Text, acc);
+            option->palette.setColor(QPalette::HighlightedText, acc);
+        }
     }
 };
 
@@ -99,6 +120,15 @@ QStringList ChangesModel::checkedPaths() const
             if (!c.oldPath.isEmpty())
                 out << c.oldPath;
         }
+    return out;
+}
+
+QList<FileChange> ChangesModel::checkedChanges() const
+{
+    QList<FileChange> out;
+    for (const FileChange &c : m_changes)
+        if (m_checked.contains(c.path))
+            out << c;
     return out;
 }
 
@@ -283,6 +313,7 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->horizontalHeader()->setMinimumSectionSize(40);
     table->horizontalHeader()->setHighlightSections(false);
     table->setWordWrap(false);
+    table->setItemDelegate(new AccentSelectionDelegate(table));
     table->setItemDelegateForColumn(ChangesModel::Number, new RowNumberDelegate(table));
     table->setColumnWidth(ChangesModel::Number, 40);
     table->setColumnWidth(ChangesModel::Extension, 64);

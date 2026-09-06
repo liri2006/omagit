@@ -1,6 +1,7 @@
 #include "Toolbar.h"
 #include "BadgeButton.h"
 #include "OmarchyTheme.h"
+#include "TickMenu.h"
 
 #include <QAction>
 #include <QMenu>
@@ -21,7 +22,7 @@ Toolbar::Toolbar(QWidget *parent)
     m_more->setFocusPolicy(Qt::NoFocus);
     m_more->setPopupMode(QToolButton::InstantPopup);
     m_more->setToolTip(tr("More — the buttons that do not fit"));
-    m_moreMenu = new QMenu(m_more);
+    m_moreMenu = new TickMenu(m_more);
     m_moreMenu->setToolTipsVisible(true);
     m_more->setMenu(m_moreMenu);
     m_more->hide();

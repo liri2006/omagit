@@ -330,6 +330,9 @@ QString OmarchyTheme::buildStyleSheet() const
     const QString hair = hairline().name(), hair20 = border().name();
     const QString disabled = fill(0.45).name();
     const int caption = captionFont().pixelSize();
+    // TickMenu paints its check mark at the right edge of the item, inside this padding.
+    const QString tick = glyph(0xF012C); // md-check
+    const int tickPad = 14 + (tick.isEmpty() ? 0 : QFontMetrics(uiFont()).horizontalAdvance(tick) + 10);
 
     return QStringLiteral(R"(
 QMainWindow, QDialog, QMessageBox { background: %bg%; }
@@ -372,6 +375,9 @@ QPushButton:disabled, QToolButton:disabled { color: %disabled%; background: tran
 QPushButton:focus, QToolButton:focus { border-color: %bd25%; background: %fill8%; }
 QToolButton::menu-indicator { image: none; width: 0; height: 0; }
 QToolButton#smallButton { padding: 1px 5px; }
+QToolButton#cornerButton { background: transparent; border: 1px solid transparent; padding: 1px 3px; color: %dim%; }
+QToolButton#cornerButton:hover { background: %fill8%; border-color: %bd25%; color: %fg%; }
+QToolButton#cornerButton:pressed { background: %fill22%; }
 
 QCheckBox { spacing: 8px; }
 QCheckBox::indicator, QTableView::indicator, QTreeView::indicator {
@@ -401,7 +407,10 @@ QStatusBar { background: %bg%; color: %dim%; border-top: 1px solid %hair%; }
 QStatusBar::item { border: none; }
 QLabel#sectionLabel { color: %dim%; }
 QLabel#dimLabel { color: %dim%; }
-QLabel#branchLabel { color: %acc%; }
+QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
+QToolButton#branchButton { color: %acc%; }
+QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
+QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
 QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: 6px; }
 QMenu::item { padding: 6px 14px; border-radius: 0; }
 QMenu::item:selected { background: %fill8%; color: %acc%; }
@@ -409,6 +418,10 @@ QMenu::item:disabled { color: %disabled%; }
 QMenu::separator { height: 1px; background: %hair%; margin: 4px 2px; }
 QMenu::indicator { width: 12px; height: 12px; border: 1px solid %bd40%; background: %fill4%; margin-left: 4px; }
 QMenu::indicator:checked { background: %acc%; border-color: %acc%; image: url(:/check.svg); }
+TickMenu::item { padding-right: %tickpad%px; }
+TickMenu::item:checked { color: %acc%; }
+TickMenu::indicator { width: 0; height: 0; margin: 0; border: none; background: none; image: none; }
+TickMenu QLineEdit { margin: 0; }
 QToolBar { background: %bg%; border: none; spacing: 8px; }
 DiffView { border: 1px solid %bd40%; background: %bg%; }
 QMessageBox QLabel { color: %fg%; }
@@ -429,6 +442,7 @@ QAbstractScrollArea { background: %bg%; }
         .replace(QLatin1String("%hair%"), hair)
         .replace(QLatin1String("%disabled%"), disabled)
         .replace(QLatin1String("%caption%"), QString::number(caption))
+        .replace(QLatin1String("%tickpad%"), QString::number(tickPad))
         .replace(QLatin1String("%family%"), m_mono.family())
         .replace(QLatin1String("%base%"), QString::number(m_fontBase));
 }

@@ -32,6 +32,7 @@ public:
     bool checkable() const { return m_checkable; }
 
     QStringList checkedPaths() const;
+    QList<FileChange> checkedChanges() const; // in list order
     int checkedCount() const;
     void setAllChecked(bool checked);
     void setUnversionedChecked(bool checked);

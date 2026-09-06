@@ -1,5 +1,6 @@
 // Exercises GitRepo against throw-away repositories: status/diff bases, amend.
 // Build: cd tests && qmake6 tests.pro && make && ./gitrepo_test
+#include "../src/CommitMessageAgent.h"
 #include "../src/GitRepo.h"
 #include "../src/RemoteSync.h"
 
@@ -324,6 +325,186 @@ static void testRemote(const QString &base)
     CHECK(!sync.busy());
 }
 
+static void testBranches(const QString &base)
+{
+    const QString server = base + "/branches-server.git";
+    QDir().mkpath(server);
+    git(server, {"init", "-q", "--bare", "-b", "main"});
+    const QString seed = initRepo(base + "/branches-seed");
+    write(seed, "a.txt", "a\n");
+    git(seed, {"add", "."});
+    git(seed, {"commit", "-q", "-m", "one"});
+    git(seed, {"branch", "feature/x"});
+    git(seed, {"push", "-q", server, "main", "feature/x"});
+    const QString mine = base + "/branches-mine";
+    git(base, {"clone", "-q", server, mine});
+    git(mine, {"config", "user.name", "Tester"});
+    git(mine, {"config", "user.email", "tester@example.com"});
+    git(mine, {"branch", "local-only"});
+
+    GitRepo repo(mine);
+    BranchList b = repo.branches();
+    CHECK(b.current == "main");
+    CHECK(b.local == QStringList({"local-only", "main"}));
+    CHECK(b.remote == QStringList({"origin/feature/x", "origin/main"})); // no origin/HEAD
+
+    QString error;
+    CHECK(repo.checkout("local-only", &error));
+    CHECK(repo.branches().current == "local-only");
+    // A remote branch without a local twin: created tracking it.
+    CHECK(repo.checkout("origin/feature/x", &error));
+    b = repo.branches();
+    CHECK(b.current == "feature/x");
+    CHECK(b.local.contains("feature/x"));
+    CHECK(repo.upstreamState().upstream == "origin/feature/x");
+    // A remote branch with a local twin: the twin is checked out.
+    CHECK(repo.checkout("origin/main", &error));
+    CHECK(repo.branches().current == "main");
+    CHECK(repo.branch() == "main");
+    // Local changes that would be lost make git refuse, with its message.
+    write(mine, "a.txt", "changed on main\n");
+    git(mine, {"checkout", "-q", "feature/x"});
+    write(mine, "a.txt", "changed\n");
+    git(mine, {"commit", "-q", "-am", "diverge"});
+    git(mine, {"checkout", "-q", "main"});
+    write(mine, "a.txt", "dirty\n");
+    CHECK(!repo.checkout("feature/x", &error));
+    CHECK(error.contains("a.txt"));
+    CHECK(repo.branches().current == "main");
+    CHECK(!repo.checkout("no-such-branch", &error));
+    CHECK(!error.isEmpty());
+
+    // Pointing the object at another repository.
+    const QString other = initRepo(base + "/branches-other");
+    write(other, "b.txt", "b\n");
+    git(other, {"add", "."});
+    git(other, {"commit", "-q", "-m", "other"});
+    git(other, {"checkout", "-q", "-b", "dev"});
+    int changes = 0;
+    QObject::connect(&repo, &GitRepo::rootChanged, [&changes](const QString &) { ++changes; });
+    repo.setAmend(true);
+    repo.setRoot(other);
+    CHECK(changes == 1 && repo.root() == other && !repo.amending());
+    CHECK(repo.branch() == "dev");
+    CHECK(repo.branches().remote.isEmpty());
+    repo.setRoot(other);
+    CHECK(changes == 1);
+}
+
+// The diff handed to a coding agent: stat first, tracked and untracked files, a cut-off.
+static void testPatch(const QString &base)
+{
+    const QString dir = base + "/patch";
+    initRepo(dir);
+    write(dir, "a.txt", "one\ntwo\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "initial"});
+    write(dir, "a.txt", "one\n2\n");
+    write(dir, "new.txt", "hello\n");
+    GitRepo repo(dir);
+    const QList<FileChange> changes = repo.status();
+    CHECK(changes.size() == 2);
+    const QString patch = repo.patch(changes);
+    CHECK(patch.contains("a.txt | 2 +-"));
+    CHECK(patch.contains("new.txt (new file)"));
+    CHECK(patch.contains("-two\n+2\n"));
+    CHECK(patch.contains("+hello\n"));
+    CHECK(patch.indexOf("new.txt (new file)") < patch.indexOf("diff --git"));
+    const QString cut = repo.patch(changes, 120);
+    CHECK(cut.contains("diff truncated"));
+    CHECK(cut.size() < patch.size());
+    // Only what was asked for.
+    const FileChange *a = find(changes, "a.txt");
+    CHECK(a && !repo.patch({*a}).contains("hello"));
+}
+
+static void testAgentCommands()
+{
+    CHECK(CommitMessageAgent::agents().size() == 2);
+    CHECK(CommitMessageAgent::spec("claude").binary == "claude");
+    CHECK(!CommitMessageAgent::spec("gemini").isValid());
+
+    const QString diff = "diff --git a/x b/x\n";
+    auto cmd = CommitMessageAgent::command({"claude", "opus", "high"}, diff, "");
+    CHECK(cmd.program == "claude");
+    CHECK(cmd.args.contains("-p") && cmd.args.contains("--no-session-persistence") && !cmd.args.contains("--bare"));
+    CHECK(cmd.args.indexOf("--model") >= 0 && cmd.args.at(cmd.args.indexOf("--model") + 1) == "opus");
+    CHECK(cmd.args.at(cmd.args.indexOf("--effort") + 1) == "high");
+    // "--tools" takes a list, so the prompt must come after "--".
+    CHECK(cmd.args.indexOf("--tools") + 1 == cmd.args.indexOf("") && cmd.args.indexOf("") + 1 == cmd.args.indexOf("--"));
+    CHECK(cmd.args.last() == CommitMessageAgent::instructions());
+    CHECK(cmd.stdinText == diff);
+    CHECK(cmd.outputFile.isEmpty());
+
+    cmd = CommitMessageAgent::command({"claude", "", ""}, diff, "");
+    CHECK(!cmd.args.contains("--model") && !cmd.args.contains("--effort"));
+
+    cmd = CommitMessageAgent::command({"codex", "gpt-6-astra", "xhigh"}, diff, "/tmp/out.txt");
+    CHECK(cmd.program == "codex" && cmd.args.first() == "exec");
+    CHECK(cmd.args.contains("--ephemeral") && cmd.args.contains("read-only"));
+    CHECK(cmd.args.at(cmd.args.indexOf("-m") + 1) == "gpt-6-astra");
+    CHECK(cmd.args.at(cmd.args.indexOf("-c") + 1) == "model_reasoning_effort=\"xhigh\"");
+    CHECK(cmd.args.at(cmd.args.indexOf("-o") + 1) == "/tmp/out.txt" && cmd.outputFile == "/tmp/out.txt");
+    CHECK(cmd.stdinText == diff);
+
+    CHECK(CommitMessageAgent::command({"", "", ""}, diff, "").program.isEmpty());
+
+    // The answer, without what CLIs wrap around it.
+    CHECK(CommitMessageAgent::cleanMessage("Add a thing\n") == "Add a thing");
+    CHECK(CommitMessageAgent::cleanMessage("```\nAdd a thing\n\nBecause.\n```\n") == "Add a thing\n\nBecause.");
+    CHECK(CommitMessageAgent::cleanMessage("\"Add a thing\"") == "Add a thing");
+    CHECK(CommitMessageAgent::cleanMessage("Commit message: Add a thing") == "Add a thing");
+    CHECK(CommitMessageAgent::cleanMessage("\x1b[32mAdd\x1b[0m a thing  \r\n") == "Add a thing");
+    CHECK(CommitMessageAgent::cleanMessage("Add\n\n\n\nBody") == "Add\n\nBody");
+    CHECK(CommitMessageAgent::cleanMessage("Say \"hi\" to \"them\"") == "Say \"hi\" to \"them\"");
+    // A subject wrapped by the agent becomes one line; a list stays a list.
+    CHECK(CommitMessageAgent::cleanMessage("Add a thing to\nthe box\n\nBecause.") == "Add a thing to the box\n\nBecause.");
+    CHECK(CommitMessageAgent::cleanMessage("Add a thing\n- one\n- two") == "Add a thing\n- one\n- two");
+    CHECK(CommitMessageAgent::cleanMessage("Add two things\n\n- one\n- two") == "Add two things\n\n- one\n- two");
+}
+
+// Models and levels as the CLIs print them.
+static void testAgentCatalogs()
+{
+    const QString help =
+        "Options:\n"
+        "  --effort <level>                      Effort level for the current session\n"
+        "                                        (low, medium, high, xhigh, max)\n"
+        "  --environment <environment_id>        Create a new cloud session\n"
+        "  --model <model>                       Model for the current session. Provide\n"
+        "                                        an alias for the latest model (e.g.\n"
+        "                                        'fable', 'opus', or 'sonnet') or a\n"
+        "                                        model's full name (e.g.\n"
+        "                                        'claude-fable-5').\n"
+        "  --no-chrome                           Disable Claude in Chrome integration\n";
+    AgentCatalog c = CommitMessageAgent::parseClaudeHelp(help);
+    CHECK(c.efforts == QStringList({"low", "medium", "high", "xhigh", "max"}));
+    CHECK(c.models.size() == 3);
+    CHECK(c.models.size() == 3 && c.models.at(1).id == "opus" && c.models.at(1).name == "Opus");
+    CHECK(c.effortsFor("sonnet") == c.efforts && c.effortsFor("") == c.efforts);
+    CHECK(c.error.isEmpty());
+    CHECK(CommitMessageAgent::parseClaudeHelp("nothing here").isEmpty());
+
+    const QByteArray json =
+        "{\"models\":[{\"slug\":\"gpt-5.5\",\"display_name\":\"GPT-5.5\",\"visibility\":\"list\",\"priority\":12,"
+        "\"default_reasoning_level\":\"medium\",\"supported_reasoning_levels\":[{\"effort\":\"low\"},{\"effort\":\"high\"}]},"
+        "{\"slug\":\"gpt-reserve\",\"display_name\":\"GPT-Reserve\",\"visibility\":\"hide\",\"priority\":3},"
+        "{\"slug\":\"gpt-6-astra\",\"display_name\":\"GPT-6-Astra\",\"visibility\":\"list\",\"priority\":1,"
+        "\"default_reasoning_level\":\"medium\",\"supported_reasoning_levels\":[{\"effort\":\"low\"},{\"effort\":\"medium\"},"
+        "{\"effort\":\"high\"},{\"effort\":\"xhigh\"},{\"effort\":\"max\"},{\"effort\":\"ultra\"}]}]}";
+    c = CommitMessageAgent::parseCodexModels(json);
+    CHECK(c.models.size() == 2); // the hidden one is left out
+    CHECK(c.models.size() == 2 && c.models.first().id == "gpt-6-astra" && c.models.last().id == "gpt-5.5"); // by priority
+    CHECK(c.models.size() == 2 && c.models.first().name == "GPT-6-Astra" && c.models.first().defaultEffort == "medium");
+    CHECK(c.efforts.size() == 6 && c.efforts.last() == "ultra"); // the first model's, for "Default"
+    CHECK(c.effortsFor("gpt-5.5") == QStringList({"low", "high"}));
+    CHECK(c.effortsFor("unknown-model") == c.efforts);
+    CHECK(c.error.isEmpty());
+    c = CommitMessageAgent::parseCodexModels("not json");
+    CHECK(c.isEmpty() && !c.error.isEmpty());
+    CHECK(!CommitMessageAgent::spec("").isValid() && CommitMessageAgent::catalog("nope").isEmpty());
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -332,6 +513,10 @@ int main(int argc, char **argv)
     testAmendRoot(tmp.path());
     testStatusAndHistory(tmp.path());
     testRemote(tmp.path());
+    testBranches(tmp.path());
+    testPatch(tmp.path());
+    testAgentCommands();
+    testAgentCatalogs();
     if (failures == 0)
         printf("all checks passed\n");
     return failures == 0 ? 0 : 1;

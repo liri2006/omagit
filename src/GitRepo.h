@@ -65,6 +65,13 @@ struct UpstreamState {
     bool hasUpstream() const { return !upstream.isEmpty() && !upstreamGone; }
 };
 
+// The branches of the repository, for the branch dropdown.
+struct BranchList {
+    QString current;   // the checked-out branch; empty when HEAD is detached or unborn
+    QStringList local; // "main", "feature/x", sorted
+    QStringList remote; // "origin/main", sorted; a remote's HEAD pointer is left out
+};
+
 class GitRepo : public QObject
 {
     Q_OBJECT
@@ -75,6 +82,9 @@ public:
     static QString findRoot(const QString &path, QString *error = nullptr);
 
     QString root() const { return m_root; }
+    // Points the object at another repository (the top-level directory of
+    // one); the amend mode is dropped. Emits rootChanged().
+    void setRoot(const QString &root);
     QString branch() const;
     bool hasHead() const;
     QString gitDir() const; // absolute path of the .git directory (also for worktrees)
@@ -83,6 +93,15 @@ public:
 
     QStringList remotes() const;
     UpstreamState upstreamState() const;
+
+    // --- Branches -----------------------------------------------------------
+
+    BranchList branches() const;
+    // Checks out `name`: a local branch, or a remote-tracking one
+    // ("origin/x"), which switches to the local branch of the same name if
+    // there is one and otherwise creates it tracking the remote branch.
+    // Local changes are carried over; git refuses if they would be lost.
+    bool checkout(const QString &name, QString *error) const;
 
     // Runs git without blocking; `done(exitCode, stdout, stderr)` is called from
     // the event loop when it finishes (exitCode -1: crashed, killed, or not
@@ -110,6 +129,13 @@ public:
     // the complete file like a classic one-pane diff view.
     QString diff(const FileChange &change, bool *binary = nullptr) const;
 
+    // The changes to `changes` as a compact unified diff for a reader that
+    // cannot look at the repository (a coding agent writing the commit
+    // message): a --stat summary of every file, then the patch with the
+    // usual three lines of context, cut off at `maxBytes` with a note.
+    // Untracked files show up as added.
+    QString patch(const QList<FileChange> &changes, int maxBytes = 80000) const;
+
     bool commit(const QString &message, const QStringList &paths, QString *error) const;
 
     // Replace HEAD by a commit whose tree is HEAD's parent tree plus the
@@ -136,6 +162,9 @@ public:
     // extra "KEY=VALUE" entries for the child process.
     QByteArray run(const QStringList &args, int *exitCode = nullptr, QByteArray *err = nullptr,
                    int timeoutMs = 15000, const QStringList &env = QStringList()) const;
+
+signals:
+    void rootChanged(const QString &root);
 
 private:
     QString emptyTree() const;

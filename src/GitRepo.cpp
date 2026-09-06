@@ -130,6 +130,16 @@ QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback 
     return p;
 }
 
+void GitRepo::setRoot(const QString &root)
+{
+    if (root == m_root)
+        return;
+    m_root = root;
+    m_amend = false;
+    m_emptyTree.clear();
+    emit rootChanged(root);
+}
+
 QString GitRepo::branch() const
 {
     int code = 0;
@@ -222,6 +232,65 @@ UpstreamState GitRepo::upstreamState() const
         s.behind = cols[1].toInt();
     }
     return s;
+}
+
+BranchList GitRepo::branches() const
+{
+    BranchList b;
+    int code = 0;
+    const QByteArray out = run({QStringLiteral("for-each-ref"), QStringLiteral("--sort=refname"),
+                                QStringLiteral("--format=%(refname)%00%(refname:short)%00%(HEAD)"),
+                                QStringLiteral("refs/heads"), QStringLiteral("refs/remotes")},
+                               &code);
+    if (code != 0)
+        return b;
+    for (const QByteArray &line : out.split('\n')) {
+        const QList<QByteArray> parts = line.split('\0');
+        if (parts.size() < 3)
+            continue;
+        const QString ref = QString::fromUtf8(parts[0]);
+        const QString name = QString::fromUtf8(parts[1]);
+        if (ref.startsWith(QLatin1String("refs/heads/"))) {
+            b.local << name;
+            if (parts[2] == "*")
+                b.current = name;
+        } else if (ref.startsWith(QLatin1String("refs/remotes/")) && !ref.endsWith(QLatin1String("/HEAD"))) {
+            b.remote << name;
+        }
+    }
+    return b;
+}
+
+bool GitRepo::checkout(const QString &name, QString *error) const
+{
+    const BranchList b = branches();
+    QStringList args{QStringLiteral("switch")};
+    if (b.local.contains(name)) {
+        args << name;
+    } else {
+        // "origin/feature": the local "feature" if there is one, else a new
+        // one tracking the remote branch (the remote name may contain "/").
+        QString local;
+        for (const QString &remote : remotes()) {
+            if (name.startsWith(remote + QLatin1Char('/'))) {
+                local = name.mid(remote.size() + 1);
+                break;
+            }
+        }
+        if (!local.isEmpty() && b.local.contains(local))
+            args << local;
+        else
+            args << QStringLiteral("--track") << name;
+    }
+    int code = 0;
+    QByteArray err;
+    run(args, &code, &err, 60000);
+    if (code != 0 && error) {
+        *error = QString::fromUtf8(err).trimmed();
+        if (error->isEmpty())
+            *error = QStringLiteral("git %1 failed").arg(args.join(QLatin1Char(' ')));
+    }
+    return code == 0;
 }
 
 QString GitRepo::baseRef() const
@@ -524,6 +593,55 @@ QStringList GitRepo::stageablePaths(const QStringList &paths, const QStringList 
             out << p;
     }
     return out;
+}
+
+QString GitRepo::patch(const QList<FileChange> &changes, int maxBytes) const
+{
+    QStringList tracked, untracked;
+    for (const FileChange &c : changes) {
+        if (c.kind == FileChange::Untracked) {
+            untracked << c.path;
+            continue;
+        }
+        if (!c.oldPath.isEmpty())
+            tracked << c.oldPath;
+        tracked << c.path;
+    }
+    tracked.removeDuplicates();
+
+    QByteArray stat, body;
+    if (!tracked.isEmpty()) {
+        if (hasHead()) {
+            const QStringList common{QStringLiteral("diff"), baseRef(), QStringLiteral("-M"), QStringLiteral("--no-color")};
+            stat = run(common + QStringList{QStringLiteral("--stat=100"), QStringLiteral("--")} + tracked);
+            body = run(common + QStringList{QStringLiteral("--")} + tracked);
+        } else {
+            // No commits yet: what is staged against the empty tree.
+            const QStringList common{QStringLiteral("diff"), QStringLiteral("--cached"), QStringLiteral("--no-color")};
+            stat = run(common + QStringList{QStringLiteral("--stat=100"), QStringLiteral("--")} + tracked);
+            body = run(common + QStringList{QStringLiteral("--")} + tracked);
+        }
+    }
+    for (const QString &path : std::as_const(untracked)) {
+        int code = 0;
+        // Exit code 1 is "there are differences", the point of the exercise.
+        body += run({QStringLiteral("diff"), QStringLiteral("--no-index"), QStringLiteral("--no-color"),
+                     QStringLiteral("--"), QStringLiteral("/dev/null"), path},
+                    &code);
+        stat += QStringLiteral(" %1 (new file)\n").arg(path).toUtf8();
+    }
+
+    QString out;
+    if (!stat.trimmed().isEmpty())
+        out += QString::fromUtf8(stat).trimmed() + QStringLiteral("\n\n");
+    QString text = QString::fromUtf8(body);
+    if (text.size() > maxBytes) {
+        int cut = text.lastIndexOf(QLatin1Char('\n'), maxBytes);
+        if (cut < maxBytes / 2)
+            cut = maxBytes;
+        text = text.left(cut) + QStringLiteral("\n[... diff truncated; the file list above is complete ...]\n");
+    }
+    return out + text;
 }
 
 bool GitRepo::commit(const QString &message, const QStringList &paths, QString *error) const

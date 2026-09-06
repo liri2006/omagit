@@ -104,7 +104,7 @@ public:
         QFont f = t->captionFont();
         f.setBold(true);
         p->setFont(f);
-        p->setPen(status);
+        p->setPen(selected ? t->accent() : status);
         p->drawText(tile, Qt::AlignCenter, tileLabel(index));
 
         const QRect badge(tile.right() - 8, tile.top() - 5, 13, 13);
@@ -126,7 +126,7 @@ public:
         p->setPen(QPen(numberEdge, 1));
         p->setBrush(t->window());
         p->drawRoundedRect(QRectF(numberRect).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
-        p->setPen(t->mutedText());
+        p->setPen(selected ? t->accent() : t->mutedText());
         p->drawText(numberRect, Qt::AlignCenter, number);
         p->restore();
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ChangesModel.h"
+#include "CommitMessageAgent.h"
 #include "GitRepo.h"
 #include "PaneLayout.h"
 #include "RemoteSync.h"
@@ -11,16 +12,18 @@ class BadgeButton;
 class DiffView;
 class Toolbar;
 class HistoryView;
+class MessageEdit;
 class MiniRail;
 class QCheckBox;
+class QFileSystemWatcher;
 class QHBoxLayout;
 class QLabel;
-class QPlainTextEdit;
 class QPushButton;
 class QSortFilterProxyModel;
 class QSplitter;
 class QStackedWidget;
 class QTableView;
+class QTimer;
 class QToolButton;
 
 class MainWindow : public QMainWindow
@@ -45,6 +48,11 @@ public:
     void setAmend(bool on);
     // Automatic fetching keeps the Pull count current; off leaves the network alone.
     void setAutoFetchEnabled(bool on);
+    // Shows the repository containing `path` instead of the current one
+    // (false, after a message, if there is none).
+    bool openRepository(const QString &path);
+    // The repositories opened lately, latest first, those that still exist.
+    static QStringList recentRepositories();
 
 public slots:
     void refresh();
@@ -60,6 +68,13 @@ private slots:
     void showHistoryDiff();
     void updateSyncButtons();
     void onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, const QString &message);
+    void showBranchMenu();
+    void showRepoMenu();
+    void openRepositoryDialog();
+    // Asks the chosen coding agent for a message describing the checked
+    // changes (Ctrl+G); clicking again while it runs stops it.
+    void generateMessage();
+    void showAgentMenu();
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -77,6 +92,14 @@ private:
     void presentDiff(const QString &unified, const FileChange &change, bool binary, const QString &leftLabel,
                      const QString &rightLabel, const QString &emptyMessage);
     FileChange currentChange(bool *ok) const;
+    void checkoutBranch(const QString &name);
+    void watchWorkingTree();
+    void updateRepoLabels();
+    void setGenerating(bool on);
+    void onMessageGenerated(bool ok, const QString &text);
+    static void rememberRepository(const QString &root);
+    // The footer's message; `ms` > 0 brings the repository path back after that long.
+    void showStatus(const QString &text, int ms = 0);
 
     GitRepo *m_repo;
     RemoteSync *m_sync;
@@ -94,8 +117,20 @@ private:
     QWidget *m_left;
     QWidget *m_rightPane;
     MiniRail *m_rail;
-    QPlainTextEdit *m_message;
-    QLabel *m_branchLabel;
+    MessageEdit *m_message;      // the commit message, with the generate button in its corner
+    QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning
+    CommitMessageAgent *m_agent;
+    QTimer *m_spinner;           // animates the generate button while the agent runs
+    int m_spinnerFrame = 0;
+    bool m_streaming = false;    // a partial answer already replaced the message text
+    QString m_messageBefore;     // the text the user had before the agent started, for a failed run
+    QToolButton *m_branchButton; // the branch name; clicking it lists the branches
+    QToolButton *m_repoButton;   // the repository name in the footer; clicking it lists recent ones
+    QLabel *m_statusLabel;       // the footer's message, the repository path when there is none
+    QTimer *m_statusTimer;
+    QWidget *m_footerLine;
+    QFileSystemWatcher *m_watcher; // the working tree and the index
+    QString m_indexFile;
     QLabel *m_summaryLabel;
     QLabel *m_changeLabel;
     QPushButton *m_commitButton;

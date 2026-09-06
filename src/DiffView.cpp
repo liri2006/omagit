@@ -1,5 +1,6 @@
 #include "DiffView.h"
 #include "OmarchyTheme.h"
+#include "TickMenu.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -605,7 +606,7 @@ void DiffView::keyPressEvent(QKeyEvent *e)
 
 void DiffView::contextMenuEvent(QContextMenuEvent *e)
 {
-    QMenu menu(this);
+    TickMenu menu(this);
     QAction *copy = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-copy")), tr("Copy"), this, &DiffView::copySelection);
     copy->setEnabled(hasSelection());
     menu.addAction(QIcon::fromTheme(QStringLiteral("edit-select-all")), tr("Select all"), this, &DiffView::selectAll);

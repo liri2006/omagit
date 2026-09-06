@@ -50,6 +50,10 @@ public:
     void setActive(bool active);
     // The window came to the front: fetch now unless one happened recently.
     void nudge();
+    // The repository object points somewhere else now (also connected to
+    // GitRepo::rootChanged): forget the old one, stop what it was doing,
+    // and read the new one.
+    void reset();
 
     // Which git command an operation runs, for tooltips.
     QStringList fetchArgs() const;

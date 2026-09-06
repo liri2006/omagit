@@ -18,6 +18,9 @@ SOURCES += \
     src/RemoteSync.cpp \
     src/BadgeButton.cpp \
     src/Toolbar.cpp \
+    src/TickMenu.cpp \
+    src/CommitMessageAgent.cpp \
+    src/MessageEdit.cpp \
     src/MainWindow.cpp
 
 HEADERS += \
@@ -33,6 +36,9 @@ HEADERS += \
     src/RemoteSync.h \
     src/BadgeButton.h \
     src/Toolbar.h \
+    src/TickMenu.h \
+    src/CommitMessageAgent.h \
+    src/MessageEdit.h \
     src/MainWindow.h
 
 RESOURCES += data/omagit.qrc
