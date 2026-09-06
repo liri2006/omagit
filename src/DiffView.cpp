@@ -556,7 +556,8 @@ void DiffView::wheelEvent(QWheelEvent *e)
     if (e->modifiers() & Qt::ControlModifier) {
         const int delta = e->angleDelta().y();
         if (delta != 0) {
-            m_font.setPointSize(qBound(6, m_font.pointSize() + (delta > 0 ? 1 : -1), 32));
+            const int px = m_font.pixelSize() > 0 ? m_font.pixelSize() : QFontMetrics(m_font).height() * 3 / 4;
+            m_font.setPixelSize(qBound(7, px + (delta > 0 ? 1 : -1), 40));
             viewport()->setFont(m_font);
             updateMetrics();
             updateScrollBars();

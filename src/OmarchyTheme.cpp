@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileSystemWatcher>
 #include <QFontDatabase>
+#include <QFontMetrics>
 #include <QIcon>
 #include <QPalette>
 #include <QProcess>
@@ -56,6 +57,7 @@ OmarchyTheme::OmarchyTheme(QObject *parent)
 {
     s_instance = this;
     load();
+    loadShellToml();
     loadFont();
     setupWatcher();
 }
@@ -146,7 +148,72 @@ void OmarchyTheme::loadFont()
         m_mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_mono.setStyleHint(QFont::Monospace);
     m_mono.setFixedPitch(true);
-    m_mono.setPointSize(qMax(9, QApplication::font().pointSize()));
+    m_mono.setPixelSize(m_fontBase);
+}
+
+// [font] base-size from the theme's shell.toml, overridden by the user's
+// ~/.config/omarchy/shell.toml — the same rem root the shell uses.
+void OmarchyTheme::loadShellToml()
+{
+    m_fontBase = 12;
+    const QStringList files{themeDir() + QStringLiteral("/shell.toml"),
+                            QDir::homePath() + QStringLiteral("/.config/omarchy/shell.toml")};
+    static const QRegularExpression sectionRe(QStringLiteral("^\\s*\\[([^\\]]+)\\]"));
+    static const QRegularExpression kvRe(QStringLiteral("^\\s*([A-Za-z0-9_-]+)\\s*=\\s*([^#]+)"));
+    for (const QString &path : files) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        QString section;
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            const QString line = in.readLine();
+            const auto sm = sectionRe.match(line);
+            if (sm.hasMatch()) {
+                section = sm.captured(1).trimmed();
+                continue;
+            }
+            const auto km = kvRe.match(line);
+            if (!km.hasMatch())
+                continue;
+            if (section == QLatin1String("font") && km.captured(1) == QLatin1String("base-size")) {
+                bool ok = false;
+                const int v = km.captured(2).trimmed().toInt(&ok);
+                if (ok && v > 0)
+                    m_fontBase = v;
+            }
+        }
+    }
+}
+
+QFont OmarchyTheme::uiFont() const
+{
+    return m_mono;
+}
+
+QFont OmarchyTheme::captionFont() const
+{
+    QFont f = m_mono;
+    f.setPixelSize(qMax(8, qRound(m_fontBase * 0.833)));
+    f.setBold(true);
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
+    return f;
+}
+
+QFont OmarchyTheme::titleFont() const
+{
+    QFont f = m_mono;
+    f.setPixelSize(qRound(m_fontBase * 1.167));
+    f.setBold(true);
+    return f;
+}
+
+QString OmarchyTheme::glyph(uint codepoint) const
+{
+    const QFontMetrics fm(m_mono);
+    if (!fm.inFontUcs4(codepoint))
+        return QString();
+    return QString::fromUcs4(reinterpret_cast<const char32_t *>(&codepoint), 1);
 }
 
 void OmarchyTheme::setupWatcher()
@@ -157,6 +224,8 @@ void OmarchyTheme::setupWatcher()
     m_debounce->setInterval(300);
     connect(m_debounce, &QTimer::timeout, this, [this] {
         load();
+        loadShellToml();
+        loadFont();
         if (m_app)
             apply(*m_app);
         // theme-set replaces the directory; re-arm the watch on the new files
@@ -184,14 +253,19 @@ QColor OmarchyTheme::color(const QString &key) const
     return QColor(v);
 }
 
-QColor OmarchyTheme::window() const { return m_dark ? color("background") : color("dark_background"); }
-QColor OmarchyTheme::base() const { return m_dark ? color("dark_background") : color("background"); }
-QColor OmarchyTheme::alternateBase() const { return mix(base(), window(), 0.5); }
+QColor OmarchyTheme::fill(qreal alpha) const
+{
+    return mix(color("background"), color("foreground"), alpha);
+}
+
+QColor OmarchyTheme::window() const { return color("background"); }
+QColor OmarchyTheme::base() const { return color("background"); }
+QColor OmarchyTheme::alternateBase() const { return color("background"); }
 QColor OmarchyTheme::text() const { return color("foreground"); }
-QColor OmarchyTheme::mutedText() const { return color("dark_foreground"); }
-QColor OmarchyTheme::border() const { return mix(window(), color("muted"), 0.7); }
+QColor OmarchyTheme::mutedText() const { return color("foreground").darker(140); }
+QColor OmarchyTheme::border() const { return fill(0.20); }
 QColor OmarchyTheme::accent() const { return color("accent"); }
-QColor OmarchyTheme::selection() const { return color("selection"); }
+QColor OmarchyTheme::selection() const { return hoverFill(); }
 
 // Classic diff colours: removed = RGB(255,200,100), added = RGB(255,255,0) on light;
 // RGB(83,66,33) / RGB(83,83,0) on dark. We keep the orange/yellow semantics but
@@ -201,9 +275,9 @@ QColor OmarchyTheme::diffRemovedBg() const { return mix(base(), color("orange"),
 QColor OmarchyTheme::diffAddedBg() const { return mix(base(), color("yellow"), m_dark ? 0.32 : 0.42); }
 QColor OmarchyTheme::diffInlineRemovedBg() const { return mix(base(), color("red"), m_dark ? 0.55 : 0.6); }
 QColor OmarchyTheme::diffInlineAddedBg() const { return mix(base(), color("bright_yellow"), m_dark ? 0.6 : 0.75); }
-QColor OmarchyTheme::diffMarginBg() const { return m_dark ? color("lighter_background") : color("lighter_background"); }
-QColor OmarchyTheme::diffHeaderBg() const { return diffMarginBg(); }
-QColor OmarchyTheme::diffEmptyBg() const { return mix(base(), color("muted"), 0.5); }
+QColor OmarchyTheme::diffMarginBg() const { return fill(0.06); }
+QColor OmarchyTheme::diffHeaderBg() const { return fill(0.06); }
+QColor OmarchyTheme::diffEmptyBg() const { return fill(0.12); }
 QColor OmarchyTheme::diffAddedIcon() const { return color("green"); }
 QColor OmarchyTheme::diffRemovedIcon() const { return color("red"); }
 
@@ -211,114 +285,148 @@ void OmarchyTheme::apply(QApplication &app)
 {
     m_app = &app;
     app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+    app.setFont(uiFont());
 
     QPalette pal;
-    const QColor win = window(), bs = base(), txt = text(), acc = accent();
-    pal.setColor(QPalette::Window, win);
-    pal.setColor(QPalette::WindowText, txt);
-    pal.setColor(QPalette::Base, bs);
-    pal.setColor(QPalette::AlternateBase, alternateBase());
-    pal.setColor(QPalette::Text, txt);
-    pal.setColor(QPalette::PlaceholderText, mutedText());
-    pal.setColor(QPalette::Button, color("lighter_background"));
-    pal.setColor(QPalette::ButtonText, txt);
+    const QColor bg = window(), fg = text(), acc = accent();
+    pal.setColor(QPalette::Window, bg);
+    pal.setColor(QPalette::WindowText, fg);
+    pal.setColor(QPalette::Base, bg);
+    pal.setColor(QPalette::AlternateBase, bg);
+    pal.setColor(QPalette::Text, fg);
+    pal.setColor(QPalette::PlaceholderText, fg.darker(160));
+    pal.setColor(QPalette::Button, normalFill());
+    pal.setColor(QPalette::ButtonText, fg);
     pal.setColor(QPalette::BrightText, color("bright_foreground"));
-    pal.setColor(QPalette::ToolTipBase, color("lighter_background"));
-    pal.setColor(QPalette::ToolTipText, txt);
-    pal.setColor(QPalette::Highlight, acc);
-    pal.setColor(QPalette::HighlightedText, m_dark ? color("background") : color("background"));
+    pal.setColor(QPalette::ToolTipBase, bg);
+    pal.setColor(QPalette::ToolTipText, fg);
+    pal.setColor(QPalette::Highlight, hoverFill());
+    pal.setColor(QPalette::HighlightedText, acc);
     pal.setColor(QPalette::Link, color("blue"));
     pal.setColor(QPalette::LinkVisited, color("magenta"));
-    pal.setColor(QPalette::Light, mix(win, Qt::white, 0.2));
-    pal.setColor(QPalette::Midlight, mix(win, Qt::white, 0.1));
-    pal.setColor(QPalette::Mid, border());
-    pal.setColor(QPalette::Dark, mix(win, Qt::black, 0.2));
-    pal.setColor(QPalette::Shadow, mix(win, Qt::black, 0.4));
-    pal.setColor(QPalette::Disabled, QPalette::Text, mutedText());
-    pal.setColor(QPalette::Disabled, QPalette::WindowText, mutedText());
-    pal.setColor(QPalette::Disabled, QPalette::ButtonText, mutedText());
-    pal.setColor(QPalette::Inactive, QPalette::Highlight, selection());
-    pal.setColor(QPalette::Inactive, QPalette::HighlightedText, txt);
+    pal.setColor(QPalette::Light, fill(0.08));
+    pal.setColor(QPalette::Midlight, fill(0.12));
+    pal.setColor(QPalette::Mid, fill(0.25));
+    pal.setColor(QPalette::Dark, fill(0.40));
+    pal.setColor(QPalette::Shadow, fill(0.60));
+    pal.setColor(QPalette::Disabled, QPalette::Text, fill(0.45));
+    pal.setColor(QPalette::Disabled, QPalette::WindowText, fill(0.45));
+    pal.setColor(QPalette::Disabled, QPalette::ButtonText, fill(0.45));
     app.setPalette(pal);
     app.setStyleSheet(buildStyleSheet());
 }
 
+// Mirrors the shell's control kit (Ui/Button.qml, TextField.qml, Menu.qml):
+// square corners, transparent-ish fills from foreground alpha, 1px borders,
+// accent text for the selected/current item, popups framed by the accent.
 QString OmarchyTheme::buildStyleSheet() const
 {
-    const QString win = window().name(), bs = base().name(), txt = text().name();
-    const QString acc = accent().name(), brd = border().name(), mut = mutedText().name();
-    const QString btn = color("lighter_background").name();
-    const QString sel = selection().name();
-    const QString hiText = color("background").name();
-    const QString hover = mix(color("lighter_background"), color("foreground"), 0.08).name();
+    const QString bg = window().name(), fg = text().name(), acc = accent().name();
+    const QString dim = mutedText().name();
+    const QString fill4 = normalFill().name(), fill8 = hoverFill().name();
+    const QString fill18 = selectedFill().name(), fill22 = pressedFill().name();
+    const QString sel35 = selectionFill().name();
+    const QString bd40 = normalBorder().name(), bd25 = hoverBorder().name();
+    const QString hair = hairline().name(), hair20 = border().name();
+    const QString disabled = fill(0.45).name();
+    const int caption = captionFont().pixelSize();
 
     return QStringLiteral(R"(
-QMainWindow, QDialog { background: %1; }
-QWidget { color: %3; }
-QToolTip { background: %7; color: %3; border: 1px solid %5; padding: 4px; }
+QMainWindow, QDialog, QMessageBox { background: %bg%; }
+QWidget { color: %fg%; font-family: "%family%"; font-size: %base%px; }
+QToolTip { background: %bg%; color: %fg%; border: 1px solid %fg%; padding: 4px 8px; }
 
 QPlainTextEdit, QTextEdit, QLineEdit {
-    background: %2; color: %3; border: 1px solid %5; border-radius: 6px;
-    selection-background-color: %4; selection-color: %8; padding: 2px;
+    background: %fill4%; color: %fg%; border: 1px solid %bd40%; border-radius: 0;
+    selection-background-color: %sel35%; selection-color: %fg%; padding: 4px 6px;
 }
-QPlainTextEdit:focus, QTextEdit:focus, QLineEdit:focus { border: 1px solid %4; }
+QPlainTextEdit:hover, QTextEdit:hover, QLineEdit:hover { background: %fill8%; border-color: %bd25%; }
+QPlainTextEdit:focus, QTextEdit:focus, QLineEdit:focus { background: %fill8%; border-color: %bd25%; }
 
 QTableView, QTreeView {
-    background: %2; alternate-background-color: %9; border: 1px solid %5; border-radius: 6px;
-    gridline-color: %5; selection-background-color: %4; selection-color: %8; outline: 0;
+    background: %bg%; border: 1px solid %bd40%; border-radius: 0; gridline-color: %hair%;
+    selection-background-color: %fill8%; selection-color: %acc%; outline: 0;
 }
-QTableView::item, QTreeView::item { padding: 2px 6px; }
-QTableView::item:selected, QTreeView::item:selected { background: %4; color: %8; }
-QTableView::item:selected:!active, QTreeView::item:selected:!active { background: %10; color: %3; }
+QTableView::item, QTreeView::item { padding: 0 10px; border: none; }
+QTableView::item:hover, QTreeView::item:hover { background: %fill4%; }
+QTableView::item:selected, QTreeView::item:selected { background: %fill8%; color: %acc%; }
+QHeaderView { background: transparent; }
 QHeaderView::section {
-    background: %7; color: %3; padding: 4px 8px; border: none; border-right: 1px solid %5; border-bottom: 1px solid %5;
+    background: transparent; color: %dim%; font-weight: bold; font-size: %caption%px;
+    padding: 6px 10px; border: none; border-bottom: 1px solid %hair20%; border-right: 1px solid %hair%;
 }
-QHeaderView::section:last { border-right: none; }
-QTableCornerButton::section { background: %7; border: none; }
+QHeaderView::section:last, QHeaderView::section:only-one { border-right: none; }
+QHeaderView::down-arrow, QHeaderView::up-arrow { width: 0; height: 0; }
+QTableCornerButton::section { background: transparent; border: none; }
 
 QPushButton, QToolButton {
-    background: %7; color: %3; border: 1px solid %5; border-radius: 6px; padding: 5px 12px;
+    background: %fill4%; color: %fg%; border: 1px solid %bd40%; border-radius: 0; padding: 5px 10px;
 }
-QToolButton { padding: 4px 6px; }
-QPushButton:hover, QToolButton:hover { background: %11; border-color: %4; }
-QPushButton:pressed, QToolButton:pressed { background: %10; }
-QPushButton:default { border: 1px solid %4; }
-QToolButton:checked { background: %4; color: %8; border-color: %4; }
-QToolButton:checked:hover { background: %4; color: %8; }
-QPushButton:disabled, QToolButton:disabled { color: %6; border-color: %5; }
+QPushButton:hover, QToolButton:hover { background: %fill8%; border-color: %bd25%; }
+QPushButton:pressed, QToolButton:pressed { background: %fill22%; border-color: %bd25%; }
+QPushButton:checked, QToolButton:checked { background: %fill18%; color: %acc%; border-color: %fill18%; }
+QPushButton:checked:hover, QToolButton:checked:hover { background: %fill18%; color: %acc%; border-color: %bd25%; }
+QPushButton:default { background: %fill8%; color: %acc%; border: 1px solid %acc%; }
+QPushButton:default:hover { background: %fill18%; }
+QPushButton:disabled, QToolButton:disabled { color: %disabled%; background: transparent; border-color: %hair20%; }
+QPushButton:focus, QToolButton:focus { border-color: %bd25%; background: %fill8%; }
 
+QCheckBox { spacing: 8px; }
 QCheckBox::indicator, QTableView::indicator, QTreeView::indicator {
-    width: 14px; height: 14px; border: 1px solid %6; border-radius: 3px; background: %2;
+    width: 14px; height: 14px; border: 1px solid %bd40%; border-radius: 0; background: %fill4%;
 }
+QCheckBox::indicator:hover, QTableView::indicator:hover, QTreeView::indicator:hover { border-color: %bd25%; background: %fill8%; }
 QCheckBox::indicator:checked, QTableView::indicator:checked, QTreeView::indicator:checked {
-    background: %4; border-color: %4;
-    image: url(:/check.svg);
+    background: %acc%; border-color: %acc%; image: url(:/check.svg);
 }
-QCheckBox::indicator:indeterminate { background: %2; border-color: %4; image: url(:/partial.svg); }
-QCheckBox::indicator:hover, QTableView::indicator:hover { border-color: %4; }
+QCheckBox::indicator:indeterminate { background: %fill18%; border-color: %acc%; image: url(:/partial.svg); }
 
-QSplitter::handle { background: %1; }
-QSplitter::handle:horizontal { width: 6px; }
-QSplitter::handle:vertical { height: 6px; }
-QSplitter::handle:hover { background: %4; }
+QSplitter::handle { background: transparent; }
+QSplitter::handle:horizontal { width: 8px; }
+QSplitter::handle:vertical { height: 8px; }
+QSplitter::handle:hover { background: %fill8%; }
 
-QScrollBar:vertical { background: %1; width: 12px; margin: 0; border: none; }
-QScrollBar::handle:vertical { background: %6; min-height: 24px; border-radius: 4px; margin: 2px 3px; }
-QScrollBar::handle:vertical:hover { background: %4; }
-QScrollBar:horizontal { background: %1; height: 12px; margin: 0; border: none; }
-QScrollBar::handle:horizontal { background: %6; min-width: 24px; border-radius: 4px; margin: 3px 2px; }
-QScrollBar::handle:horizontal:hover { background: %4; }
+QScrollBar:vertical { background: transparent; width: 8px; margin: 0; border: none; }
+QScrollBar::handle:vertical { background: %bd25%; min-height: 24px; border-radius: 0; margin: 0 2px; }
+QScrollBar::handle:vertical:hover { background: %acc%; }
+QScrollBar:horizontal { background: transparent; height: 8px; margin: 0; border: none; }
+QScrollBar::handle:horizontal { background: %bd25%; min-width: 24px; border-radius: 0; margin: 2px 0; }
+QScrollBar::handle:horizontal:hover { background: %acc%; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 
-QStatusBar { background: %1; color: %6; border-top: 1px solid %5; }
-QLabel#headerLabel { color: %6; }
-QLabel#branchLabel { color: %4; font-weight: bold; }
-QMenu { background: %7; border: 1px solid %5; border-radius: 6px; padding: 4px; }
-QMenu::item { padding: 5px 20px; border-radius: 4px; }
-QMenu::item:selected { background: %4; color: %8; }
-QToolBar { background: %1; border: none; spacing: 4px; }
-QFrame#diffHeader { background: %7; border: 1px solid %5; border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+QStatusBar { background: %bg%; color: %dim%; border-top: 1px solid %hair%; }
+QStatusBar::item { border: none; }
+QLabel#sectionLabel { color: %dim%; }
+QLabel#dimLabel { color: %dim%; }
+QLabel#branchLabel { color: %acc%; }
+QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: 6px; }
+QMenu::item { padding: 6px 14px; border-radius: 0; }
+QMenu::item:selected { background: %fill8%; color: %acc%; }
+QMenu::item:disabled { color: %disabled%; }
+QMenu::separator { height: 1px; background: %hair%; margin: 4px 2px; }
+QMenu::indicator { width: 12px; height: 12px; border: 1px solid %bd40%; background: %fill4%; margin-left: 4px; }
+QMenu::indicator:checked { background: %acc%; border-color: %acc%; image: url(:/check.svg); }
+QToolBar { background: %bg%; border: none; spacing: 8px; }
+DiffView { border: 1px solid %bd40%; background: %bg%; }
+QMessageBox QLabel { color: %fg%; }
+QAbstractScrollArea { background: %bg%; }
 )")
-        .arg(win, bs, txt, acc, brd, mut, btn, hiText, alternateBase().name(), sel, hover);
+        .replace(QLatin1String("%bg%"), bg)
+        .replace(QLatin1String("%fg%"), fg)
+        .replace(QLatin1String("%acc%"), acc)
+        .replace(QLatin1String("%dim%"), dim)
+        .replace(QLatin1String("%fill4%"), fill4)
+        .replace(QLatin1String("%fill8%"), fill8)
+        .replace(QLatin1String("%fill18%"), fill18)
+        .replace(QLatin1String("%fill22%"), fill22)
+        .replace(QLatin1String("%sel35%"), sel35)
+        .replace(QLatin1String("%bd40%"), bd40)
+        .replace(QLatin1String("%bd25%"), bd25)
+        .replace(QLatin1String("%hair20%"), hair20)
+        .replace(QLatin1String("%hair%"), hair)
+        .replace(QLatin1String("%disabled%"), disabled)
+        .replace(QLatin1String("%caption%"), QString::number(caption))
+        .replace(QLatin1String("%family%"), m_mono.family())
+        .replace(QLatin1String("%base%"), QString::number(m_fontBase));
 }

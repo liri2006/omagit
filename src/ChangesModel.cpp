@@ -162,10 +162,10 @@ QVariant ChangesModel::headerData(int section, Qt::Orientation orientation, int 
         return {};
     switch (section) {
     case Path: return tr("Path");
-    case Extension: return tr("Extension");
+    case Extension: return tr("Ext");
     case Status: return tr("Status");
-    case LinesAdded: return tr("Lines added");
-    case LinesRemoved: return tr("Lines removed");
+    case LinesAdded: return tr("Added");
+    case LinesRemoved: return tr("Removed");
     }
     return {};
 }

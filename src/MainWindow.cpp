@@ -64,48 +64,84 @@ MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     QTimer::singleShot(0, this, &MainWindow::refresh);
 }
 
+namespace {
+// Nerd Font (Material Design) glyphs used by the shell; empty if the font lacks them.
+QString icon(uint cp, const QString &fallback = QString())
+{
+    const QString g = OmarchyTheme::instance()->glyph(cp);
+    return g.isEmpty() ? fallback : g + QStringLiteral("  ");
+}
+constexpr uint kRefresh = 0xF0450, kArrowUp = 0xF005D, kArrowDown = 0xF0045, kCommit = 0xF0718,
+               kBranch = 0xF062C, kSplit = 0xF0C51, kPilcrow = 0xF09EE;
+
+QLabel *sectionLabel(const QString &text)
+{
+    auto *l = new QLabel(text.toUpper());
+    l->setObjectName(QStringLiteral("sectionLabel"));
+    l->setFont(OmarchyTheme::instance()->captionFont());
+    return l;
+}
+
+QLabel *dimLabel(const QString &text = QString())
+{
+    auto *l = new QLabel(text);
+    l->setObjectName(QStringLiteral("dimLabel"));
+    l->setFont(OmarchyTheme::instance()->captionFont());
+    return l;
+}
+
+QToolButton *toolButton(const QString &text, const QString &tip = QString())
+{
+    auto *b = new QToolButton;
+    b->setText(text);
+    b->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    b->setToolTip(tip);
+    b->setCursor(Qt::PointingHandCursor);
+    b->setFocusPolicy(Qt::NoFocus);
+    return b;
+}
+} // namespace
+
 void MainWindow::buildUi()
 {
+    const OmarchyTheme *theme = OmarchyTheme::instance();
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
-    rootLayout->setContentsMargins(10, 8, 10, 6);
-    rootLayout->setSpacing(6);
+    rootLayout->setContentsMargins(14, 12, 14, 8);
+    rootLayout->setSpacing(8);
 
     // ---- Left pane: commit message + changes list (commit dialog)
     auto *left = new QWidget;
     auto *leftLayout = new QVBoxLayout(left);
     leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setSpacing(6);
+    leftLayout->setSpacing(8);
 
     auto *branchRow = new QHBoxLayout;
-    auto *commitTo = new QLabel(tr("Commit to:"));
-    commitTo->setObjectName(QStringLiteral("headerLabel"));
+    branchRow->setSpacing(8);
+    branchRow->addWidget(sectionLabel(tr("Commit to")));
     m_branchLabel = new QLabel;
     m_branchLabel->setObjectName(QStringLiteral("branchLabel"));
-    branchRow->addWidget(commitTo);
+    m_branchLabel->setFont(theme->titleFont());
     branchRow->addWidget(m_branchLabel);
     branchRow->addStretch();
-    auto *refreshButton = new QToolButton;
-    refreshButton->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
-    refreshButton->setText(tr("Refresh"));
-    refreshButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    auto *refreshButton = toolButton(icon(kRefresh) + tr("Refresh"), tr("Re-read the working tree (F5)"));
     refreshButton->setShortcut(QKeySequence::Refresh);
     connect(refreshButton, &QToolButton::clicked, this, &MainWindow::refresh);
     branchRow->addWidget(refreshButton);
     leftLayout->addLayout(branchRow);
 
-    auto *msgLabel = new QLabel(tr("Message:"));
-    msgLabel->setObjectName(QStringLiteral("headerLabel"));
-    leftLayout->addWidget(msgLabel);
+    leftLayout->addWidget(sectionLabel(tr("Message")));
     m_message = new QPlainTextEdit;
     m_message->setPlaceholderText(tr("Commit message"));
-    m_message->setMaximumHeight(110);
-    m_message->setFont(OmarchyTheme::instance()->monoFont());
+    m_message->setFixedHeight(theme->fontBase() * 7);
     leftLayout->addWidget(m_message);
 
-    auto *changesLabel = new QLabel(tr("Changes made (double-click on file to open it):"));
-    changesLabel->setObjectName(QStringLiteral("headerLabel"));
-    leftLayout->addWidget(changesLabel);
+    auto *changesRow = new QHBoxLayout;
+    changesRow->addWidget(sectionLabel(tr("Changes")));
+    changesRow->addStretch();
+    m_summaryLabel = dimLabel();
+    changesRow->addWidget(m_summaryLabel);
+    leftLayout->addLayout(changesRow);
 
     m_model = new ChangesModel(this);
     auto *proxy = new UnversionedFilter(this);
@@ -117,18 +153,21 @@ void MainWindow::buildUi()
     m_table->setModel(m_proxy);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_table->setAlternatingRowColors(true);
+    m_table->setAlternatingRowColors(false);
     m_table->setSortingEnabled(true);
     m_table->setShowGrid(false);
+    m_table->setFrameShape(QFrame::NoFrame);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(24);
+    m_table->verticalHeader()->setDefaultSectionSize(qRound(theme->fontBase() * 2.33));
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setMinimumSectionSize(40);
-    m_table->setColumnWidth(ChangesModel::Extension, 70);
-    m_table->setColumnWidth(ChangesModel::Status, 90);
-    m_table->setColumnWidth(ChangesModel::LinesAdded, 85);
-    m_table->setColumnWidth(ChangesModel::LinesRemoved, 100);
+    m_table->horizontalHeader()->setHighlightSections(false);
+    m_table->setWordWrap(false);
+    m_table->setColumnWidth(ChangesModel::Extension, 64);
+    m_table->setColumnWidth(ChangesModel::Status, 104);
+    m_table->setColumnWidth(ChangesModel::LinesAdded, 76);
+    m_table->setColumnWidth(ChangesModel::LinesRemoved, 92);
     m_table->setTextElideMode(Qt::ElideMiddle);
     // Path takes whatever is left, but never less than 240px (then the view scrolls).
     m_table->horizontalHeader()->installEventFilter(this);
@@ -140,6 +179,7 @@ void MainWindow::buildUi()
     leftLayout->addWidget(m_table, 1);
 
     auto *optionsRow = new QHBoxLayout;
+    optionsRow->setSpacing(16);
     m_showUnversioned = new QCheckBox(tr("Show unversioned files"));
     m_showUnversioned->setChecked(true);
     connect(m_showUnversioned, &QCheckBox::toggled, this, [this, proxy](bool on) {
@@ -147,27 +187,29 @@ void MainWindow::buildUi()
         proxy->invalidate();
         onCheckedChanged();
     });
-    m_selectAll = new QCheckBox(tr("Select / deselect all"));
+    m_selectAll = new QCheckBox(tr("Select all"));
     m_selectAll->setTristate(true);
     connect(m_selectAll, &QCheckBox::clicked, this, [this](bool on) {
         m_selectAll->setTristate(false);
         m_model->setAllChecked(on);
     });
-    m_summaryLabel = new QLabel;
-    m_summaryLabel->setObjectName(QStringLiteral("headerLabel"));
     optionsRow->addWidget(m_selectAll);
     optionsRow->addWidget(m_showUnversioned);
     optionsRow->addStretch();
-    optionsRow->addWidget(m_summaryLabel);
     leftLayout->addLayout(optionsRow);
 
     auto *buttonRow = new QHBoxLayout;
+    buttonRow->setSpacing(10);
+    buttonRow->addWidget(dimLabel(tr("double-click a file to open it")));
     buttonRow->addStretch();
-    m_commitButton = new QPushButton(QIcon::fromTheme(QStringLiteral("vcs-commit")), tr("Commit"));
+    m_commitButton = new QPushButton(icon(kCommit) + tr("Commit"));
     m_commitButton->setDefault(true);
+    m_commitButton->setCursor(Qt::PointingHandCursor);
     m_commitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
+    m_commitButton->setToolTip(tr("Commit the checked files (Ctrl+Enter)"));
     connect(m_commitButton, &QPushButton::clicked, this, &MainWindow::commit);
     auto *closeButton = new QPushButton(tr("Close"));
+    closeButton->setCursor(Qt::PointingHandCursor);
     connect(closeButton, &QPushButton::clicked, this, &QWidget::close);
     buttonRow->addWidget(m_commitButton);
     buttonRow->addWidget(closeButton);
@@ -177,44 +219,32 @@ void MainWindow::buildUi()
     auto *right = new QWidget;
     auto *rightLayout = new QVBoxLayout(right);
     rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->setSpacing(0);
+    rightLayout->setSpacing(8);
 
     auto *navRow = new QHBoxLayout;
-    navRow->setContentsMargins(0, 0, 0, 6);
-    m_prevButton = new QToolButton;
-    m_prevButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
-    m_prevButton->setText(tr("Previous change"));
-    m_prevButton->setToolTip(tr("Previous change (Shift+F8)"));
-    m_prevButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    m_nextButton = new QToolButton;
-    m_nextButton->setIcon(QIcon::fromTheme(QStringLiteral("go-down")));
-    m_nextButton->setText(tr("Next change"));
-    m_nextButton->setToolTip(tr("Next change (F8)"));
-    m_nextButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    m_changeLabel = new QLabel;
-    m_changeLabel->setObjectName(QStringLiteral("headerLabel"));
+    navRow->setSpacing(8);
+    m_prevButton = toolButton(icon(kArrowUp) + tr("Prev"), tr("Previous change (Shift+F8)"));
+    m_nextButton = toolButton(icon(kArrowDown) + tr("Next"), tr("Next change (F8)"));
+    m_changeLabel = dimLabel();
+    // Let the label shrink instead of forcing the splitter to widen the diff pane.
+    m_changeLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_changeLabel->setMinimumWidth(0);
     navRow->addWidget(m_prevButton);
     navRow->addWidget(m_nextButton);
-    navRow->addSpacing(8);
-    navRow->addWidget(m_changeLabel);
-    navRow->addStretch();
-    auto *paneButton = new QToolButton;
-    paneButton->setIcon(QIcon::fromTheme(QStringLiteral("view-split-left-right")));
-    paneButton->setText(tr("Two-pane"));
-    paneButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    navRow->addSpacing(4);
+    navRow->addWidget(m_changeLabel, 1);
+    auto *paneButton = toolButton(icon(kSplit) + tr("Two-pane"),
+                                  tr("Toggle between two-pane (side by side) and one-pane view (Ctrl+T)"));
     paneButton->setCheckable(true);
-    paneButton->setToolTip(tr("Toggle between two-pane (side by side) and one-pane view (Ctrl+T)"));
     paneButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
     navRow->addWidget(paneButton);
-    auto *wsButton = new QToolButton;
-    wsButton->setText(tr("Whitespace"));
+    auto *wsButton = toolButton(icon(kPilcrow) + tr("Whitespace"), tr("Show whitespace and line endings"));
     wsButton->setCheckable(true);
-    wsButton->setToolTip(tr("Show whitespace and line endings"));
     navRow->addWidget(wsButton);
     rightLayout->addLayout(navRow);
 
     m_diff = new DiffView;
-    m_diff->setFrameShape(QFrame::StyledPanel);
+    m_diff->setFrameShape(QFrame::NoFrame);
     rightLayout->addWidget(m_diff, 1);
     connect(m_prevButton, &QToolButton::clicked, m_diff, &DiffView::previousChange);
     connect(m_nextButton, &QToolButton::clicked, m_diff, &DiffView::nextChange);
@@ -243,6 +273,8 @@ void MainWindow::buildUi()
     new QShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F8), this, m_diff, &DiffView::previousChange);
 
     auto *splitter = new QSplitter(Qt::Horizontal);
+    splitter->setHandleWidth(8);
+    splitter->setChildrenCollapsible(false);
     splitter->addWidget(left);
     splitter->addWidget(right);
     splitter->setStretchFactor(0, 2);
@@ -251,6 +283,8 @@ void MainWindow::buildUi()
     rootLayout->addWidget(splitter, 1);
 
     setCentralWidget(central);
+    statusBar()->setSizeGripEnabled(false);
+    statusBar()->setFont(theme->captionFont());
     statusBar()->showMessage(m_repo->root());
 
     // Refresh the list when the working tree changes (coarse: repo root + .git index).
@@ -284,8 +318,17 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 
 void MainWindow::applyTheme()
 {
+    const OmarchyTheme *theme = OmarchyTheme::instance();
     m_diff->refreshTheme();
-    m_message->setFont(OmarchyTheme::instance()->monoFont());
+    m_message->setFont(theme->uiFont());
+    m_message->setFixedHeight(theme->fontBase() * 7);
+    m_branchLabel->setFont(theme->titleFont());
+    for (QLabel *l : findChildren<QLabel *>()) {
+        if (l->objectName() == QLatin1String("sectionLabel") || l->objectName() == QLatin1String("dimLabel"))
+            l->setFont(theme->captionFont());
+    }
+    statusBar()->setFont(theme->captionFont());
+    m_table->verticalHeader()->setDefaultSectionSize(qRound(theme->fontBase() * 2.33));
     m_table->viewport()->update();
 }
 
@@ -301,7 +344,7 @@ void MainWindow::refresh()
         m_initialSelection.clear();
     }
 
-    m_branchLabel->setText(m_repo->branch());
+    m_branchLabel->setText(icon(kBranch) + m_repo->branch());
     m_model->setChanges(m_repo->status());
 
     // Restore selection
@@ -377,7 +420,7 @@ void MainWindow::onCheckedChanged()
 {
     const int checked = m_model->checkedCount();
     const int total = m_model->count();
-    m_summaryLabel->setText(tr("%1 of %2 files selected").arg(checked).arg(total));
+    m_summaryLabel->setText(tr("%1 / %2 selected").arg(checked).arg(total));
     m_commitButton->setEnabled(checked > 0);
     QSignalBlocker blocker(m_selectAll);
     if (checked == 0)

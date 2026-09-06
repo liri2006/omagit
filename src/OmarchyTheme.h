@@ -29,15 +29,34 @@ public:
     // Raw colors.toml keys (accent, background, red, ...). Falls back to Tokyo Night.
     QColor color(const QString &key) const;
 
-    // Derived UI colors
+    // Derived UI colors. Omarchy's shell paints every surface on the one
+    // theme background and builds control chrome from foreground alpha:
+    // fills at 4/8/18/22 %, borders at 40/25 %, separators at 12–20 %.
     QColor window() const;      // main window chrome
-    QColor base() const;        // lists / editors
+    QColor base() const;        // lists / editors (same as window)
     QColor alternateBase() const;
     QColor text() const;
-    QColor mutedText() const;
-    QColor border() const;
+    QColor mutedText() const;   // Qt.darker(foreground, 1.4) like the shell's dim labels
+    QColor border() const;      // hairline separator (foreground @ 20 %)
     QColor accent() const;
     QColor selection() const;
+    QColor fill(qreal alpha) const;   // foreground blended over background
+    QColor normalFill() const { return fill(0.04); }
+    QColor hoverFill() const { return fill(0.08); }
+    QColor selectedFill() const { return fill(0.18); }
+    QColor pressedFill() const { return fill(0.22); }
+    QColor selectionFill() const { return fill(0.35); }
+    QColor normalBorder() const { return fill(0.40); }
+    QColor hoverBorder() const { return fill(0.25); }
+    QColor hairline() const { return fill(0.12); }
+
+    // Typography: the shell's type scale, rooted at [font] base-size of shell.toml.
+    int fontBase() const { return m_fontBase; }
+    QFont uiFont() const;
+    QFont captionFont() const;  // bold, ~0.833 × base, used for section labels
+    QFont titleFont() const;    // bold, ~1.167 × base
+    // Nerd Font glyph if the UI font has it, otherwise an empty string.
+    QString glyph(uint codepoint) const;
 
     // Diff view colors (classic diff semantics, tinted with theme colors)
     QColor diffNormalBg() const;
@@ -61,6 +80,7 @@ signals:
 private:
     void load();
     void loadFont();
+    void loadShellToml();
     void setupWatcher();
     void reapplyLater();
     QString buildStyleSheet() const;
@@ -69,6 +89,7 @@ private:
     bool m_dark = true;
     QString m_name;
     QFont m_mono;
+    int m_fontBase = 12;
     QApplication *m_app = nullptr;
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer *m_debounce = nullptr;

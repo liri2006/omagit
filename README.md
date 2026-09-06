@@ -17,9 +17,13 @@ Nautilus context menu as **Open in Omagit** (only shown inside git repositories)
   next/previous change navigation (F8 / Shift+F8), optional whitespace markers, text selection
   and copy, and Ctrl+wheel zoom.
 - Commit the checked files with a message (Ctrl+Enter).
+- Looks like an Omarchy system program: the UI follows the shell's control kit (square
+  corners, one flat background, 1px hairline borders and foreground-alpha fills for
+  normal/hover/selected states, accent-coloured selection, Nerd Font glyph icons, the shell's
+  monospace type scale rooted at `[font] base-size` from `shell.toml`).
 - Picks up the active Omarchy theme from `~/.local/state/omarchy/current/theme/colors.toml`
-  (palette, light/dark mode, icon theme, monospace font) and re-themes itself live when
-  you run `omarchy theme set …`.
+  (palette, light/dark mode, icon theme, monospace font) plus `shell.toml` (font size), and
+  re-themes itself live when you run `omarchy theme set …` or change the font size.
 - Refreshes when the working tree or index changes.
 
 ## Build & install
