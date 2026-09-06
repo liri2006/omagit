@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Omagit
+Comment=Review pending changes and diffs of a git repository
+Exec=omagit %f
+Icon=omagit
+Terminal=false
+Categories=Development;RevisionControl;Qt;
+Keywords=git;diff;commit;
+StartupWMClass=omagit
+MimeType=inode/directory;
