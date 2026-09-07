@@ -116,4 +116,5 @@ private:
     int m_currentBlock = -1;
     Pos m_selAnchor, m_selCursor;
     bool m_dragging = false;
+    QScrollBar *m_paneScrollBars[2] = {};
 };

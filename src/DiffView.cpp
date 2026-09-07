@@ -13,6 +13,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QStyleOptionSlider>
 #include <QWheelEvent>
 
@@ -91,10 +92,19 @@ DiffView::DiffView(QWidget *parent)
     : QAbstractScrollArea(parent)
 {
     setFocusPolicy(Qt::StrongFocus);
-    setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    // The hidden native bar owns the shared column offset, including keyboard
+    // navigation and saved view state. Each pane gets its own visible control.
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBar(new DiffScrollBar(this));
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     viewport()->setCursor(Qt::IBeamCursor);
+    for (int pane = 0; pane < 2; ++pane) {
+        auto *bar = new QScrollBar(Qt::Horizontal, this);
+        m_paneScrollBars[pane] = bar;
+        bar->setObjectName(QStringLiteral("diffHorizontalScrollBar%1").arg(pane));
+        connect(bar, &QScrollBar::valueChanged, horizontalScrollBar(), &QScrollBar::setValue);
+        connect(horizontalScrollBar(), &QScrollBar::valueChanged, bar, &QScrollBar::setValue);
+    }
     refreshTheme();
     connect(verticalScrollBar(), &QScrollBar::valueChanged, viewport(), qOverload<>(&QWidget::update));
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, viewport(), qOverload<>(&QWidget::update));
@@ -245,6 +255,7 @@ void DiffView::restoreViewState(const ViewState &state)
 void DiffView::clear(const QString &message)
 {
     m_doc = DiffDocument();
+    m_maxCols = 0;
     m_title.clear();
     m_subtitle.clear();
     m_emptyMessage = message;
@@ -289,17 +300,35 @@ void DiffView::setShowWhitespace(bool on)
 
 void DiffView::updateScrollBars()
 {
+    const int textWidth = paneRect(0).width() - marginWidth() - 8;
+    const int visibleCols = qMax(1, qFloor(textWidth / m_charWidth));
+    const int maxColumn = m_doc.lines.isEmpty() ? 0 : qMax(0, m_maxCols + 2 - visibleCols);
+    const int barHeight = maxColumn > 0 ? m_paneScrollBars[0]->sizeHint().height() : 0;
+    if (viewportMargins().bottom() != barHeight)
+        setViewportMargins(0, 0, 0, barHeight);
+
+    horizontalScrollBar()->setRange(0, maxColumn);
+    horizontalScrollBar()->setPageStep(visibleCols);
+    horizontalScrollBar()->setSingleStep(4);
+    for (int pane = 0; pane < 2; ++pane) {
+        auto *bar = m_paneScrollBars[pane];
+        const QSignalBlocker blocker(bar);
+        bar->setRange(0, maxColumn);
+        bar->setPageStep(visibleCols);
+        bar->setSingleStep(4);
+        bar->setValue(horizontalScrollBar()->value());
+        const QRect pr = paneRect(pane);
+        bar->setGeometry(viewport()->x() + pr.x(), viewport()->geometry().bottom() + 1,
+                         pr.width(), barHeight);
+        bar->setVisible(maxColumn > 0 && pane < paneCount());
+    }
+
     const int rows = m_panes.isEmpty() ? 0 : m_panes[0].size();
     const int visibleLines = qMax(1, (viewport()->height() - headerHeight()) / m_lineHeight);
     verticalScrollBar()->setRange(0, qMax(0, rows - visibleLines));
     verticalScrollBar()->setPageStep(visibleLines);
     verticalScrollBar()->setSingleStep(1);
 
-    const int textWidth = paneRect(0).width() - marginWidth() - 8;
-    const int visibleCols = qMax(1, qFloor(textWidth / m_charWidth));
-    horizontalScrollBar()->setRange(0, qMax(0, m_maxCols + 2 - visibleCols));
-    horizontalScrollBar()->setPageStep(visibleCols);
-    horizontalScrollBar()->setSingleStep(4);
 }
 
 void DiffView::resizeEvent(QResizeEvent *event)
