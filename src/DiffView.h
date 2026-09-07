@@ -107,7 +107,7 @@ private:
     Mode m_mode = TwoPane;
     QVector<QVector<int>> m_panes;   // panes[pane][row] = line index or -1
     QVector<int> m_blockStarts;      // row indices
-    int m_charWidth = 8;
+    qreal m_charWidth = 8;
     int m_lineHeight = 16;
     int m_digits = 1;
     int m_maxCols = 0;
