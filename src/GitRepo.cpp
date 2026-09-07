@@ -448,10 +448,23 @@ void GitRepo::applyTreeSizes(const QString &commit, QList<FileChange> &changes) 
     }
 }
 
+// Case-insensitive compare with case as a tie-break so the order stays total.
+static int foldedCompare(const QString &a, const QString &b)
+{
+    const int folded = QString::compare(a, b, Qt::CaseInsensitive);
+    return folded != 0 ? folded : QString::compare(a, b);
+}
+
+// Directory first, then file name, so the files of a folder come before the
+// files of its subfolders (a plain path compare would interleave them).
 static void sortByPath(QList<FileChange> &changes)
 {
     std::sort(changes.begin(), changes.end(), [](const FileChange &a, const FileChange &b) {
-        return a.path.localeAwareCompare(b.path) < 0;
+        const int as = a.path.lastIndexOf(QLatin1Char('/')), bs = b.path.lastIndexOf(QLatin1Char('/'));
+        const int dir = foldedCompare(a.path.left(qMax(as, 0)), b.path.left(qMax(bs, 0)));
+        if (dir != 0)
+            return dir < 0;
+        return foldedCompare(a.path.mid(as + 1), b.path.mid(bs + 1)) < 0;
     });
 }
 
@@ -661,6 +674,49 @@ QString GitRepo::patch(const QList<FileChange> &changes, int maxBytes) const
         text = text.left(cut) + QStringLiteral("\n[... diff truncated; the file list above is complete ...]\n");
     }
     return out + text;
+}
+
+bool GitRepo::discardChanges(const FileChange &change, QString *error) const
+{
+    if (error)
+        error->clear();
+    const auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    QStringList paths{change.path};
+    if (change.kind == FileChange::Renamed && !change.oldPath.isEmpty())
+        paths << change.oldPath;
+    for (const QString &path : paths) {
+        if (path.isEmpty() || QDir::isAbsolutePath(path) || QDir::cleanPath(path) != path
+            || path == QStringLiteral("..") || path.startsWith(QStringLiteral("../")))
+            return fail(QStringLiteral("Invalid repository file path."));
+    }
+
+    int code = 0;
+    QByteArray err;
+    const QStringList env{QStringLiteral("GIT_LITERAL_PATHSPECS=1")};
+    if (change.isUntracked()) {
+        // Recheck the index in case the file was staged while the menu was open.
+        const QByteArray tracked = run({QStringLiteral("ls-files"), QStringLiteral("-z"),
+                                       QStringLiteral("--"), change.path}, &code, &err, 15000, env);
+        if (code != 0)
+            return fail(QString::fromUtf8(err).trimmed());
+        if (tracked.isEmpty()) {
+            QFile file(QDir(m_root).filePath(change.path));
+            if (!file.remove())
+                return fail(file.errorString());
+            return true;
+        }
+    }
+
+    QStringList args{QStringLiteral("restore"), QStringLiteral("--source=")
+                        + (hasHead() ? QStringLiteral("HEAD") : emptyTree()),
+                     QStringLiteral("--staged"), QStringLiteral("--worktree"), QStringLiteral("--")};
+    args += paths;
+    run(args, &code, &err, 15000, env);
+    return code == 0 || fail(QString::fromUtf8(err).trimmed());
 }
 
 bool GitRepo::commit(const QString &message, const QStringList &paths, QString *error) const

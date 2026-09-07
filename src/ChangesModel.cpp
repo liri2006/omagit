@@ -180,6 +180,22 @@ void ChangesModel::setPathsChecked(const QStringList &paths, bool checked)
     emit checkedChanged();
 }
 
+int ChangesModel::statusRank(FileChange::Kind kind)
+{
+    switch (kind) {
+    case FileChange::Modified: return 0;
+    case FileChange::Unmerged: return 1;
+    case FileChange::Added: return 2;
+    case FileChange::Deleted: return 3;
+    case FileChange::Renamed: return 4;
+    case FileChange::Copied: return 5;
+    case FileChange::TypeChanged: return 6;
+    case FileChange::Unknown: return 7;
+    case FileChange::Untracked: return 8;
+    }
+    return 7;
+}
+
 int ChangesModel::rowCount(const QModelIndex &parent) const
 {
     return parent.isValid() ? 0 : m_changes.size();
@@ -201,7 +217,11 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
     case PathRole: return c.path;
     case KindRole: return int(c.kind);
     case SortRole:
-        return index.column() == Size ? QVariant(c.size) : data(index, Qt::DisplayRole);
+        if (index.column() == Size)
+            return c.size;
+        if (index.column() == Status)
+            return statusRank(c.kind);
+        return data(index, Qt::DisplayRole);
     case Qt::DisplayRole:
         switch (index.column()) {
         case Name: return c.path.section(QLatin1Char('/'), -1);
@@ -330,7 +350,7 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->setColumnWidth(ChangesModel::LinesRemoved, 92);
     table->setTextElideMode(Qt::ElideMiddle);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->sortByColumn(ChangesModel::Name, Qt::AscendingOrder);
+    table->sortByColumn(ChangesModel::Status, Qt::AscendingOrder); // modified first, untracked last
     table->horizontalHeader()->installEventFilter(this);
     applyTheme();
 }

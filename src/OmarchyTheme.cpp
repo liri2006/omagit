@@ -270,14 +270,15 @@ QColor OmarchyTheme::selection() const { return hoverFill(); }
 // Classic diff colours: removed = RGB(255,200,100), added = RGB(255,255,0) on light;
 // RGB(83,66,33) / RGB(83,83,0) on dark. We keep the orange/yellow semantics but
 // tint the theme's own palette so it blends with the rest of the desktop.
+// Added lines use a green of the same weight instead of the classic yellow.
 QColor OmarchyTheme::diffNormalBg() const { return base(); }
-QColor OmarchyTheme::diffRemovedBg() const { return mix(base(), color("orange"), m_dark ? 0.32 : 0.42); }
-QColor OmarchyTheme::diffAddedBg() const { return mix(base(), color("yellow"), m_dark ? 0.32 : 0.42); }
-QColor OmarchyTheme::diffInlineRemovedBg() const { return mix(base(), color("red"), m_dark ? 0.55 : 0.6); }
-QColor OmarchyTheme::diffInlineAddedBg() const { return mix(base(), color("bright_yellow"), m_dark ? 0.6 : 0.75); }
+QColor OmarchyTheme::diffRemovedBg() const { return m_dark ? QColor(83, 66, 33) : QColor(255, 200, 100); }
+QColor OmarchyTheme::diffAddedBg() const { return m_dark ? QColor(33, 83, 33) : QColor(200, 255, 200); }
+QColor OmarchyTheme::diffInlineRemovedBg() const { return m_dark ? QColor(100, 40, 40) : QColor(200, 100, 100); }
+QColor OmarchyTheme::diffInlineAddedBg() const { return m_dark ? QColor(60, 120, 60) : QColor(150, 230, 150); }
 QColor OmarchyTheme::diffMarginBg() const { return fill(0.06); }
 QColor OmarchyTheme::diffHeaderBg() const { return fill(0.06); }
-QColor OmarchyTheme::diffEmptyBg() const { return fill(0.12); }
+QColor OmarchyTheme::diffEmptyBg() const { return m_dark ? QColor(66, 66, 66) : QColor(200, 200, 200); }
 QColor OmarchyTheme::diffAddedIcon() const { return color("green"); }
 QColor OmarchyTheme::diffRemovedIcon() const { return color("red"); }
 

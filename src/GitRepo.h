@@ -145,6 +145,10 @@ public:
     // Untracked files show up as added.
     QString patch(const QList<FileChange> &changes, int maxBytes = 80000) const;
 
+    // Discard index and working-tree changes relative to HEAD (also in amend
+    // mode). New files are removed; a rename restores both paths.
+    bool discardChanges(const FileChange &change, QString *error) const;
+
     bool commit(const QString &message, const QStringList &paths, QString *error) const;
 
     // Replace HEAD by a commit whose tree is HEAD's parent tree plus the

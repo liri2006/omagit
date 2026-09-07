@@ -10,10 +10,13 @@ history with a branch graph, and plugs into the Nautilus context menu as
 
 - Changes list with checkboxes, path / extension / size / status / lines added / lines removed,
   coloured by status like a classic git GUI (modified, added, deleted, renamed, conflicted, unversioned).
+  Sorted by status by default: modified files first, unversioned last, and within each group by
+  folder and then file name (case-insensitive); click a column header to sort by something else.
 - Diff view modelled on a classic diff tool: **two-pane side-by-side view by default** (HEAD on
   the left, working tree on the right, aligned row by row with grey filler where one side has
   nothing) and a one-pane unified view (toggle with the *Two-pane* button or Ctrl+T; the choice
-  is remembered). Both show the whole file as context, orange removed lines, yellow added lines,
+  is remembered). Both show the whole file as context in a classic diff tool's own line colours
+  (orange removed lines, grey filler; darker variants on dark themes) with green added lines,
   inline (word-level) change highlighting, a margin with +/− icons and line numbers,
   next/previous change navigation (F8 / Shift+F8), optional whitespace markers, text selection
   and copy, and Ctrl+wheel zoom.

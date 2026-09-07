@@ -24,6 +24,7 @@ SOURCES += \
     src/MainWindow.cpp
 
 HEADERS += \
+    src/DesktopExec.h \
     src/OmarchyTheme.h \
     src/GitRepo.h \
     src/DiffModel.h \

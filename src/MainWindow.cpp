@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "BadgeButton.h"
+#include "DesktopExec.h"
 #include "DiffModel.h"
 #include "DiffView.h"
 #include "HistoryView.h"
@@ -160,11 +161,11 @@ QString tildePath(const QString &path)
     return path;
 }
 
-// The program the desktop opens a file with (what QDesktopServices::openUrl
-// will use): `xdg-mime query default <mime>` names a desktop file, whose
-// Name and Icon are read here. Empty when nothing is registered.
+// Resolve the default application's label and launch information.
 struct DefaultApp {
     QString name, icon;
+    QString exec, desktopFile, workingDirectory;
+    bool terminal = false;
 };
 
 DefaultApp defaultAppFor(const QString &filePath)
@@ -183,6 +184,7 @@ DefaultApp defaultAppFor(const QString &filePath)
                                                  : QStandardPaths::locate(QStandardPaths::ApplicationsLocation, desktopId);
         QFile f(file);
         if (!file.isEmpty() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            app.desktopFile = file;
             bool inEntry = false;
             while (!f.atEnd()) {
                 const QString line = QString::fromUtf8(f.readLine()).trimmed();
@@ -196,6 +198,12 @@ DefaultApp defaultAppFor(const QString &filePath)
                     app.name = line.mid(5);
                 else if (line.startsWith(QLatin1String("Icon=")))
                     app.icon = line.mid(5);
+                else if (line.startsWith(QLatin1String("Exec=")))
+                    app.exec = line.mid(5);
+                else if (line.startsWith(QLatin1String("Path=")))
+                    app.workingDirectory = line.mid(5);
+                else if (line == QLatin1String("Terminal=true"))
+                    app.terminal = true;
             }
         }
         if (app.name.isEmpty() && !desktopId.isEmpty()) // no desktop file found: show the id
@@ -570,6 +578,7 @@ QWidget *MainWindow::buildCommitPage()
     auto *proxy = new UnversionedFilter(this);
     proxy->setSourceModel(m_model);
     proxy->setSortRole(ChangesModel::SortRole);
+    proxy->setSortCaseSensitivity(Qt::CaseInsensitive);
     m_proxy = proxy;
 
     m_table = new QTableView;
@@ -586,7 +595,7 @@ QWidget *MainWindow::buildCommitPage()
             setDiffPaneVisible(true);
     });
     connect(m_model, &ChangesModel::checkedChanged, this, &MainWindow::onCheckedChanged);
-    // Right-click: "Open with <the default program>" (deleted files have nothing to open).
+    // File actions apply to the clicked row, independent of checked files.
     m_table->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_table, &QTableView::customContextMenuRequested, this, [this](const QPoint &pos) {
         const QModelIndex index = m_table->indexAt(pos);
@@ -603,6 +612,16 @@ QWidget *MainWindow::buildCommitPage()
         open->setEnabled(c.kind != FileChange::Deleted);
         open->setToolTip(c.kind == FileChange::Deleted ? tr("The file no longer exists") : path);
         connect(open, &QAction::triggered, this, &MainWindow::openInEditor);
+        menu.addSeparator();
+        QAction *discard = menu.addAction(tr("Discard changes"));
+        discard->setToolTip(c.isUntracked() ? tr("Delete this untracked file")
+                                          : tr("Restore this file to the latest commit, including staged changes"));
+        connect(discard, &QAction::triggered, this, [this, change = c] {
+            QString error;
+            if (!m_repo->discardChanges(change, &error))
+                QMessageBox::critical(this, tr("Discard changes failed"), error);
+            refresh();
+        });
         menu.setToolTipsVisible(true);
         menu.exec(m_table->viewport()->mapToGlobal(pos));
     });
@@ -1267,7 +1286,36 @@ void MainWindow::openInEditor()
     const FileChange c = currentChange(&ok);
     if (!ok || c.kind == FileChange::Deleted)
         return;
-    QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(m_repo->root()).filePath(c.path)));
+    const QString path = QDir(m_repo->root()).filePath(c.path);
+    const DefaultApp app = defaultAppFor(path);
+    if (!app.exec.isEmpty()) {
+        QStringList args = desktopExecArguments(app.exec, path, app.name, app.icon, app.desktopFile);
+        if (args.isEmpty()) {
+            QMessageBox::critical(this, tr("Open failed"),
+                                  tr("The application command for %1 is empty.").arg(app.name));
+            return;
+        }
+        QString program = args.takeFirst();
+        if (app.terminal) {
+            if (QStandardPaths::findExecutable(QStringLiteral("xdg-terminal-exec")).isEmpty()) {
+                QMessageBox::critical(this, tr("Open failed"),
+                                      tr("Opening %1 requires xdg-terminal-exec.").arg(app.name));
+                return;
+            }
+            args.prepend(program);
+            args.prepend(QStringLiteral("--"));
+            program = QStringLiteral("xdg-terminal-exec");
+        }
+        // Keep the editor alive when OmaGit closes.
+        QProcess process;
+        process.setWorkingDirectory(app.workingDirectory.isEmpty() ? m_repo->root() : app.workingDirectory);
+        process.setProgram(program);
+        process.setArguments(args);
+        if (!process.startDetached())
+            QMessageBox::critical(this, tr("Open failed"), process.errorString());
+    } else if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path))) {
+        QMessageBox::critical(this, tr("Open failed"), tr("Could not open %1 with its default application.").arg(c.path));
+    }
 }
 
 // ---------------------------------------------------------------------------

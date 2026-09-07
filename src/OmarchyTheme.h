@@ -58,7 +58,8 @@ public:
     // Nerd Font glyph if the UI font has it, otherwise an empty string.
     QString glyph(uint codepoint) const;
 
-    // Diff view colors (classic diff semantics, tinted with theme colors)
+    // Diff view colors: classic light/dark diff line colours,
+    // picked by whether the Omarchy theme is dark. Margin/header follow the theme.
     QColor diffNormalBg() const;
     QColor diffRemovedBg() const;
     QColor diffAddedBg() const;

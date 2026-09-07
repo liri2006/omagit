@@ -19,8 +19,14 @@ public:
     enum Column { Number, Name, Path, Extension, Size, Status, LinesAdded, LinesRemoved, ColumnCount };
     // Extra roles (any column): the repo-relative path and the FileChange::Kind.
     // SortRole is what a proxy should sort by: the display text, except that
-    // Size sorts by the byte count rather than its "1.2 KiB" rendering.
+    // Size sorts by the byte count rather than its "1.2 KiB" rendering and
+    // Status sorts by group (modified first, untracked last). A stable sort
+    // keeps the model's path order inside a group, so the table's default
+    // Status sort lists each group alphabetically.
     enum Role { PathRole = Qt::UserRole + 1, KindRole, SortRole };
+
+    // Position of a kind in the Status sort: modified first, untracked last.
+    static int statusRank(FileChange::Kind kind);
 
     explicit ChangesModel(QObject *parent = nullptr);
 

@@ -2,6 +2,7 @@
 // Build: cd tests && qmake6 tests.pro && make && ./gitrepo_test
 #include "../src/CommitMessageAgent.h"
 #include "../src/GitRepo.h"
+#include "../src/DesktopExec.h"
 #include "../src/RemoteSync.h"
 
 #include <QCoreApplication>
@@ -61,6 +62,81 @@ static QString initRepo(const QString &dir)
     git(dir, {"config", "user.email", "tester@example.com"});
     git(dir, {"config", "commit.gpgsign", "false"});
     return dir;
+}
+
+static void testDiscard(const QString &base)
+{
+    const QString dir = initRepo(base + "/discard");
+    const QStringList names{"edited.txt", "deleted.txt", "renamed.txt", "keep.txt", "literal[1].txt", "literal1.txt"};
+    for (const QString &name : names)
+        write(dir, name, name + " original\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "initial"});
+    write(dir, "edited.txt", "staged\n");
+    write(dir, "keep.txt", "keep staged\n");
+    git(dir, {"add", "."});
+    write(dir, "edited.txt", "unstaged\n");
+    git(dir, {"rm", "-q", "deleted.txt"});
+    git(dir, {"mv", "renamed.txt", "new name.txt"});
+    write(dir, "added.txt", "new staged\n");
+    git(dir, {"add", "added.txt"});
+    write(dir, "untracked.txt", "new unstaged\n");
+    write(dir, "literal[1].txt", "changed\n");
+    write(dir, "literal1.txt", "keep unstaged\n");
+
+    GitRepo repo(dir);
+    QString error;
+    for (const QString &name : QStringList{"edited.txt", "deleted.txt", "new name.txt", "added.txt", "untracked.txt", "literal[1].txt"}) {
+        const auto changes = repo.status();
+        const FileChange *change = find(changes, name);
+        CHECK(change);
+        if (change)
+            CHECK(repo.discardChanges(*change, &error));
+    }
+    for (const QString &name : QStringList{"edited.txt", "deleted.txt", "renamed.txt", "literal[1].txt"}) {
+        QFile file(dir + "/" + name);
+        CHECK(file.open(QIODevice::ReadOnly));
+        CHECK(file.readAll() == (name + " original\n").toUtf8());
+    }
+    CHECK(!QFileInfo::exists(dir + "/new name.txt"));
+    CHECK(!QFileInfo::exists(dir + "/added.txt"));
+    CHECK(!QFileInfo::exists(dir + "/untracked.txt"));
+    CHECK(repo.status().size() == 2);
+    CHECK(git(dir, {"show", ":keep.txt"}) == "keep staged");
+    CHECK(git(dir, {"diff", "--", "literal1.txt"}).contains("+keep unstaged"));
+
+    // Amend mode still restores HEAD, not the parent shown in the diff.
+    write(dir, "edited.txt", "latest commit\n");
+    git(dir, {"add", "edited.txt"});
+    git(dir, {"commit", "-q", "-m", "second"});
+    write(dir, "edited.txt", "pending\n");
+    repo.setAmend(true);
+    const auto changes = repo.status();
+    const FileChange *edited = find(changes, "edited.txt");
+    CHECK(edited);
+    if (edited)
+        CHECK(repo.discardChanges(*edited, &error));
+    QFile restored(dir + "/edited.txt");
+    CHECK(restored.open(QIODevice::ReadOnly));
+    CHECK(restored.readAll() == "latest commit\n");
+
+    // New repositories and a file staged after the menu was opened.
+    const QString unbornDir = initRepo(base + "/discard-unborn");
+    GitRepo unborn(unbornDir);
+    write(unbornDir, "first.txt", "first\n");
+    const auto newChanges = unborn.status();
+    CHECK(newChanges.size() == 1);
+    git(unbornDir, {"add", "."});
+    if (!newChanges.isEmpty())
+        CHECK(unborn.discardChanges(newChanges.first(), &error));
+    CHECK(unborn.status().isEmpty());
+    CHECK(!QFileInfo::exists(unbornDir + "/first.txt"));
+
+    FileChange invalid;
+    invalid.path = "../outside.txt";
+    invalid.kind = FileChange::Untracked;
+    CHECK(!unborn.discardChanges(invalid, &error));
+    CHECK(!error.isEmpty());
 }
 
 static void testAmend(const QString &base)
@@ -509,6 +585,16 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     QTemporaryDir tmp;
+    const QString openPath = QStringLiteral("/tmp/a b;$(touch nope)%f.txt");
+    CHECK(desktopExecArguments("nvim %F", openPath, "Neovim", "nvim", "nvim.desktop")
+          == QStringList({"nvim", openPath}));
+    CHECK(desktopExecArguments("\"/opt/My Editor/bin/editor\" --title %c %i %k %f %% %d", openPath,
+                               "My Editor", "editor", "/tmp/editor.desktop")
+          == QStringList({"/opt/My Editor/bin/editor", "--title", "My Editor", "--icon", "editor",
+                          "/tmp/editor.desktop", openPath, "%"}));
+    CHECK(desktopExecArguments("editor %U", "/tmp/a b.txt", {}, {}, {})
+          == QStringList({"editor", "file:///tmp/a%20b.txt"}));
+    testDiscard(tmp.path());
     testAmend(tmp.path());
     testAmendRoot(tmp.path());
     testStatusAndHistory(tmp.path());
