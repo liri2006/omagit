@@ -79,6 +79,41 @@ struct BranchList {
     QString current;   // the checked-out branch; empty when HEAD is detached or unborn
     QStringList local; // "main", "feature/x", sorted
     QStringList remote; // "origin/main", sorted; a remote's HEAD pointer is left out
+
+    bool isRemote(const QString &name) const { return !local.contains(name) && remote.contains(name); }
+};
+
+// What `git merge <source>` would do to `destination`, worked out on the
+// trees alone (git merge-tree), so the working tree is not touched.
+struct MergePreview {
+    enum Outcome {
+        Same,        // the same branch on both sides
+        UpToDate,    // destination already contains source
+        FastForward, // destination is behind source and just moves up to it
+        Clean,       // a merge commit, no conflicts
+        Conflicts,   // a merge commit git cannot complete on its own
+        Failed       // git could not tell (unknown ref, git older than 2.38, ...)
+    };
+    Outcome outcome = Failed;
+    QString source, destination;
+    int commits = 0;   // commits of source that destination lacks
+    int diverged = 0;  // commits of destination that source lacks (0: fast-forward)
+    int files = 0, added = 0, removed = 0; // what the merge brings in
+    QStringList conflicts; // paths git would leave with conflict markers
+    QStringList blocked;   // paths with local changes git would refuse to overwrite
+    QString error;
+
+    bool isValid() const { return outcome != Failed; }
+    bool canMerge() const { return (outcome == FastForward || outcome == Clean || outcome == Conflicts) && blocked.isEmpty(); }
+};
+
+// A merge git could not finish on its own: MERGE_HEAD exists and the
+// conflicted files wait in the working tree.
+struct MergeState {
+    bool inProgress = false;
+    QString source;        // the branch being merged in (its short hash when no branch points at it)
+    QStringList conflicts; // paths still unmerged
+    QString message;       // the commit message git proposes (MERGE_MSG without the comments)
 };
 
 class GitRepo : public QObject
@@ -111,6 +146,26 @@ public:
     // there is one and otherwise creates it tracking the remote branch.
     // Local changes are carried over; git refuses if they would be lost.
     bool checkout(const QString &name, QString *error) const;
+    // The repository's main line: what origin/HEAD points at (as the local
+    // branch when there is one), else main/master/trunk/develop if it exists.
+    QString defaultBranch() const;
+    // The local branches, the one committed to most recently first.
+    QStringList branchesByActivity() const;
+
+    // --- Merging ------------------------------------------------------------
+
+    MergePreview mergePreview(const QString &source, const QString &destination) const;
+    // The command a merge of `source` into the current branch runs
+    // (`git merge --no-edit [--no-ff] source`), for runAsync and tooltips.
+    static QStringList mergeArgs(const QString &source, bool noFastForward);
+    enum MergeResult { Merged, MergeConflicts, MergeFailed };
+    // Merges `source` into the current branch. MergeConflicts leaves the
+    // merge in progress (see mergeState()); `error` gets git's message.
+    MergeResult merge(const QString &source, bool noFastForward, QString *error) const;
+    MergeState mergeState() const;
+    bool mergeInProgress() const;
+    // `git merge --abort`: the branch and the working tree go back to how they were.
+    bool abortMerge(QString *error) const;
 
     // Runs git without blocking; `done(exitCode, stdout, stderr)` is called from
     // the event loop when it finishes (exitCode -1: crashed, killed, or not
@@ -183,6 +238,7 @@ private:
     static void traceCommand(const QStringList &args);
     QString emptyTree() const;
     QStringList stageablePaths(const QStringList &paths, const QStringList &env) const;
+    QStringList changedPaths() const; // every path `git status` lists, untracked included
     void applyNumstat(const QByteArray &numstat, QList<FileChange> &changes) const;
     void applyTreeSizes(const QString &commit, QList<FileChange> &changes) const;
 

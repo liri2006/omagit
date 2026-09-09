@@ -19,7 +19,8 @@ history with a branch graph, and plugs into the Nautilus context menu as
   (orange removed lines, grey filler; darker variants on dark themes) with green added lines,
   inline (word-level) change highlighting, a margin with +/− icons and line numbers,
   next/previous change navigation (F8 / Shift+F8), optional whitespace markers, text selection
-  and copy, and Ctrl+wheel zoom.
+  and copy, and Ctrl+wheel zoom. Drag the center divider to resize the diff panes;
+  double-click it to restore an equal split.
 - Commit the checked files with a message (Ctrl+Enter).
 - **Commit message from a coding agent**: the sparkle in the top right corner of the message
   box (Ctrl+G) hands the checked changes (all of them when none is checked) to a coding
@@ -57,6 +58,20 @@ history with a branch graph, and plugs into the Nautilus context menu as
   as does `--no-fetch`). Fetches and pushes made in a terminal are picked up through a
   watch on the git directory. Push on a branch without an upstream publishes it
   (`git push -u`); hovering the branch name says which upstream the counts refer to.
+- **Merge** (the toolbar button after Fetch, Ctrl+Shift+M, also on the Mini rail): a merge view
+  with the branch to merge on the left and the branch it goes into on the right — the current
+  branch to begin with, the main line (or the branch committed to most recently) on the other
+  side — each a searchable dropdown, and a swap button between them to merge the other way
+  round. As soon as both are set the view says what `git merge` would do, worked out on the
+  trees alone (`git merge-tree`, nothing touches the working tree): a *fast-forward*, a clean
+  *merge commit* (with the commit and file counts), or *conflicts*, naming the files git could
+  not merge on its own. Local changes that git would refuse to overwrite are pointed out and
+  block the Merge button. Merging into a branch that is not checked out switches to it first.
+  *Always create a merge commit* is `--no-ff`. A merge that ends in conflicts hands over to the
+  Changes list: the conflicted files are red, git's own message is in the box, the button reads
+  *Commit merge* (a partial commit being impossible mid-merge, it commits what is staged),
+  the branch label says *merging …* and the Merge button carries a red mark; opening the
+  view again shows the files still unresolved and offers *Abort merge*.
 - **Amend last commit**: tick the box (or start with `--amend`) and the message box gets the
   last commit's message while the changes list is compared against the commit before it, so
   the files of the last commit appear checked next to your new changes. *Amend* then rewrites
@@ -89,7 +104,9 @@ history with a branch graph, and plugs into the Nautilus context menu as
   monospace type scale rooted at `[font] base-size` from `shell.toml`).
 - Picks up the active Omarchy theme from `~/.local/state/omarchy/current/theme/colors.toml`
   (palette, light/dark mode, icon theme, monospace font) plus `shell.toml` (font size), and
-  re-themes itself live when you run `omarchy theme set …` or change the font size.
+  re-themes itself live when you run `omarchy theme set …` or `omarchy display text size …`
+  (the whole window re-flows to the new base size; a Ctrl+wheel zoom of the diff stays as an
+  offset on top of it).
 - Refreshes when the working tree or index changes.
 
 ## Build & install
@@ -119,7 +136,7 @@ layout. Search by action, key combination, or context; **Esc** closes the panel.
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;
 `--screenshot-after <ms>` sets the delay, e.g. to catch a running fetch; `--screenshot-menu
-branch|repo|agent|keybindings` opens that panel first and includes it in the picture, `--screenshot-keys
+branch|repo|agent|keybindings|merge` opens that panel first and includes it in the picture, `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message),
 and `OMAGIT_THEME_DIR=/usr/share/omarchy/themes/tokyo-night` previews another theme.
@@ -135,11 +152,13 @@ cd tests && qmake6 tests.pro && make && ../build/tests/gitrepo_test
 | File | Purpose |
 |------|---------|
 | `src/OmarchyTheme.*` | Parses `colors.toml`, builds the palette/stylesheet, watches for theme switches |
-| `src/GitRepo.*` | Thin wrapper over the `git` CLI: status, diff, commit, amend, log, refs, branches and checkout, upstream state, async runs, switchable root |
+| `src/GitRepo.*` | Thin wrapper over the `git` CLI: status, diff, commit, amend, log, refs, branches and checkout, merge preview / merge / abort, upstream state, async runs, switchable root |
 | `src/RemoteSync.*` | Fetch / pull / push, the ahead/behind counts, automatic fetching with backoff, git-dir watch |
 | `src/BadgeButton.*` | Tool button with a count badge, busy dots and a pop-in animation |
 | `src/Toolbar.*` | Width-adaptive button row: labels → icons → "more" menu |
 | `src/TickMenu.*` | Menu whose checked entries carry an accent tick at the right edge instead of a checkbox (branch, repository, "more" and diff menus) |
+| `src/BranchMenu.*` | The searchable branch dropdown (footer branch button, both sides of the merge view) |
+| `src/MergeDialog.*` | The merge view: source/destination pickers with swap, the merge-tree verdict, merge and abort |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |
 | `src/ChangesModel.*` | Table model for the changes list (also the files of a commit) |
@@ -148,5 +167,5 @@ cd tests && qmake6 tests.pro && make && ../build/tests/gitrepo_test
 | `src/MainWindow.*` | Window shell: modes and sync buttons, Docked/Mini layouts, diff pane and its toggle, branch and repository dropdowns, footer |
 | `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
-| `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout and root switching against scratch repositories |
+| `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |
 | `nautilus/omagit.py` | Nautilus "Open in OmaGit" menu provider |

@@ -581,6 +581,116 @@ static void testAgentCatalogs()
     CHECK(!CommitMessageAgent::spec("").isValid() && CommitMessageAgent::catalog("nope").isEmpty());
 }
 
+// Merging: the preview on trees alone, then the real thing, conflicts and all.
+static void testMerge(const QString &base)
+{
+    const QString dir = initRepo(base + "/merge");
+    write(dir, "a.txt", "one\ntwo\nthree\n");
+    write(dir, "b.txt", "b\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "base"});
+    // feature: edits a.txt (line two) and adds c.txt; main: edits b.txt.
+    git(dir, {"checkout", "-q", "-b", "feature"});
+    write(dir, "a.txt", "one\nTWO\nthree\n");
+    write(dir, "c.txt", "c\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "feature work"});
+    git(dir, {"checkout", "-q", "main"});
+    GitRepo repo(dir);
+
+    // main has nothing of its own yet: feature fast-forwards.
+    MergePreview p = repo.mergePreview("feature", "main");
+    CHECK(p.outcome == MergePreview::FastForward);
+    CHECK(p.commits == 1 && p.diverged == 0);
+    CHECK(p.files == 2 && p.added == 2 && p.removed == 1);
+    CHECK(p.conflicts.isEmpty() && p.blocked.isEmpty() && p.canMerge());
+    // ... and the other way round there is nothing to merge.
+    CHECK(repo.mergePreview("main", "feature").outcome == MergePreview::UpToDate);
+    CHECK(repo.mergePreview("main", "main").outcome == MergePreview::Same);
+    p = repo.mergePreview("no-such", "main");
+    CHECK(p.outcome == MergePreview::Failed && p.error.contains("no-such"));
+    CHECK(!repo.mergeInProgress());
+
+    // Local changes to a file the merge writes stand in the way.
+    write(dir, "a.txt", "dirty\n");
+    p = repo.mergePreview("feature", "main");
+    CHECK(p.outcome == MergePreview::FastForward);
+    CHECK(p.blocked == QStringList({"a.txt"}) && !p.canMerge());
+    git(dir, {"checkout", "-q", "--", "a.txt"});
+    // Untracked files the merge would create as well.
+    write(dir, "c.txt", "mine\n");
+    CHECK(repo.mergePreview("feature", "main").blocked == QStringList({"c.txt"}));
+    QFile::remove(QDir(dir).filePath("c.txt"));
+
+    // main moves on in b.txt: a clean merge commit.
+    write(dir, "b.txt", "B\n");
+    git(dir, {"commit", "-q", "-am", "main work"});
+    p = repo.mergePreview("feature", "main");
+    CHECK(p.outcome == MergePreview::Clean);
+    CHECK(p.commits == 1 && p.diverged == 1 && p.files == 2);
+    // The working tree is untouched by the preview.
+    CHECK(repo.status().isEmpty());
+    // Switching to the destination first: dirty files that differ between
+    // HEAD and the destination block that switch.
+    git(dir, {"checkout", "-q", "feature"});
+    write(dir, "b.txt", "dirty\n");
+    CHECK(repo.mergePreview("feature", "main").blocked == QStringList({"b.txt"}));
+    git(dir, {"checkout", "-q", "--", "b.txt"});
+    git(dir, {"checkout", "-q", "main"});
+
+    // main edits line two as well: a conflict in a.txt, c.txt still fine.
+    write(dir, "a.txt", "one\n2\nthree\n");
+    git(dir, {"commit", "-q", "-am", "main conflict"});
+    p = repo.mergePreview("feature", "main");
+    CHECK(p.outcome == MergePreview::Conflicts);
+    CHECK(p.conflicts == QStringList({"a.txt"}));
+    CHECK(p.canMerge()); // starting it is allowed; the conflicts are left to resolve
+
+    // Defaults for the pickers.
+    CHECK(repo.defaultBranch() == "main");
+    const QStringList active = repo.branchesByActivity(); // same-second commits: order is git's call
+    CHECK(active.size() == 2 && active.contains("main") && active.contains("feature"));
+
+    // The real merge: conflicts leave the merge in progress ...
+    QString error;
+    CHECK(repo.merge("feature", false, &error) == GitRepo::MergeConflicts);
+    CHECK(error.contains("a.txt"));
+    MergeState state = repo.mergeState();
+    CHECK(state.inProgress && state.source == "feature");
+    CHECK(state.conflicts == QStringList({"a.txt"}));
+    CHECK(state.message.startsWith("Merge branch 'feature'"));
+    const FileChange *conflicted = find(repo.status(), "a.txt");
+    CHECK(conflicted && conflicted->kind == FileChange::Unmerged);
+    // ... which a commit of the resolved file finishes (no pathspec during a merge).
+    write(dir, "a.txt", "one\nresolved\nthree\n");
+    CHECK(repo.commit("Merge feature", {"a.txt"}, &error));
+    CHECK(!repo.mergeInProgress());
+    CHECK(repo.headCommit().parents.size() == 2);
+    CHECK(git(dir, {"show", "HEAD:c.txt"}) == "c");
+    CHECK(repo.mergePreview("feature", "main").outcome == MergePreview::UpToDate);
+
+    // Abort puts everything back.
+    git(dir, {"checkout", "-q", "-b", "again", "HEAD~1"});
+    write(dir, "a.txt", "one\nagain\nthree\n");
+    git(dir, {"commit", "-q", "-am", "again"});
+    const QString before = git(dir, {"rev-parse", "HEAD"});
+    CHECK(repo.merge("main", false, &error) == GitRepo::MergeConflicts);
+    CHECK(repo.mergeInProgress());
+    CHECK(repo.abortMerge(&error));
+    CHECK(!repo.mergeInProgress() && git(dir, {"rev-parse", "HEAD"}) == before);
+    CHECK(repo.status().isEmpty());
+
+    // A fast-forward, and a forced merge commit.
+    git(dir, {"checkout", "-q", "-b", "ff", "main~1"});
+    CHECK(repo.mergePreview("main", "ff").outcome == MergePreview::FastForward);
+    CHECK(repo.merge("main", false, &error) == GitRepo::Merged);
+    CHECK(git(dir, {"rev-parse", "HEAD"}) == git(dir, {"rev-parse", "main"}));
+    git(dir, {"checkout", "-q", "-b", "noff", "main~1"});
+    CHECK(repo.merge("main", true, &error) == GitRepo::Merged);
+    CHECK(repo.headCommit().parents.size() == 2);
+    CHECK(GitRepo::mergeArgs("x", true) == QStringList({"merge", "--no-edit", "--no-ff", "x"}));
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -600,6 +710,7 @@ int main(int argc, char **argv)
     testStatusAndHistory(tmp.path());
     testRemote(tmp.path());
     testBranches(tmp.path());
+    testMerge(tmp.path());
     testPatch(tmp.path());
     testAgentCommands();
     testAgentCatalogs();

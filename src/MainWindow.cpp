@@ -1,6 +1,8 @@
 #include "MainWindow.h"
 #include "BadgeButton.h"
+#include "BranchMenu.h"
 #include "DesktopExec.h"
+#include "MergeDialog.h"
 #include "DiffModel.h"
 #include "DiffView.h"
 #include "HistoryView.h"
@@ -123,8 +125,8 @@ QString icon(uint cp, const QString &fallback = QString())
 }
 constexpr uint kRefresh = 0xF0450, kArrowUp = 0xF005D, kArrowDown = 0xF0045, kCommit = 0xF0718,
                kBranch = 0xF062C, kSplit = 0xF0BCC, kPilcrow = 0xF06D8, kHistory = 0xF02DA;
-// md-cloud_download, md-tray_arrow_down, md-tray_arrow_up, md-dock_right
-constexpr uint kFetch = 0xF0162, kPull = 0xF0120, kPush = 0xF011D, kDockRight = 0xF10AB;
+// md-cloud_download, md-tray_arrow_down, md-tray_arrow_up, md-dock_right, md-source_merge
+constexpr uint kFetch = 0xF0162, kPull = 0xF0120, kPush = 0xF011D, kDockRight = 0xF10AB, kMerge = 0xF062D;
 // md-chevron_down, md-folder, md-folder_open
 constexpr uint kChevron = 0xF0140, kFolder = 0xF024B, kFolderOpen = 0xF0770, kMagnify = 0xF0349;
 // md-creation (the sparkle of "generate"), md-cog, md-robot
@@ -355,6 +357,12 @@ void MainWindow::buildUi()
     new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P), this, m_sync, &RemoteSync::push);
     connect(m_sync, &RemoteSync::stateChanged, this, &MainWindow::updateSyncButtons);
     connect(m_sync, &RemoteSync::finished, this, &MainWindow::onSyncFinished);
+    // Merge opens the merge view; its badge says when a merge waits with conflicts.
+    m_toolbar->addSeparator();
+    auto *mergeButton = toolButton<BadgeButton>(QString());
+    m_toolbar->addButton(mergeButton, icon(kMerge) + tr("Merge"), icon(kMerge, tr("M")).trimmed(), tr("Merge"));
+    m_mergeButtons << mergeButton;
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M), this, this, &MainWindow::showMergeDialog);
     m_toolbarRow = new QHBoxLayout;
     m_toolbarRow->setSpacing(8);
     m_toolbarRow->addWidget(m_toolbar, 1);
@@ -482,6 +490,10 @@ void MainWindow::buildUi()
         connect(set.push, &QToolButton::clicked, m_sync, &RemoteSync::push);
     }
     updateSyncButtons();
+    m_mergeButtons << m_rail->mergeButton();
+    for (BadgeButton *b : std::as_const(m_mergeButtons))
+        connect(b, &QToolButton::clicked, this, &MainWindow::showMergeDialog);
+    updateMergeButtons(MergeState());
 
     auto *body = new QHBoxLayout;
     body->setContentsMargins(0, 0, 0, 0);
@@ -709,6 +721,9 @@ void MainWindow::showKeybindings()
     add(tr("Fetch"), "Ctrl+Shift+F", app);
     add(tr("Pull"), "Ctrl+Shift+L", app);
     add(tr("Push"), "Ctrl+Shift+P", app);
+    add(tr("Merge branches"), "Ctrl+Shift+M", app);
+    add(tr("Swap the two sides"), "Ctrl+S", tr("Merge view"));
+    add(tr("Merge / close"), "Enter / Esc", tr("Merge view"));
     add(tr("Generate commit message"), "Ctrl+G", app);
     add(tr("Commit checked files"), "Ctrl+Enter", tr("Commit view"));
     add(tr("Focus history filter"), "Ctrl+F", tr("History"));
@@ -928,14 +943,33 @@ void MainWindow::refresh()
     }
 
     const Commit head = m_repo->headCommit();
-    m_amend->setEnabled(head.isValid());
-    m_amend->setToolTip(head.isValid() ? tr("Rewrite the last commit (%1: %2) with the checked files and the message above")
-                                             .arg(head.shortHash, head.subject)
-                                       : tr("There is no commit to amend yet"));
+    const MergeState merge = m_repo->mergeState();
+    m_merging = merge.inProgress;
+    m_amend->setEnabled(head.isValid() && !merge.inProgress);
+    m_amend->setToolTip(merge.inProgress ? tr("Not while a merge is in progress")
+                        : head.isValid() ? tr("Rewrite the last commit (%1: %2) with the checked files and the message above")
+                                               .arg(head.shortHash, head.subject)
+                                         : tr("There is no commit to amend yet"));
     QString branch = icon(kBranch) + m_repo->branch() + chevron();
     if (m_repo->amending() && head.isValid())
         branch += tr("   ·   amending %1").arg(head.shortHash);
+    if (merge.inProgress)
+        branch += tr("   ·   merging %1").arg(merge.source);
     m_branchButton->setText(branch);
+    updateMergeButtons(merge);
+    updateCommitButton();
+    // Git's own message for the merge commit goes in the box while it is
+    // empty (or still holds the previous proposal) and leaves with the merge.
+    if (merge.inProgress) {
+        const QString text = m_message->toPlainText();
+        if ((text.trimmed().isEmpty() || text == m_mergeMessage) && text != merge.message)
+            m_message->setPlainText(merge.message);
+        m_mergeMessage = merge.message;
+    } else if (!m_mergeMessage.isEmpty()) {
+        if (m_message->toPlainText() == m_mergeMessage)
+            m_message->clear();
+        m_mergeMessage.clear();
+    }
     m_sync->refreshState();
     // Re-selecting the row below scrolls the views to it and reloads the
     // diff from its first change; the user may have scrolled either on
@@ -1128,9 +1162,7 @@ void MainWindow::onAmendToggled(bool on)
     } else if (m_message->toPlainText() == m_headMessage) {
         m_message->clear();
     }
-    m_commitButton->setText(icon(kCommit) + (on ? tr("Amend") : tr("Commit")));
-    m_commitButton->setToolTip(on ? tr("Rewrite the last commit with the checked files (Ctrl+Enter)")
-                                  : tr("Commit the checked files (Ctrl+Enter)"));
+    updateCommitButton();
     refresh();
     if (on)
         m_model->setPathsChecked(m_repo->headPaths(), true);
@@ -1167,10 +1199,14 @@ void MainWindow::commit()
         return;
     }
     const int count = m_model->checkedCount();
+    const bool merged = m_merging;
     m_message->clear();
     if (amend) {
         m_amend->setChecked(false); // also refreshes
         showStatus(tr("Amended the last commit on %1 with %2 file(s)").arg(m_repo->branch()).arg(count), 5000);
+    } else if (merged) {
+        showStatus(tr("Merge committed on %1").arg(m_repo->branch()), 5000);
+        refresh();
     } else {
         showStatus(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
         refresh();
@@ -1321,161 +1357,19 @@ void MainWindow::openInEditor()
 // ---------------------------------------------------------------------------
 // Branches
 
-// The branch entries plus the search field above them: typing narrows the
-// list, Up/Down move the highlight without leaving the field, Return picks
-// the highlighted (else the first) match, Escape closes.
-class BranchSearch : public QObject
-{
-public:
-    BranchSearch(TickMenu *menu, QLineEdit *edit)
-        : QObject(menu), m_menu(menu), m_edit(edit)
-    {
-        edit->installEventFilter(this);
-        connect(edit, &QLineEdit::textChanged, this, &BranchSearch::apply);
-    }
-
-    void addHeader(QAction *header) { m_sections.append(Section{header, {}}); }
-    void addEntry(QAction *action, const QString &name)
-    {
-        m_entries.append(Entry{action, name});
-        if (!m_sections.isEmpty())
-            m_sections.last().entries.append(action);
-    }
-    void setNoMatch(QAction *action) { m_noMatch = action; }
-
-    void apply()
-    {
-        const QString text = m_edit->text().trimmed();
-        for (const Entry &e : std::as_const(m_entries))
-            e.action->setVisible(e.name.contains(text, Qt::CaseInsensitive));
-        for (const Section &s : std::as_const(m_sections)) {
-            const bool any = std::any_of(s.entries.cbegin(), s.entries.cend(), [](QAction *a) { return a->isVisible(); });
-            setVisible(s.header, any || text.isEmpty());
-        }
-        const QList<QAction *> shown = visible();
-        if (m_noMatch)
-            setVisible(m_noMatch, shown.isEmpty() && !text.isEmpty());
-        m_menu->setActiveAction(text.isEmpty() ? nullptr : shown.value(0));
-    }
-
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override
-    {
-        if (watched != m_edit || event->type() != QEvent::KeyPress)
-            return false;
-        auto *key = static_cast<QKeyEvent *>(event);
-        switch (key->key()) {
-        case Qt::Key_Down:
-        case Qt::Key_Up: {
-            const QList<QAction *> shown = visible();
-            if (shown.isEmpty())
-                return true;
-            const int at = shown.indexOf(m_menu->activeAction());
-            const int step = key->key() == Qt::Key_Down ? 1 : -1;
-            const int next = at < 0 ? (step > 0 ? 0 : shown.size() - 1) : (at + step + shown.size()) % shown.size();
-            m_menu->setActiveAction(shown.at(next));
-            return true;
-        }
-        case Qt::Key_Return:
-        case Qt::Key_Enter: {
-            QAction *pick = m_menu->activeAction();
-            if (!pick || !visible().contains(pick))
-                pick = visible().value(0);
-            if (pick) {
-                m_menu->close(); // like a click: the menu is gone before the branch switches
-                pick->trigger();
-            }
-            return true;
-        }
-        default:
-            return false;
-        }
-    }
-
-private:
-    struct Entry {
-        QAction *action;
-        QString name;
-    };
-    struct Section {
-        QAction *header;
-        QList<QAction *> entries;
-    };
-    // QMenu leaves the widget of a hidden QWidgetAction where it was, so it is hidden by hand.
-    static void setVisible(QAction *action, bool on)
-    {
-        action->setVisible(on);
-        if (auto *wa = qobject_cast<QWidgetAction *>(action))
-            wa->defaultWidget()->setVisible(on);
-    }
-    QList<QAction *> visible() const
-    {
-        QList<QAction *> list;
-        for (const Entry &e : m_entries)
-            if (e.action->isVisible() && e.action->isEnabled())
-                list.append(e.action);
-        return list;
-    }
-
-    TickMenu *m_menu;
-    QLineEdit *m_edit;
-    QList<Entry> m_entries;
-    QList<Section> m_sections;
-    QAction *m_noMatch = nullptr;
-};
-
 void MainWindow::showBranchMenu()
 {
     const BranchList branches = m_repo->branches();
-    TickMenu menu(this);
-    menu.setToolTipsVisible(true);
-
-    auto *search = new QLineEdit;
-    search->setPlaceholderText(icon(kMagnify) + tr("Search branches"));
-    search->setToolTip(tr("Type to narrow the list; Up/Down and Return pick a branch"));
-    auto *searchBox = new QWidget;
-    auto *searchLayout = new QHBoxLayout(searchBox);
-    searchLayout->setContentsMargins(8, 4, 8, 6);
-    searchLayout->addWidget(search);
-    auto *searchAction = new QWidgetAction(&menu);
-    searchAction->setDefaultWidget(searchBox);
-    menu.addAction(searchAction);
-    auto *filter = new BranchSearch(&menu, search);
-
-    // Every entry is checkable so the tick can mark the current branch.
-    auto add = [this, &menu, &branches, filter](const QString &name) {
-        QAction *a = menu.addAction(name);
-        a->setCheckable(true);
-        a->setChecked(name == branches.current);
-        connect(a, &QAction::triggered, this, [this, name] { checkoutBranch(name); });
-        filter->addEntry(a, name);
-        return a;
-    };
-    filter->addHeader(addMenuHeader(&menu, tr("Local")));
-    if (branches.local.isEmpty())
-        menu.addAction(tr("No branches yet"))->setEnabled(false);
-    for (const QString &name : branches.local)
-        add(name)->setToolTip(tr("Switch to %1").arg(name));
-    if (!branches.remote.isEmpty()) {
-        menu.addSeparator();
-        filter->addHeader(addMenuHeader(&menu, tr("Remote")));
-        for (const QString &name : branches.remote) {
-            const QString local = name.section(QLatin1Char('/'), 1);
-            add(name)->setToolTip(branches.local.contains(local)
-                                      ? tr("Switch to the local branch %1").arg(local)
-                                      : tr("Create the local branch %1 tracking %2 and switch to it").arg(local, name));
-        }
-    }
-    QAction *noMatch = menu.addAction(tr("No matching branch"));
-    noMatch->setEnabled(false);
-    noMatch->setVisible(false);
-    filter->setNoMatch(noMatch);
-
-    // The field has the keyboard from the start, so typing filters right away.
-    search->setFocus();
-    QTimer::singleShot(0, search, [search] { search->setFocus(); });
-    const int menuY = -menu.sizeHint().height();
-    menu.exec(m_branchButton->mapToGlobal(QPoint(0, menuY)));
+    BranchMenu menu(this);
+    menu.setBranches(branches, branches.current, true, [&branches](const QString &name, bool remote) {
+        if (!remote)
+            return tr("Switch to %1").arg(name);
+        const QString local = name.section(QLatin1Char('/'), 1);
+        return branches.local.contains(local) ? tr("Switch to the local branch %1").arg(local)
+                                              : tr("Create the local branch %1 tracking %2 and switch to it").arg(local, name);
+    });
+    connect(&menu, &BranchMenu::picked, this, &MainWindow::checkoutBranch);
+    menu.popupAt(m_branchButton, true);
 }
 
 void MainWindow::checkoutBranch(const QString &name)
@@ -1489,6 +1383,68 @@ void MainWindow::checkoutBranch(const QString &name)
     }
     refresh();
     showStatus(tr("Switched to %1").arg(m_repo->branch()), 5000);
+}
+
+// ---------------------------------------------------------------------------
+// Merging
+
+void MainWindow::showMergeDialog()
+{
+    auto *dialog = new MergeDialog(m_repo, this);
+    connect(dialog, &MergeDialog::merged, this,
+            [this](const QString &source, const QString &destination, int conflicts, bool fastForward) {
+                refresh();
+                if (conflicts > 0) {
+                    // The conflicted files wait in the Changes list, red, with
+                    // git's message in the box; the first of them is selected.
+                    setMode(CommitMode);
+                    for (int r = 0; r < m_proxy->rowCount(); ++r) {
+                        if (m_model->change(m_proxy->mapToSource(m_proxy->index(r, 0)).row()).kind == FileChange::Unmerged) {
+                            m_table->selectRow(r);
+                            break;
+                        }
+                    }
+                    const QString count = conflicts == 1 ? tr("1 conflicted file") : tr("%1 conflicted files").arg(conflicts);
+                    showStatus(tr("Merging %1 into %2 — %3 to resolve, then Commit merge").arg(source, destination, count), 20000);
+                } else if (fastForward) {
+                    showStatus(tr("Fast-forwarded %2 to %1").arg(source, destination), 8000);
+                } else {
+                    showStatus(tr("Merged %1 into %2").arg(source, destination), 8000);
+                }
+            });
+    connect(dialog, &MergeDialog::mergeAborted, this, [this](const QString &source, const QString &destination) {
+        refresh();
+        showStatus(tr("Aborted the merge of %1 into %2").arg(source, destination), 8000);
+    });
+    dialog->show();
+}
+
+void MainWindow::updateCommitButton()
+{
+    const bool amend = m_amend->isChecked();
+    m_commitButton->setText(icon(kCommit) + (amend ? tr("Amend") : m_merging ? tr("Commit merge") : tr("Commit")));
+    m_commitButton->setToolTip(amend ? tr("Rewrite the last commit with the checked files (Ctrl+Enter)")
+                               : m_merging ? tr("Finish the merge: commit the checked (resolved) files together with what git merged on its own (Ctrl+Enter)")
+                                           : tr("Commit the checked files (Ctrl+Enter)"));
+}
+
+void MainWindow::updateMergeButtons(const MergeState &merge)
+{
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    QString tip;
+    if (merge.inProgress) {
+        tip = merge.conflicts.isEmpty()
+            ? tr("A merge of %1 is in progress — Commit merge finishes it; click to abort instead (Ctrl+Shift+M)").arg(merge.source)
+            : tr("A merge of %1 is in progress with %n conflicted file(s) — resolve them and Commit merge, or click to abort (Ctrl+Shift+M)",
+                 nullptr, merge.conflicts.size())
+                  .arg(merge.source);
+    } else {
+        tip = tr("Merge another branch into this one — with a look at what it would do first (Ctrl+Shift+M)");
+    }
+    for (BadgeButton *b : std::as_const(m_mergeButtons)) {
+        b->setToolTip(tip);
+        b->setMark(merge.inProgress ? QStringLiteral("!") : QString(), theme->color(QStringLiteral("red")));
+    }
 }
 
 // ---------------------------------------------------------------------------

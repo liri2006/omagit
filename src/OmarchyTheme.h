@@ -12,7 +12,8 @@ class QTimer;
 
 // Reads the active Omarchy theme (~/.local/state/omarchy/current/theme/colors.toml)
 // and turns it into a Qt palette + stylesheet. Re-applies itself when the
-// theme is switched with `omarchy theme set`.
+// theme is switched with `omarchy theme set` or the text size is changed with
+// `omarchy display text size` (which rewrites ~/.config/omarchy/shell.toml).
 class OmarchyTheme : public QObject
 {
     Q_OBJECT
@@ -83,7 +84,10 @@ private:
     void loadFont();
     void loadShellToml();
     void setupWatcher();
+    void rearmWatcher();
     void reapplyLater();
+    void reload();
+    QString signature() const;
     QString buildStyleSheet() const;
 
     QHash<QString, QString> m_colors;

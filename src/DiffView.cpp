@@ -20,6 +20,8 @@
 static constexpr int kIconSize = 16;
 static constexpr int kHeaderPad = 6;
 static constexpr int kPaneGap = 4; // separator between the two panes
+static constexpr int kMinFontPx = 7;  // Ctrl+wheel zoom limits for the diff text
+static constexpr int kMaxFontPx = 40;
 
 // Keep the native thumb and interactions, with change ranges beside the thumb.
 class DiffScrollBar : public QScrollBar
@@ -98,6 +100,7 @@ DiffView::DiffView(QWidget *parent)
     setVerticalScrollBar(new DiffScrollBar(this));
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     viewport()->setCursor(Qt::IBeamCursor);
+    viewport()->setMouseTracking(true);
     for (int pane = 0; pane < 2; ++pane) {
         auto *bar = new QScrollBar(Qt::Horizontal, this);
         m_paneScrollBars[pane] = bar;
@@ -110,9 +113,13 @@ DiffView::DiffView(QWidget *parent)
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, viewport(), qOverload<>(&QWidget::update));
 }
 
+// Re-reads the theme font; the user's zoom rides on top of whatever base
+// size the desktop is set to, so a text-size change re-flows the diff too.
 void DiffView::refreshTheme()
 {
     m_font = OmarchyTheme::instance()->monoFont();
+    if (m_zoom != 0)
+        m_font.setPixelSize(qBound(kMinFontPx, m_font.pixelSize() + m_zoom, kMaxFontPx));
     viewport()->setFont(m_font);
     updateMetrics();
     updateScrollBars();
@@ -145,10 +152,26 @@ QRect DiffView::paneRect(int pane) const
     const int h = viewport()->height() - hh;
     if (paneCount() <= 1)
         return QRect(0, hh, w, h);
-    const int half = (w - kPaneGap) / 2;
+    const int available = qMax(0, w - kPaneGap);
+    const int minimum = qMin(available / 2, marginWidth() + 40);
+    const int left = qBound(minimum, int(available * m_paneSplit), available - minimum);
     if (pane == 0)
-        return QRect(0, hh, half, h);
-    return QRect(half + kPaneGap, hh, w - half - kPaneGap, h);
+        return QRect(0, hh, left, h);
+    return QRect(left + kPaneGap, hh, available - left, h);
+}
+
+bool DiffView::onDivider(const QPoint &point) const
+{
+    return paneCount() == 2 && viewport()->rect().contains(point)
+        && point.x() >= paneRect(0).width() - 2
+        && point.x() < paneRect(1).left() + 2;
+}
+
+void DiffView::setPaneSplit(qreal split)
+{
+    m_paneSplit = qBound(qreal(0), split, qreal(1));
+    updateScrollBars();
+    viewport()->update();
 }
 
 int DiffView::lineAt(int pane, int row) const
@@ -272,6 +295,8 @@ void DiffView::setMode(Mode mode)
     if (mode == m_mode)
         return;
     m_mode = mode;
+    m_resizingPanes = m_dragging = false;
+    viewport()->setCursor(Qt::IBeamCursor);
     // Keep the current change in view across the switch.
     const int block = m_currentBlock;
     rebuildLayout();
@@ -300,7 +325,9 @@ void DiffView::setShowWhitespace(bool on)
 
 void DiffView::updateScrollBars()
 {
-    const int textWidth = paneRect(0).width() - marginWidth() - 8;
+    const int paneWidth = paneCount() == 2
+        ? qMin(paneRect(0).width(), paneRect(1).width()) : paneRect(0).width();
+    const int textWidth = paneWidth - marginWidth() - 8;
     const int visibleCols = qMax(1, qFloor(textWidth / m_charWidth));
     const int maxColumn = m_doc.lines.isEmpty() ? 0 : qMax(0, m_maxCols + 2 - visibleCols);
     const int barHeight = maxColumn > 0 ? m_paneScrollBars[0]->sizeHint().height() : 0;
@@ -542,6 +569,8 @@ void DiffView::paintEvent(QPaintEvent *)
     } else if (m_mode == TwoPane) {
         for (int pane = 0; pane < 2; ++pane) {
             const QRect pr = paneRect(pane);
+            p.save();
+            p.setClipRect(QRect(pr.left(), 0, pr.width(), hh));
             const QRect tr(pr.left() + 10, 0, pr.width() - 20, hh);
             const QString label = pane == 0 ? m_leftLabel : m_rightLabel;
             p.setFont(font());
@@ -552,6 +581,7 @@ void DiffView::paintEvent(QPaintEvent *)
             p.setPen(t->text());
             p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft,
                        p.fontMetrics().elidedText(m_title, Qt::ElideMiddle, tr.width() - labelW));
+            p.restore();
         }
     } else {
         const QRect tr(10, 0, w - 20, hh);
@@ -565,6 +595,9 @@ void DiffView::paintEvent(QPaintEvent *)
         p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft,
                    p.fontMetrics().elidedText(m_title, Qt::ElideMiddle, tr.width() - subW));
     }
+
+    if (paneCount() == 2)
+        p.fillRect(QRect(paneRect(0).width(), 0, kPaneGap, h), t->border());
 
     if (m_doc.lines.isEmpty()) {
         p.setFont(font());
@@ -596,9 +629,9 @@ void DiffView::paintEvent(QPaintEvent *)
             if (row >= rows)
                 break;
             const int y = hh + k * m_lineHeight;
-            p.setClipRect(QRect(pr.left() + mw, pr.top(), pr.width() - mw, pr.height()));
+            p.setClipRect(QRect(pr.left() + mw, pr.top(), qMax(0, pr.width() - mw), pr.height()));
             drawCell(p, pane, row, y, pr);
-            p.setClipRect(QRect(pr.left(), pr.top(), mw, pr.height()));
+            p.setClipRect(QRect(pr.left(), pr.top(), qMin(mw, pr.width()), pr.height()));
             drawMargin(p, pane, row, y, pr);
         }
     }
@@ -632,6 +665,14 @@ DiffView::Pos DiffView::posAt(const QPoint &pt, int forcePane) const
 void DiffView::mousePressEvent(QMouseEvent *e)
 {
     setFocus();
+    if (e->button() == Qt::LeftButton && onDivider(e->pos())) {
+        m_resizingPanes = true;
+        m_dragging = false;
+        m_dividerDragOffset = e->pos().x() - paneRect(0).width();
+        viewport()->setCursor(Qt::SplitHCursor);
+        e->accept();
+        return;
+    }
     if (e->button() == Qt::LeftButton && !m_doc.lines.isEmpty() && e->pos().y() >= headerHeight()) {
         m_selAnchor = m_selCursor = posAt(e->pos());
         m_dragging = true;
@@ -642,6 +683,15 @@ void DiffView::mousePressEvent(QMouseEvent *e)
 
 void DiffView::mouseMoveEvent(QMouseEvent *e)
 {
+    if (m_resizingPanes && (e->buttons() & Qt::LeftButton)) {
+        const int available = qMax(1, viewport()->width() - kPaneGap);
+        const int minimum = qMin(available / 2, marginWidth() + 40);
+        const int left = qBound(minimum, e->pos().x() - m_dividerDragOffset, available - minimum);
+        setPaneSplit(qreal(left) / available);
+        e->accept();
+        return;
+    }
+    viewport()->setCursor(onDivider(e->pos()) && !m_dragging ? Qt::SplitHCursor : Qt::IBeamCursor);
     if (m_dragging && (e->buttons() & Qt::LeftButton)) {
         m_selCursor = posAt(e->pos(), m_selAnchor.pane);
         if (e->pos().y() < headerHeight())
@@ -653,8 +703,29 @@ void DiffView::mouseMoveEvent(QMouseEvent *e)
     QAbstractScrollArea::mouseMoveEvent(e);
 }
 
+void DiffView::mouseReleaseEvent(QMouseEvent *e)
+{
+    if (e->button() == Qt::LeftButton) {
+        const bool resizing = m_resizingPanes;
+        m_resizingPanes = m_dragging = false;
+        viewport()->setCursor(onDivider(e->pos()) ? Qt::SplitHCursor : Qt::IBeamCursor);
+        if (resizing) {
+            e->accept();
+            return;
+        }
+    }
+    QAbstractScrollArea::mouseReleaseEvent(e);
+}
+
 void DiffView::mouseDoubleClickEvent(QMouseEvent *e)
 {
+    if (e->button() == Qt::LeftButton && onDivider(e->pos())) {
+        m_resizingPanes = m_dragging = false;
+        setPaneSplit(0.5);
+        viewport()->setCursor(onDivider(e->pos()) ? Qt::SplitHCursor : Qt::IBeamCursor);
+        e->accept();
+        return;
+    }
     if (m_doc.lines.isEmpty() || e->pos().y() < headerHeight())
         return;
     const Pos pos = posAt(e->pos());
@@ -676,12 +747,9 @@ void DiffView::wheelEvent(QWheelEvent *e)
     if (e->modifiers() & Qt::ControlModifier) {
         const int delta = e->angleDelta().y();
         if (delta != 0) {
-            const int px = m_font.pixelSize() > 0 ? m_font.pixelSize() : QFontMetrics(m_font).height() * 3 / 4;
-            m_font.setPixelSize(qBound(7, px + (delta > 0 ? 1 : -1), 40));
-            viewport()->setFont(m_font);
-            updateMetrics();
-            updateScrollBars();
-            viewport()->update();
+            const int base = OmarchyTheme::instance()->monoFont().pixelSize();
+            m_zoom = qBound(kMinFontPx, base + m_zoom + (delta > 0 ? 1 : -1), kMaxFontPx) - base;
+            refreshTheme();
         }
         e->accept();
         return;

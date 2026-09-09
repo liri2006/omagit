@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QFontDatabase>
 #include <QFontMetrics>
@@ -20,6 +21,12 @@ static OmarchyTheme *s_instance = nullptr;
 static QString omarchyStateDir()
 {
     return QDir::homePath() + QStringLiteral("/.local/state/omarchy/current");
+}
+
+// The user's overrides (shell.toml [font] base-size lives here).
+static QString omarchyConfigDir()
+{
+    return QDir::homePath() + QStringLiteral("/.config/omarchy");
 }
 
 static QString themeDir()
@@ -157,7 +164,7 @@ void OmarchyTheme::loadShellToml()
 {
     m_fontBase = 12;
     const QStringList files{themeDir() + QStringLiteral("/shell.toml"),
-                            QDir::homePath() + QStringLiteral("/.config/omarchy/shell.toml")};
+                            omarchyConfigDir() + QStringLiteral("/shell.toml")};
     static const QRegularExpression sectionRe(QStringLiteral("^\\s*\\[([^\\]]+)\\]"));
     static const QRegularExpression kvRe(QStringLiteral("^\\s*([A-Za-z0-9_-]+)\\s*=\\s*([^#]+)"));
     for (const QString &path : files) {
@@ -222,24 +229,58 @@ void OmarchyTheme::setupWatcher()
     m_debounce = new QTimer(this);
     m_debounce->setSingleShot(true);
     m_debounce->setInterval(300);
-    connect(m_debounce, &QTimer::timeout, this, [this] {
-        load();
-        loadShellToml();
-        loadFont();
-        if (m_app)
-            apply(*m_app);
-        // theme-set replaces the directory; re-arm the watch on the new files
-        m_watcher->removePaths(m_watcher->files());
-        m_watcher->removePaths(m_watcher->directories());
-        m_watcher->addPath(omarchyStateDir());
-        m_watcher->addPath(themeDir() + QStringLiteral("/colors.toml"));
-        emit changed();
-    });
-
-    m_watcher->addPath(omarchyStateDir());
-    m_watcher->addPath(themeDir() + QStringLiteral("/colors.toml"));
+    connect(m_debounce, &QTimer::timeout, this, &OmarchyTheme::reload);
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, &OmarchyTheme::reapplyLater);
     connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &OmarchyTheme::reapplyLater);
+    rearmWatcher();
+}
+
+// theme-set replaces the theme directory and `omarchy display text size`
+// swaps shell.toml for a fresh file, so the files we watch keep changing
+// inode: watch the directories too and re-arm on every reload.
+void OmarchyTheme::rearmWatcher()
+{
+    if (!m_watcher->files().isEmpty())
+        m_watcher->removePaths(m_watcher->files());
+    if (!m_watcher->directories().isEmpty())
+        m_watcher->removePaths(m_watcher->directories());
+    const QStringList paths{omarchyStateDir(),
+                            themeDir() + QStringLiteral("/colors.toml"),
+                            themeDir() + QStringLiteral("/shell.toml"),
+                            omarchyConfigDir(),
+                            omarchyConfigDir() + QStringLiteral("/shell.toml")};
+    for (const QString &path : paths) {
+        if (QFileInfo::exists(path))
+            m_watcher->addPath(path);
+    }
+}
+
+// Everything the palette, stylesheet and fonts are derived from; a reload
+// that leaves it unchanged (shell.json edits, lock files) is not re-applied.
+QString OmarchyTheme::signature() const
+{
+    QStringList keys = m_colors.keys();
+    keys.sort();
+    QString sig = m_name + QLatin1Char('|') + (m_dark ? QLatin1Char('d') : QLatin1Char('l'))
+        + QLatin1Char('|') + QString::number(m_fontBase) + QLatin1Char('|') + m_mono.family()
+        + QLatin1Char('|') + QIcon::themeName();
+    for (const QString &k : std::as_const(keys))
+        sig += QLatin1Char('|') + k + QLatin1Char('=') + m_colors.value(k);
+    return sig;
+}
+
+void OmarchyTheme::reload()
+{
+    const QString before = signature();
+    load();
+    loadShellToml();
+    loadFont();
+    rearmWatcher();
+    if (signature() == before)
+        return;
+    if (m_app)
+        apply(*m_app);
+    emit changed();
 }
 
 void OmarchyTheme::reapplyLater()
@@ -286,6 +327,14 @@ void OmarchyTheme::apply(QApplication &app)
 {
     m_app = &app;
     app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+    // The application font is only the fallback for widgets a stylesheet
+    // rule never reaches (dialogs before their polish). Once an application
+    // stylesheet is set, Qt propagates fonts through the stylesheet and
+    // ignores later setFont() calls on the application, and setStyleSheet
+    // itself re-fills Qt's per-class font table from the platform theme;
+    // so the QWidget rule below carries the base size and family, and the
+    // roles with their own size (captions, the branch button) get a rule
+    // too, or a live change would size them differently from a fresh start.
     app.setFont(uiFont());
 
     QPalette pal;
@@ -406,11 +455,12 @@ QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 
 QStatusBar { background: %bg%; color: %dim%; border-top: 1px solid %hair%; }
 QStatusBar::item { border: none; }
-QLabel#sectionLabel { color: %dim%; }
-QLabel#dimLabel { color: %dim%; }
+QLabel#sectionLabel, QLabel#dimLabel { color: %dim%; font-size: %caption%px; font-weight: bold; }
+QLabel#captionLabel { font-size: %caption%px; font-weight: bold; }
+QLabel#bigLabel { font-size: %big%px; }
 QToolButton#keybindingsButton, QToolButton#layoutButton, QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
 QToolButton#layoutButton { color: %fg%; }
-QToolButton#branchButton { color: %acc%; }
+QToolButton#branchButton { color: %acc%; font-size: %title%px; font-weight: bold; }
 QToolButton#keybindingsButton:hover, QToolButton#layoutButton:hover, QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
 QToolButton#keybindingsButton:pressed, QToolButton#layoutButton:pressed, QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
 QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: 6px; }
@@ -424,6 +474,13 @@ TickMenu::item { padding-right: %tickpad%px; }
 TickMenu::item:checked { color: %acc%; }
 TickMenu::indicator { width: 0; height: 0; margin: 0; border: none; background: none; image: none; }
 TickMenu QLineEdit { margin: 0; }
+QToolButton#branchPicker { padding: 8px 12px; }
+QToolButton#branchPicker:disabled { background: %fill4%; border-color: %hair20%; }
+QToolButton#swapButton { padding: 0; }
+QFrame#mergeVerdict { background: %fill4%; border: 1px solid %bd40%; }
+QListWidget#mergeFiles { background: transparent; border: none; outline: 0; }
+QListWidget#mergeFiles::item { padding: 2px 4px; border: none; }
+QListWidget#mergeFiles::item:hover, QListWidget#mergeFiles::item:selected { background: %fill8%; color: %fg%; }
 QToolBar { background: %bg%; border: none; spacing: 8px; }
 DiffView { border: 1px solid %bd40%; background: %bg%; }
 QMessageBox QLabel { color: %fg%; }
@@ -446,5 +503,7 @@ QAbstractScrollArea { background: %bg%; }
         .replace(QLatin1String("%caption%"), QString::number(caption))
         .replace(QLatin1String("%tickpad%"), QString::number(tickPad))
         .replace(QLatin1String("%family%"), m_mono.family())
-        .replace(QLatin1String("%base%"), QString::number(m_fontBase));
+        .replace(QLatin1String("%base%"), QString::number(m_fontBase))
+        .replace(QLatin1String("%title%"), QString::number(titleFont().pixelSize()))
+        .replace(QLatin1String("%big%"), QString::number(qRound(m_fontBase * 1.5)));
 }

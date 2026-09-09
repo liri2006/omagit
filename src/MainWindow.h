@@ -70,6 +70,9 @@ private slots:
     void updateSyncButtons();
     void onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, const QString &message);
     void showBranchMenu();
+    // The merge view (Ctrl+Shift+M): pick the two branches, see what the
+    // merge would do, then do it — or abort the one in progress.
+    void showMergeDialog();
     void showRepoMenu();
     void openRepositoryDialog();
     // Asks the chosen coding agent for a message describing the checked
@@ -97,6 +100,8 @@ private:
     void watchWorkingTree();
     void watchChangedFiles(); // the files in the changes list, for edits made in place
     void updateRepoLabels();
+    void updateCommitButton();
+    void updateMergeButtons(const MergeState &merge);
     void setGenerating(bool on);
     void onMessageGenerated(bool ok, const QString &text);
     static void rememberRepository(const QString &root);
@@ -149,6 +154,9 @@ private:
     QHBoxLayout *m_navRow;       // the diff pane's Prev/Next row (+ the diff toggle while it shows)
     bool m_diffVisible = true;
     QList<SyncButtons> m_syncButtons; // the toolbar's and the Mini rail's
+    QList<BadgeButton *> m_mergeButtons; // the toolbar's and the Mini rail's, marked while a merge waits
+    bool m_merging = false;   // a merge is in progress (MERGE_HEAD exists)
+    QString m_mergeMessage;   // git's proposed message, put in the box while it is empty
     QString m_initialSelection;
     QString m_diffSummary;
     QString m_shownDiffKey;    // what the diff pane shows, to skip re-setting an identical document

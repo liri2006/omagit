@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
@@ -309,6 +310,251 @@ bool GitRepo::checkout(const QString &name, QString *error) const
         if (error->isEmpty())
             *error = QStringLiteral("git %1 failed").arg(args.join(QLatin1Char(' ')));
     }
+    return code == 0;
+}
+
+QString GitRepo::defaultBranch() const
+{
+    const BranchList b = branches();
+    QStringList remotes = this->remotes();
+    remotes.removeAll(QStringLiteral("origin"));
+    remotes.prepend(QStringLiteral("origin"));
+    for (const QString &remote : std::as_const(remotes)) {
+        int code = 0;
+        const QByteArray out = run({QStringLiteral("symbolic-ref"), QStringLiteral("-q"), QStringLiteral("--short"),
+                                    QStringLiteral("refs/remotes/") + remote + QStringLiteral("/HEAD")},
+                                   &code);
+        if (code != 0)
+            continue;
+        const QString name = QString::fromUtf8(out).trimmed(); // "origin/main"
+        const QString local = name.mid(remote.size() + 1);
+        if (b.local.contains(local))
+            return local;
+        if (b.remote.contains(name))
+            return name;
+    }
+    for (const char *candidate : {"main", "master", "trunk", "develop"}) {
+        const QString name = QLatin1String(candidate);
+        if (b.local.contains(name))
+            return name;
+    }
+    return QString();
+}
+
+QStringList GitRepo::branchesByActivity() const
+{
+    int code = 0;
+    const QByteArray out = run({QStringLiteral("for-each-ref"), QStringLiteral("--sort=-committerdate"),
+                                QStringLiteral("--format=%(refname:short)"), QStringLiteral("refs/heads")},
+                               &code);
+    QStringList list;
+    if (code != 0)
+        return list;
+    for (const QByteArray &line : out.split('\n')) {
+        const QString name = QString::fromUtf8(line).trimmed();
+        if (!name.isEmpty())
+            list << name;
+    }
+    return list;
+}
+
+// ---------------------------------------------------------------------------
+// Merging
+
+QStringList GitRepo::changedPaths() const
+{
+    int code = 0;
+    const QByteArray out = run({QStringLiteral("status"), QStringLiteral("--porcelain=v1"), QStringLiteral("-z"),
+                                QStringLiteral("--untracked-files=all"), QStringLiteral("--no-renames")},
+                               &code);
+    QStringList paths;
+    if (code != 0)
+        return paths;
+    for (const QByteArray &entry : out.split('\0'))
+        if (entry.size() >= 4)
+            paths << QString::fromUtf8(entry.mid(3));
+    return paths;
+}
+
+// `git diff --name-only -z a b`, both sides of a rename included.
+static QStringList nulSeparated(const QByteArray &out)
+{
+    QStringList list;
+    for (const QByteArray &entry : out.split('\0'))
+        if (!entry.isEmpty())
+            list << QString::fromUtf8(entry);
+    return list;
+}
+
+MergePreview GitRepo::mergePreview(const QString &source, const QString &destination) const
+{
+    MergePreview p;
+    p.source = source;
+    p.destination = destination;
+    if (source.isEmpty() || destination.isEmpty()) {
+        p.error = QStringLiteral("Pick a branch on both sides.");
+        return p;
+    }
+    if (source == destination) {
+        p.outcome = MergePreview::Same;
+        return p;
+    }
+    int code = 0;
+    QByteArray err;
+    for (const QString &ref : {source, destination}) {
+        run({QStringLiteral("rev-parse"), QStringLiteral("--verify"), QStringLiteral("-q"), ref + QStringLiteral("^{commit}")},
+            &code, &err);
+        if (code != 0) {
+            p.error = QStringLiteral("%1 is not a branch or commit.").arg(ref);
+            return p;
+        }
+    }
+    const QByteArray counts = run({QStringLiteral("rev-list"), QStringLiteral("--left-right"), QStringLiteral("--count"),
+                                   destination + QStringLiteral("...") + source},
+                                  &code, &err, 60000);
+    if (code != 0) {
+        p.error = QString::fromUtf8(err).trimmed();
+        return p;
+    }
+    const QList<QByteArray> cols = counts.trimmed().split('\t');
+    if (cols.size() == 2) {
+        p.diverged = cols[0].toInt();
+        p.commits = cols[1].toInt();
+    }
+    if (p.commits == 0) {
+        p.outcome = MergePreview::UpToDate;
+        return p;
+    }
+
+    // What the merge writes: the changes on source since the two parted.
+    QStringList touched;
+    const QByteArray numstat = run({QStringLiteral("diff"), QStringLiteral("--numstat"), QStringLiteral("-z"),
+                                    destination + QStringLiteral("...") + source},
+                                   &code, &err, 60000);
+    if (code == 0) {
+        const QList<QByteArray> np = numstat.split('\0');
+        for (int i = 0; i < np.size(); ++i) {
+            const QList<QByteArray> cols = np[i].split('\t');
+            if (cols.size() < 3)
+                continue;
+            QString path = QString::fromUtf8(cols[2]);
+            if (path.isEmpty() && i + 2 < np.size()) { // "add\tdel\t\0old\0new\0": a rename
+                touched << QString::fromUtf8(np[i + 1]);
+                path = QString::fromUtf8(np[i + 2]);
+                i += 2;
+            }
+            touched << path;
+            ++p.files;
+            if (cols[0] != "-") {
+                p.added += cols[0].toInt();
+                p.removed += cols[1].toInt();
+            }
+        }
+    }
+    // git refuses to overwrite local changes: those in files the merge
+    // writes, and — when destination has to be checked out first — those
+    // in files that differ between HEAD and destination.
+    const QStringList dirty = changedPaths();
+    if (!dirty.isEmpty()) {
+        if (branch() != destination) {
+            const QByteArray names = run({QStringLiteral("diff"), QStringLiteral("--name-only"), QStringLiteral("-z"),
+                                          QStringLiteral("HEAD"), destination},
+                                         &code, nullptr, 60000);
+            if (code == 0)
+                touched += nulSeparated(names);
+        }
+        for (const QString &path : dirty)
+            if (touched.contains(path) && !p.blocked.contains(path))
+                p.blocked << path;
+        p.blocked.sort();
+    }
+    if (p.diverged == 0) {
+        p.outcome = MergePreview::FastForward;
+        return p;
+    }
+    // "<tree>\0<conflicted path>\0...": exit 0 clean, 1 conflicts, else an error.
+    const QByteArray tree = run({QStringLiteral("merge-tree"), QStringLiteral("--write-tree"), QStringLiteral("--name-only"),
+                                 QStringLiteral("--no-messages"), QStringLiteral("-z"), destination, source},
+                                &code, &err, 120000);
+    if (code == 0) {
+        p.outcome = MergePreview::Clean;
+    } else if (code == 1) {
+        p.outcome = MergePreview::Conflicts;
+        p.conflicts = nulSeparated(tree).mid(1);
+        p.conflicts.sort();
+    } else {
+        p.error = QString::fromUtf8(err).trimmed();
+        if (p.error.contains(QLatin1String("--write-tree")))
+            p.error = QStringLiteral("git 2.38 or newer is needed to check a merge ahead of time.");
+    }
+    return p;
+}
+
+QStringList GitRepo::mergeArgs(const QString &source, bool noFastForward)
+{
+    return {QStringLiteral("merge"), QStringLiteral("--no-edit"),
+            noFastForward ? QStringLiteral("--no-ff") : QStringLiteral("--ff"), source};
+}
+
+GitRepo::MergeResult GitRepo::merge(const QString &source, bool noFastForward, QString *error) const
+{
+    int code = 0;
+    QByteArray err;
+    const QByteArray out = run(mergeArgs(source, noFastForward), &code, &err, 300000, {QStringLiteral("GIT_EDITOR=true")});
+    if (code == 0)
+        return Merged;
+    if (error) {
+        *error = QString::fromUtf8(err).trimmed();
+        if (error->isEmpty())
+            *error = QString::fromUtf8(out).trimmed();
+    }
+    return mergeInProgress() ? MergeConflicts : MergeFailed;
+}
+
+bool GitRepo::mergeInProgress() const
+{
+    return QFile::exists(gitDir() + QStringLiteral("/MERGE_HEAD"));
+}
+
+MergeState GitRepo::mergeState() const
+{
+    MergeState s;
+    const QString dir = gitDir();
+    if (!QFile::exists(dir + QStringLiteral("/MERGE_HEAD")))
+        return s;
+    s.inProgress = true;
+    int code = 0;
+    const QByteArray names = run({QStringLiteral("for-each-ref"), QStringLiteral("--points-at"), QStringLiteral("MERGE_HEAD"),
+                                  QStringLiteral("--format=%(refname:short)"), QStringLiteral("refs/heads"),
+                                  QStringLiteral("refs/remotes")},
+                                 &code);
+    if (code == 0)
+        s.source = QString::fromUtf8(names.split('\n').value(0)).trimmed();
+    if (s.source.isEmpty())
+        s.source = QString::fromUtf8(run({QStringLiteral("rev-parse"), QStringLiteral("--short"), QStringLiteral("MERGE_HEAD")})).trimmed();
+    const QByteArray unmerged = run({QStringLiteral("diff"), QStringLiteral("--name-only"), QStringLiteral("--diff-filter=U"),
+                                     QStringLiteral("-z")},
+                                    &code);
+    if (code == 0)
+        s.conflicts = nulSeparated(unmerged);
+    QFile msg(dir + QStringLiteral("/MERGE_MSG"));
+    if (msg.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QStringList lines;
+        for (const QByteArray &line : msg.readAll().split('\n'))
+            if (!line.startsWith('#'))
+                lines << QString::fromUtf8(line);
+        s.message = lines.join(QLatin1Char('\n')).trimmed();
+    }
+    return s;
+}
+
+bool GitRepo::abortMerge(QString *error) const
+{
+    int code = 0;
+    QByteArray err;
+    run({QStringLiteral("merge"), QStringLiteral("--abort")}, &code, &err, 60000);
+    if (code != 0 && error)
+        *error = QString::fromUtf8(err).trimmed();
     return code == 0;
 }
 
@@ -739,8 +985,13 @@ bool GitRepo::commit(const QString &message, const QStringList &paths, QString *
             return false;
         }
     }
-    QStringList commit{QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), message, QStringLiteral("--")};
-    commit += paths;
+    QStringList commit{QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), message};
+    // A partial commit is impossible during a merge: what is staged — the
+    // checked files just added plus git's own merge result — is committed.
+    if (!mergeInProgress()) {
+        commit << QStringLiteral("--");
+        commit += paths;
+    }
     run(commit, &code, &err, 60000);
     if (code != 0) {
         if (error)

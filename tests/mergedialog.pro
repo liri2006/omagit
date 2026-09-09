@@ -1,0 +1,12 @@
+QT += core gui widgets testlib
+CONFIG += c++17 console
+CONFIG -= app_bundle
+TARGET = mergedialog_test
+TEMPLATE = app
+SOURCES += mergedialog_test.cpp ../src/MergeDialog.cpp ../src/BranchMenu.cpp ../src/TickMenu.cpp ../src/GitRepo.cpp ../src/OmarchyTheme.cpp
+HEADERS += ../src/MergeDialog.h ../src/BranchMenu.h ../src/TickMenu.h ../src/GitRepo.h ../src/OmarchyTheme.h
+RESOURCES += ../data/omagit.qrc
+OBJECTS_DIR = ../build/mergedialog-tests/obj
+MOC_DIR = ../build/mergedialog-tests/moc
+RCC_DIR = ../build/mergedialog-tests/rcc
+DESTDIR = ../build/tests

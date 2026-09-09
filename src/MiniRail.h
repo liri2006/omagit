@@ -61,6 +61,7 @@ public:
     BadgeButton *fetchButton() const { return m_fetchButton; }
     BadgeButton *pullButton() const { return m_pullButton; }
     BadgeButton *pushButton() const { return m_pushButton; }
+    BadgeButton *mergeButton() const { return m_mergeButton; }
 
 signals:
     void commitModeRequested();
@@ -75,6 +76,7 @@ private:
     BadgeButton *m_fetchButton;
     BadgeButton *m_pullButton;
     BadgeButton *m_pushButton;
+    BadgeButton *m_mergeButton;
     void updateHashLabel();
     QLabel *m_hashLabel;
     QString m_hash, m_hashTip;

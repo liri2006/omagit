@@ -19,6 +19,8 @@ SOURCES += \
     src/BadgeButton.cpp \
     src/Toolbar.cpp \
     src/TickMenu.cpp \
+    src/BranchMenu.cpp \
+    src/MergeDialog.cpp \
     src/CommitMessageAgent.cpp \
     src/MessageEdit.cpp \
     src/MainWindow.cpp
@@ -38,6 +40,8 @@ HEADERS += \
     src/BadgeButton.h \
     src/Toolbar.h \
     src/TickMenu.h \
+    src/BranchMenu.h \
+    src/MergeDialog.h \
     src/CommitMessageAgent.h \
     src/MessageEdit.h \
     src/MainWindow.h

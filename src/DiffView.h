@@ -64,6 +64,7 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
@@ -84,6 +85,8 @@ private:
     int marginWidth() const;
     int paneCount() const { return m_panes.size(); }
     QRect paneRect(int pane) const;  // full pane incl. margin, below the header
+    bool onDivider(const QPoint &point) const;
+    void setPaneSplit(qreal split);
     int lineAt(int pane, int row) const; // index into m_doc.lines or -1 for filler
     QString expanded(const DiffLine &l) const;
     QString cellText(int pane, int row) const;
@@ -109,6 +112,7 @@ private:
     QVector<int> m_blockStarts;      // row indices
     qreal m_charWidth = 8;
     int m_lineHeight = 16;
+    int m_zoom = 0;                  // Ctrl+wheel offset from the theme's base size, in px
     int m_digits = 1;
     int m_maxCols = 0;
     int m_tabWidth = 4;
@@ -116,5 +120,8 @@ private:
     int m_currentBlock = -1;
     Pos m_selAnchor, m_selCursor;
     bool m_dragging = false;
+    bool m_resizingPanes = false;
+    int m_dividerDragOffset = 0;
+    qreal m_paneSplit = 0.5;
     QScrollBar *m_paneScrollBars[2] = {};
 };

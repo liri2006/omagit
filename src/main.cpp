@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent or keybindings panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings or merge panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -102,16 +102,19 @@ int main(int argc, char *argv[])
                 const char *slot = menu == QLatin1String("repo") ? "showRepoMenu"
                     : menu == QLatin1String("keybindings")       ? "showKeybindings"
                     : menu == QLatin1String("agent")             ? "showAgentMenu"
+                    : menu == QLatin1String("merge")             ? "showMergeDialog"
                                                                  : "showBranchMenu";
                 QMetaObject::invokeMethod(&window, slot);
             });
         }
         const QStringList keys = parser.value(screenshotKeysOpt).split(QLatin1Char(','), Qt::SkipEmptyParts);
+        // The merge view works out its verdict first; keys and the grab wait for it.
+        const int settle = menu == QLatin1String("merge") ? 1200 : 0;
         if (!keys.isEmpty()) {
             // Inside a dropdown the keys go to its focused field; otherwise
             // to the window itself, where the shortcuts (Ctrl+G, …) live,
             // early enough for a long --screenshot-after to show their effect.
-            QTimer::singleShot(menu.isEmpty() ? qMin(after, 800) : after + 200, &window, [&window, keys, menu] {
+            QTimer::singleShot(menu.isEmpty() ? qMin(after, 800) : after + 200 + settle, &window, [&window, keys, menu] {
                 QObject *target = menu.isEmpty() ? static_cast<QObject *>(window.windowHandle())
                                                  : static_cast<QObject *>(QApplication::focusWidget());
                 if (!target)
@@ -138,12 +141,13 @@ int main(int argc, char *argv[])
                 }
             });
         }
-        QTimer::singleShot(after + (menu.isEmpty() ? 0 : 500), &window, [&window, file] {
+        QTimer::singleShot(after + (menu.isEmpty() ? 0 : 500 + settle), &window, [&window, file] {
             QPixmap shot = window.grab();
-            if (QWidget *popup = QApplication::activePopupWidget()) {
-                QPainter p(&shot);
-                p.drawPixmap(popup->mapToGlobal(QPoint(0, 0)) - window.mapToGlobal(QPoint(0, 0)), popup->grab());
-            }
+            // A dialog (the merge view) and a dropdown are windows of their own: paint them on top.
+            QPainter p(&shot);
+            for (QWidget *w : {QApplication::activeModalWidget(), QApplication::activePopupWidget()})
+                if (w && w != &window)
+                    p.drawPixmap(w->mapToGlobal(QPoint(0, 0)) - window.mapToGlobal(QPoint(0, 0)), w->grab());
             shot.save(file);
             QCoreApplication::exit(0);
         });

@@ -18,7 +18,7 @@
 namespace {
 constexpr int kRowHeight = 46, kTile = 32;
 constexpr uint kCommitGlyph = 0xF0718, kHistoryGlyph = 0xF02DA, kRefreshGlyph = 0xF0450;
-constexpr uint kFetchGlyph = 0xF0162, kPullGlyph = 0xF0120, kPushGlyph = 0xF011D;
+constexpr uint kFetchGlyph = 0xF0162, kPullGlyph = 0xF0120, kPushGlyph = 0xF011D, kMergeGlyph = 0xF062D;
 
 QString glyphOr(uint cp, const QString &fallback)
 {
@@ -330,7 +330,8 @@ MiniRail::MiniRail(QWidget *parent)
     m_fetchButton = railButton<BadgeButton>(kFetchGlyph, QStringLiteral("F"));
     m_pullButton = railButton<BadgeButton>(kPullGlyph, QStringLiteral("↓"));
     m_pushButton = railButton<BadgeButton>(kPushGlyph, QStringLiteral("↑"));
-    for (BadgeButton *b : {m_pullButton, m_pushButton, m_fetchButton}) // same order as the toolbar
+    m_mergeButton = railButton<BadgeButton>(kMergeGlyph, QStringLiteral("M"));
+    for (BadgeButton *b : {m_pullButton, m_pushButton, m_fetchButton, m_mergeButton}) // same order as the toolbar
         layout->addWidget(b);
 
     m_hairlines << hairline();
@@ -394,5 +395,6 @@ void MiniRail::applyTheme()
     m_fetchButton->setText(glyphOr(kFetchGlyph, QStringLiteral("F")));
     m_pullButton->setText(glyphOr(kPullGlyph, QStringLiteral("↓")));
     m_pushButton->setText(glyphOr(kPushGlyph, QStringLiteral("↑")));
+    m_mergeButton->setText(glyphOr(kMergeGlyph, QStringLiteral("M")));
     m_list->viewport()->update();
 }
