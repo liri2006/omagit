@@ -61,22 +61,24 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
 
     // The message box and the changes list share the height; where the user
     // last put the handle between them is remembered.
-    auto *messageSplitter = new QSplitter(Qt::Vertical);
-    messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
-    messageSplitter->setHandleWidth(8);
-    messageSplitter->setChildrenCollapsible(false);
-    messageSplitter->addWidget(m_message);
+    m_messageSplitter = new QSplitter(Qt::Vertical);
+    m_messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
+    m_messageSplitter->setHandleWidth(8);
+    m_messageSplitter->setChildrenCollapsible(false);
+    m_messageSplitter->addWidget(m_message);
     QWidget *const changes = buildChangesSection();
-    messageSplitter->addWidget(changes);
-    messageSplitter->setStretchFactor(0, 0);
-    messageSplitter->setStretchFactor(1, 1); // the changes list takes window resizes
-    connect(messageSplitter, &QSplitter::splitterMoved, this, [messageSplitter] {
-        QSettings().setValue(settings::kWindowCommitMessageSplitter, messageSplitter->saveState());
+    m_messageSplitter->addWidget(changes);
+    m_messageSplitter->setStretchFactor(0, 0);
+    m_messageSplitter->setStretchFactor(1, 1); // the changes list takes window resizes
+    connect(m_messageSplitter, &QSplitter::splitterMoved, this, [this] {
+        m_messageSizedByHand = true;
+        QSettings().setValue(settings::kWindowCommitMessageSplitter, m_messageSplitter->saveState());
     });
-    layout->addWidget(messageSplitter, 1);
+    connect(m_message, &MessageEdit::contentHeightChanged, this, &CommitPage::fitMessage);
+    layout->addWidget(m_messageSplitter, 1);
     layout->addLayout(buildButtonRow());
-    messageSplitter->setSizes({theme->fontBase() * 7, changes->sizeHint().height()});
-    messageSplitter->restoreState(QSettings().value(settings::kWindowCommitMessageSplitter).toByteArray());
+    m_messageSplitter->setSizes({theme->fontBase() * 7, changes->sizeHint().height()});
+    m_messageSplitter->restoreState(QSettings().value(settings::kWindowCommitMessageSplitter).toByteArray());
 }
 
 void CommitPage::setupAgent()
@@ -119,6 +121,43 @@ QLayout *CommitPage::buildMessageSection()
     connect(generate, &QToolButton::clicked, this, &CommitPage::generateMessage);
     setGenerating(false);
     return messageRow;
+}
+
+// A message taller than its box grows the box instead of scrolling, the way a
+// chat input does — at most to half of what the message and the changes list
+// share, so the files never disappear. Typing only ever grows it (shrinking
+// under the cursor would be unsettling); deleting text so the message is
+// shorter than the box shrinks it back to the text, never below the height
+// it had before any text grew it. The size taken this way is not the user's
+// choice, so (unlike a dragged handle) it is not saved. Once the user has
+// dragged the handle, typing keeps that size (otherwise the box could never
+// be made smaller than its text); a paste or a message the agent wrote is a
+// new message and grows the box again, and a deletion that leaves the text
+// shorter than the box hands the size back to the text.
+void CommitPage::fitMessage(MessageEdit::Edit edit)
+{
+    const int total = m_messageSplitter->height();
+    const QList<int> sizes = m_messageSplitter->sizes();
+    if (total <= 0 || sizes.size() != 2)
+        return; // not laid out yet; the box asks again once it is shown
+    const int current = sizes.at(0);
+    if (m_messageRestHeight < 0)
+        m_messageRestHeight = current;
+    const int content = m_message->contentHeight();
+    int wanted = current;
+    if (edit == MessageEdit::Edit::Deleted && content < current) {
+        m_messageSizedByHand = false;
+        wanted = qMax(content, m_messageRestHeight);
+        if (wanted >= current)
+            return;
+    } else {
+        if (m_messageSizedByHand && edit != MessageEdit::Edit::Pasted)
+            return;
+        wanted = qMin(content, total / 2);
+        if (wanted <= current)
+            return;
+    }
+    m_messageSplitter->setSizes({wanted, sizes.at(1) + (current - wanted)});
 }
 
 // CHANGES, the "n / m selected" count and Refresh, then the options and the
@@ -372,7 +411,7 @@ void CommitPage::setMergeState(const MergeState &merge, const Commit &head)
     if (merge.inProgress) {
         const QString text = m_message->toPlainText();
         if ((text.trimmed().isEmpty() || text == m_mergeMessage) && text != merge.message)
-            m_message->setPlainText(merge.message);
+            m_message->setMessage(merge.message);
         m_mergeMessage = merge.message;
     } else if (!m_mergeMessage.isEmpty()) {
         if (m_message->toPlainText() == m_mergeMessage)
@@ -414,7 +453,7 @@ void CommitPage::onAmendToggled(bool on)
     if (on) {
         m_headMessage = m_repo->headMessage();
         if (m_message->toPlainText().trimmed().isEmpty())
-            m_message->setPlainText(m_headMessage);
+            m_message->setMessage(m_headMessage);
     } else if (m_message->toPlainText() == m_headMessage) {
         m_message->clear();
     }

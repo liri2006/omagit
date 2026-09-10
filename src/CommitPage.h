@@ -3,19 +3,20 @@
 #include "ChangesModel.h"
 #include "CommitMessageAgent.h"
 #include "GitRepo.h"
+#include "MessageEdit.h"
 
 #include <QPoint>
 #include <QWidget>
 
 #include <functional>
 
-class MessageEdit;
 class QCheckBox;
 class QLabel;
 class QLayout;
 class QMenu;
 class QPushButton;
 class QSortFilterProxyModel;
+class QSplitter;
 class QTableView;
 class QTimer;
 class QToolButton;
@@ -96,6 +97,11 @@ private:
     // The sections of the page, top to bottom, as the constructor builds them.
     void setupAgent();
     QLayout *buildMessageSection();
+    // Gives the message pane the height its text needs: growing up to half
+    // the splitter, shrinking down to its resting height once text is
+    // deleted. Typing does not undo a size the user dragged; pasted or
+    // deleted text does.
+    void fitMessage(MessageEdit::Edit edit);
     QWidget *buildChangesSection();
     QLayout *buildOptionsRow();
     QLayout *buildButtonRow();
@@ -116,6 +122,9 @@ private:
     QTableView *m_table;
     ChangesTableSetup *m_tableSetup;
     MessageEdit *m_message;      // the commit message, with the generate button in its corner
+    QSplitter *m_messageSplitter; // the message over the changes list, the heights it grows in
+    bool m_messageSizedByHand = false; // the user dragged the handle this session
+    int m_messageRestHeight = -1;      // the pane's height before any text grew it
     QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning
     CommitMessageAgent *m_agent;
     QTimer *m_spinner;           // animates the generate button while the agent runs

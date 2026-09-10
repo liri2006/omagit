@@ -4,14 +4,18 @@
 // changes model's check marks, the toolbar's overflow, the keybindings filter,
 // the theme's colors.toml parsing and the merge verdict's wording.
 #include "../src/ChangesModel.h"
+#include "../src/CommitPage.h"
 #include "../src/HistoryModel.h"
 #include "../src/KeybindingsPanel.h"
 #include "../src/MergeDialog.h"
+#include "../src/MessageEdit.h"
 #include "../src/OmarchyTheme.h"
+#include "../src/Settings.h"
 #include "../src/Toolbar.h"
 #include "../src/UiHelpers.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QDir>
 #include <QFile>
 #include <QLineEdit>
@@ -19,7 +23,9 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QSignalSpy>
+#include <QSplitter>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
@@ -87,6 +93,13 @@ MergePreview preview(MergePreview::Outcome outcome)
     p.added = 10;
     p.removed = 4;
     return p;
+}
+
+// The queued height check of the message box runs from the event loop, so
+// the assertions have to let it.
+void settle()
+{
+    QTest::qWait(30);
 }
 
 // The buttons of a toolbar that are on screen, in the order they were added.
@@ -338,6 +351,190 @@ private slots:
         search->clear();
         QCOMPARE(model->rowCount(), 3);
         panel->close();
+    }
+
+    // --- MessageEdit / CommitPage: the message box grows to fit -------------
+
+    void messageHeightCountsWrappedLinesAndIsMeasuredOncePerBurst()
+    {
+        MessageEdit edit;
+        edit.resize(300, 100);
+        edit.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&edit));
+        const int spacing = edit.fontMetrics().lineSpacing();
+
+        const int oneLine = edit.contentHeight();
+        QVERIFY(oneLine > spacing);
+        QVERIFY(oneLine < edit.height()); // an empty box is taller than its text
+        edit.setPlainText(QStringLiteral("one\ntwo\nthree"));
+        QCOMPARE(edit.contentHeight(), oneLine + 2 * spacing);
+
+        // One paragraph the box has to wrap counts as the lines it takes on
+        // screen, not as the single block it is.
+        QSignalSpy spy(&edit, &MessageEdit::contentHeightChanged);
+        edit.setPlainText(QString(QStringLiteral("word ")).repeated(120));
+        QVERIFY(edit.contentHeight() > edit.height());
+        QVERIFY(edit.contentHeight() > oneLine + 8 * spacing);
+
+        // A narrower box wraps the same text into more lines, and says so:
+        // the window sizes its panes after the text has arrived (--amend).
+        settle();
+        const int wide = edit.contentHeight();
+        spy.clear();
+        edit.resize(150, 100);
+        settle();
+        QVERIFY(edit.contentHeight() > wide);
+        QCOMPARE(spy.count(), 1);
+        const auto edited = [&spy] { return spy.at(0).at(0).value<MessageEdit::Edit>(); };
+        QCOMPARE(edited(), MessageEdit::Edit::Typed); // re-wrapped, not pasted
+
+        // The agent streams a message in many partials: one measurement, and
+        // a pasted one. (From a short text, so no scrollbar comes or goes:
+        // that resizes the viewport, which is a measurement of its own.)
+        edit.setPlainText(QStringLiteral("short"));
+        settle();
+        spy.clear();
+        for (int i = 0; i < 5; ++i)
+            edit.replaceText(QStringLiteral("partial %1").arg(i), i > 0);
+        settle();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(edited(), MessageEdit::Edit::Pasted);
+
+        // Typed text is not pasted; text from the clipboard is; taking text
+        // out is a deletion.
+        spy.clear();
+        QTest::keyClicks(&edit, QStringLiteral("typed"));
+        settle();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(edited(), MessageEdit::Edit::Typed);
+        spy.clear();
+        QApplication::clipboard()->setText(QStringLiteral("clip"));
+        edit.paste();
+        settle();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(edited(), MessageEdit::Edit::Pasted);
+        spy.clear();
+        QTest::keyClick(&edit, Qt::Key_Backspace);
+        settle();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(edited(), MessageEdit::Edit::Deleted);
+    }
+
+    void commitMessagePaneFollowsItsText()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(git(dir.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(commit(dir.path(), QStringLiteral("A"), 1));
+
+        GitRepo repo(dir.path());
+        // The page asks the agent CLIs on PATH for their models as it is
+        // built; an empty PATH keeps those processes out of this test.
+        const QByteArray path = qgetenv("PATH");
+        qputenv("PATH", dir.path().toUtf8());
+        CommitPage page(&repo);
+        qputenv("PATH", path);
+        page.resize(700, 800);
+        page.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&page));
+        settle();
+
+        auto *splitter = page.findChild<QSplitter *>(QStringLiteral("commitMessageSplitter"));
+        auto *message = page.findChild<MessageEdit *>();
+        QVERIFY(splitter);
+        QVERIFY(message);
+        const auto pane = [splitter] { return splitter->sizes().at(0); };
+        const int initial = pane();
+        const int total = splitter->sizes().at(0) + splitter->sizes().at(1);
+        QVERIFY(initial > 0);
+
+        // A message that fits is left alone.
+        message->setPlainText(QStringLiteral("a one line subject"));
+        settle();
+        QCOMPARE(pane(), initial);
+
+        // One that does not gets exactly the height it needs...
+        message->setPlainText(QStringLiteral("a line of the message\n").repeated(12));
+        settle();
+        const int grown = pane();
+        QVERIFY2(grown > initial, qPrintable(QStringLiteral("pane stayed at %1").arg(grown)));
+        QCOMPARE(grown, message->contentHeight());
+        QVERIFY(grown <= splitter->height() / 2);
+        // The room came out of the changes list, not out of thin air.
+        QCOMPARE(splitter->sizes().at(0) + splitter->sizes().at(1), total);
+        QCOMPARE(splitter->sizes().at(1), total - grown);
+
+        // ...and gives it back when the message is cut short (to the height
+        // the box had at the start, not to the one line the text needs).
+        message->setPlainText(QStringLiteral("short again"));
+        settle();
+        QCOMPARE(pane(), initial);
+
+        // Half of the splitter is the ceiling, however long the message.
+        message->setPlainText(QStringLiteral("a line of the message\n").repeated(200));
+        settle();
+        QCOMPARE(pane(), splitter->height() / 2);
+        QVERIFY(message->contentHeight() > pane()); // it really was capped
+
+        // Growing is not the user's choice, so it is not remembered.
+        QVERIFY(!QSettings().contains(settings::kWindowCommitMessageSplitter));
+
+        // Once the user has dragged the handle, typing leaves the size alone
+        // (a box can be made smaller than its text)...
+        const auto dragTo = [splitter, total](int height) {
+            splitter->setSizes({height, total - height});
+            emit splitter->splitterMoved(height, 1);
+        };
+        message->setPlainText(QStringLiteral("short"));
+        settle(); // the cut lands before the drag, as it would for a person
+        dragTo(initial);
+        settle();
+        QCOMPARE(pane(), initial);
+        message->setFocus();
+        for (int i = 0; i < 30; ++i)
+            QTest::keyClick(message, Qt::Key_Return);
+        settle();
+        QCOMPARE(pane(), initial);
+        QVERIFY(message->contentHeight() > initial);
+
+        // ...but a message from the agent grows it again...
+        message->replaceText(QStringLiteral("a line from the agent\n").repeated(12));
+        settle();
+        QCOMPARE(pane(), qMin(message->contentHeight(), splitter->height() / 2));
+        QVERIFY(pane() > initial);
+
+        // ...and so does a paste.
+        dragTo(initial);
+        settle();
+        QCOMPARE(pane(), initial);
+        QApplication::clipboard()->setText(QStringLiteral("a pasted line\n").repeated(12));
+        message->paste();
+        settle();
+        QVERIFY(pane() > initial);
+        QCOMPARE(pane(), qMin(message->contentHeight(), splitter->height() / 2));
+
+        // Deleting lines shrinks the box back to the text, and from then on
+        // typing grows it again (the dragged size is forgotten)...
+        const int twelve = pane();
+        QTest::keyClick(message, Qt::Key_End, Qt::ControlModifier);
+        for (int i = 0; i < 4; ++i)
+            QTest::keyClick(message, Qt::Key_Up, Qt::ShiftModifier);
+        QTest::keyClick(message, Qt::Key_Backspace);
+        settle();
+        QVERIFY(pane() < twelve);
+        QCOMPARE(pane(), message->contentHeight());
+        const int eight = pane();
+        for (int i = 0; i < 4; ++i)
+            QTest::keyClick(message, Qt::Key_Return);
+        settle();
+        QVERIFY(pane() > eight);
+
+        // ...and clearing it out goes back to the resting height, not lower.
+        QTest::keyClick(message, Qt::Key_A, Qt::ControlModifier);
+        QTest::keyClick(message, Qt::Key_Backspace);
+        settle();
+        QCOMPARE(pane(), initial);
+        QVERIFY(message->contentHeight() < initial);
     }
 
     // --- mergeVerdict() -----------------------------------------------------

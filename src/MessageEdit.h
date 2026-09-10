@@ -19,16 +19,43 @@ public:
     // Re-measures the button after a font change.
     void applyTheme();
 
+    // The height the box would need to show the whole message at its current
+    // width, wrapped lines counted one by one. Whoever decides how tall the
+    // box may be (CommitPage, which owns the splitter) grows it to this.
+    int contentHeight() const;
+
     // Replaces the text as one undoable edit (Ctrl+Z brings the old text
     // back); with `join`, merged into the previous replacement so a stream
     // of partial answers is one undo step.
     void replaceText(const QString &text, bool join = false);
+    // Puts a message the app has for the user (the commit being amended, a
+    // merge's) into the box; counts as pasted, not typed.
+    void setMessage(const QString &text);
+
+    // What a burst of edits amounted to: text typed in (or re-wrapped by a
+    // resize), text that came in one go (a paste, a drop, the agent,
+    // setMessage()), or text taken out so the message got shorter.
+    enum class Edit { Typed, Pasted, Deleted };
+    Q_ENUM(Edit)
+
+signals:
+    // contentHeight() may have changed. Emitted from the event loop, not from
+    // the document's layout pass, and once per burst of edits: the agent
+    // streams a message in many partial answers.
+    void contentHeightChanged(MessageEdit::Edit edit);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void insertFromMimeData(const QMimeData *source) override;
 
 private:
     void placeButton();
+    void scheduleHeightCheck();
 
     QToolButton *m_button;
+    bool m_pasting = false;          // inside a paste-like edit
+    bool m_pastePending = false;     // the queued check saw one
+    bool m_heightCheckQueued = false;
+    int m_chars = 0;                 // characterCount() at the last check
 };
