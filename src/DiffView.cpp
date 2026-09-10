@@ -1,5 +1,6 @@
 #include "DiffView.h"
 #include "OmarchyTheme.h"
+#include "SyntaxHighlighter.h"
 #include "TickMenu.h"
 
 #include <QApplication>
@@ -117,6 +118,13 @@ DiffView::DiffView(QWidget *parent)
 // size the desktop is set to, so a text-size change re-flows the diff too.
 void DiffView::refreshTheme()
 {
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    // The token colours are the same for every line: look them up once here
+    // rather than per span while painting.
+    for (const TokenKind kind : {TokenKind::Keyword, TokenKind::Type, TokenKind::String,
+                                 TokenKind::Comment, TokenKind::Number, TokenKind::Preprocessor,
+                                 TokenKind::Function})
+        m_syntaxPens[int(kind)] = theme->syntaxColor(kind);
     m_font = OmarchyTheme::instance()->monoFont();
     if (m_zoom != 0)
         m_font.setPixelSize(qBound(kMinFontPx, m_font.pixelSize() + m_zoom, kMaxFontPx));
@@ -243,6 +251,10 @@ void DiffView::setDocument(const DiffDocument &doc, const QString &title, const 
     m_currentBlock = -1;
     m_selAnchor = m_selCursor = Pos();
 
+    // One tokeniser pass per document, never in the paint path.
+    m_language = SyntaxHighlighter::languageFor(m_title, &m_doc);
+    applySyntax();
+
     int maxNumber = 1;
     m_maxCols = 0;
     for (const DiffLine &l : m_doc.lines) {
@@ -321,6 +333,24 @@ void DiffView::setShowWhitespace(bool on)
 {
     m_showWhitespace = on;
     viewport()->update();
+}
+
+void DiffView::applySyntax()
+{
+    if (m_syntax)
+        SyntaxHighlighter::highlight(m_doc, m_language);
+    else
+        SyntaxHighlighter::clear(m_doc);
+}
+
+void DiffView::setSyntaxHighlighting(bool on)
+{
+    if (m_syntax == on)
+        return;
+    m_syntax = on;
+    applySyntax();
+    viewport()->update();
+    emit syntaxHighlightingChanged(on);
 }
 
 void DiffView::updateScrollBars()
@@ -526,12 +556,42 @@ void DiffView::drawCell(QPainter &p, int pane, int row, int y, const QRect &pr)
 
     // Text
     p.setFont(m_font);
-    p.setPen(l.state == DiffLine::Header ? t->mutedText() : t->text());
+    const QColor plain = l.state == DiffLine::Header ? t->mutedText() : t->text();
+    p.setPen(plain);
     const int firstCol = qMax(0, hOff - 1);
     const int visibleCols = (pr.right() - textX) / m_charWidth + 3;
     const int baseline = y + (m_lineHeight + p.fontMetrics().ascent() - p.fontMetrics().descent()) / 2;
-    if (firstCol < text.size())
+    const int lastCol = qMin(int(text.size()), firstCol + visibleCols);
+    const bool colour = m_syntax && !l.syntax.isEmpty() && l.state != DiffLine::Header;
+    if (firstCol < text.size() && !colour) {
         p.drawText(QPointF(x0 + firstCol * m_charWidth, baseline), text.mid(firstCol, visibleCols));
+    } else if (colour) {
+        // Same clipping window as the plain path: draw the coloured spans and
+        // the gaps between them as separate runs, all on the monospace grid.
+        const QVector<int> map = columnMap(l.text);
+        auto run = [&](int c0, int c1, const QColor &pen) {
+            c0 = qMax(c0, firstCol);
+            c1 = qMin(c1, lastCol);
+            if (c1 <= c0)
+                return;
+            p.setPen(pen);
+            p.drawText(QPointF(x0 + c0 * m_charWidth, baseline), text.mid(c0, c1 - c0));
+        };
+        int col = firstCol;
+        for (const SyntaxSpan &sp : l.syntax) {
+            const int c0 = map[qBound(0, sp.start, int(l.text.size()))];
+            const int c1 = map[qBound(0, sp.start + sp.length, int(l.text.size()))];
+            if (c1 <= firstCol)
+                continue;
+            if (c0 >= lastCol)
+                break;
+            run(col, c0, plain);
+            run(c0, c1, m_syntaxPens[int(sp.kind)]);
+            col = qMax(col, c1);
+        }
+        run(col, lastCol, plain);
+        p.setPen(plain);
+    }
 
     if (m_showWhitespace) {
         p.save();
@@ -816,6 +876,10 @@ void DiffView::contextMenuEvent(QContextMenuEvent *e)
     ws->setCheckable(true);
     ws->setChecked(m_showWhitespace);
     connect(ws, &QAction::toggled, this, &DiffView::setShowWhitespace);
+    QAction *syntax = menu.addAction(tr("Syntax highlighting"));
+    syntax->setCheckable(true);
+    syntax->setChecked(m_syntax);
+    connect(syntax, &QAction::toggled, this, &DiffView::setSyntaxHighlighting);
     menu.exec(e->globalPos());
 }
 

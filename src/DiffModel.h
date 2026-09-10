@@ -11,6 +11,24 @@ struct DiffSpan {
     int length = 0;
 };
 
+// What a syntax span means; the colours live in OmarchyTheme::syntaxColor().
+enum class TokenKind {
+    Keyword,
+    Type,          // built-in types and well-known library names
+    String,        // string and character literals
+    Comment,
+    Number,
+    Preprocessor,  // #include, decorators, attributes, [sections]
+    Function,      // name of a call / definition
+};
+
+// A coloured range, in the same raw-character offsets as DiffSpan.
+struct SyntaxSpan {
+    int start = 0;
+    int length = 0;
+    TokenKind kind = TokenKind::Keyword;
+};
+
 struct DiffLine {
     enum State { Normal, Added, Removed, Header, Empty };
     State state = Normal;
@@ -18,6 +36,7 @@ struct DiffLine {
     int newNumber = -1;
     QString text;       // without trailing newline, tabs expanded on paint
     QVector<DiffSpan> inline_; // intra-line changed ranges
+    QVector<SyntaxSpan> syntax; // syntax colouring, filled in by SyntaxHighlighter
     bool noNewline = false;
 };
 

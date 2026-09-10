@@ -124,6 +124,8 @@ QString icon(uint cp, const QString &fallback = QString())
 }
 constexpr uint kRefresh = 0xF0450, kArrowUp = 0xF005D, kArrowDown = 0xF0045, kCommit = 0xF0718,
                kBranch = 0xF062C, kSplit = 0xF0BCC, kPilcrow = 0xF06D8, kHistory = 0xF02DA;
+// md-code-tags: the syntax colouring toggle beside the whitespace one.
+constexpr uint kCodeTags = 0xF0174;
 // md-cloud_download, md-tray_arrow_down, md-tray_arrow_up, md-dock_right, md-source_merge
 constexpr uint kFetch = 0xF0162, kPull = 0xF0120, kPush = 0xF011D, kDockRight = 0xF10AB, kMerge = 0xF062D;
 // md-chevron_down, md-folder, md-folder_open
@@ -335,7 +337,7 @@ void MainWindow::buildUi()
     // The letters follow lazygit, with Ctrl in front (Ctrl+Shift for its
     // capitals): R refresh, f fetch, p pull, P push, M merge, a stage all,
     // A amend, e edit, d discard, Ctrl+R recent repositories, Ctrl+S filter,
-    // Ctrl+W whitespace, q quit.
+    // Ctrl+W whitespace, Ctrl+L syntax colours, q quit.
     // F5 by name: the platform's Refresh sequence includes Ctrl+R, which is the repositories.
     new QShortcut(QKeySequence(Qt::Key_F5), this, this, &MainWindow::refresh);
     new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R), this, this, &MainWindow::refresh);
@@ -427,9 +429,14 @@ void MainWindow::buildUi()
     QToolButton *wsButton = m_wsButton = toolButton(icon(kPilcrow) + tr("Whitespace"), tr("Show whitespace and line endings (Ctrl+W)"));
     wsButton->setCheckable(true);
     navRow->addWidget(wsButton);
+    QToolButton *syntaxButton = m_syntaxButton = toolButton(icon(kCodeTags) + tr("Syntax"),
+                                  tr("Colour the diff by the file's syntax (Ctrl+L)"));
+    syntaxButton->setCheckable(true);
+    navRow->addWidget(syntaxButton);
     // On the window, not the buttons: they may be hidden with the diff pane.
     new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_T), this, paneButton, &QToolButton::toggle);
     new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_W), this, wsButton, &QToolButton::toggle);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_L), this, syntaxButton, &QToolButton::toggle);
     // The diff toggle ends this row; while the pane is hidden it moves to the
     // end of the toolbar row, which is the same top-right spot (see applyPanes).
     m_diffToggle = toolButton(icon(kDockRight, tr("D")).trimmed(), tr("Show or hide the diff pane (Ctrl+Shift+B)"));
@@ -449,7 +456,16 @@ void MainWindow::buildUi()
         const bool twoPane = settings.value(QStringLiteral("diff/twoPane"), true).toBool();
         m_diff->setMode(twoPane ? DiffView::TwoPane : DiffView::OnePane);
         paneButton->setChecked(twoPane);
+        const bool syntax = settings.value(QStringLiteral("diff/syntaxHighlighting"), true).toBool();
+        m_diff->setSyntaxHighlighting(syntax);
+        syntaxButton->setChecked(syntax);
     }
+    connect(syntaxButton, &QToolButton::toggled, m_diff, &DiffView::setSyntaxHighlighting);
+    connect(m_diff, &DiffView::syntaxHighlightingChanged, this, [syntaxButton](bool on) {
+        QSignalBlocker blocker(syntaxButton);
+        syntaxButton->setChecked(on);
+        QSettings().setValue(QStringLiteral("diff/syntaxHighlighting"), on);
+    });
     connect(paneButton, &QToolButton::toggled, m_diff, &DiffView::setTwoPane);
     connect(m_diff, &DiffView::modeChanged, this, [paneButton](DiffView::Mode mode) {
         QSignalBlocker blocker(paneButton);
@@ -763,6 +779,7 @@ void MainWindow::showKeybindings()
     panel->add(QStringLiteral("SHIFT + F8"), tr("Previous change"), diff, [this] { m_diff->previousChange(); });
     panel->add(QStringLiteral("CTRL + T"), tr("One / two panes"), diff, [this] { m_paneButton->toggle(); });
     panel->add(QStringLiteral("CTRL + W"), tr("Show whitespace"), diff, [this] { m_wsButton->toggle(); });
+    panel->add(QStringLiteral("CTRL + L"), tr("Syntax highlighting"), diff, [this] { m_syntaxButton->toggle(); });
     panel->add(QStringLiteral("CTRL + PLUS"), tr("Zoom in"), diff, [this] { m_diff->zoomBy(1); });
     panel->add(QStringLiteral("CTRL + MINUS"), tr("Zoom out"), diff, [this] { m_diff->zoomBy(-1); });
     panel->add(QStringLiteral("CTRL + 0"), tr("Reset zoom"), diff, [this] { m_diff->resetZoom(); });
@@ -1400,7 +1417,7 @@ void MainWindow::openInEditor()
             args.prepend(QStringLiteral("--"));
             program = QStringLiteral("xdg-terminal-exec");
         }
-        // Keep the editor alive when OmaGit closes.
+        // Keep the editor alive when Omagit closes.
         QProcess process;
         process.setWorkingDirectory(app.workingDirectory.isEmpty() ? m_repo->root() : app.workingDirectory);
         process.setProgram(program);
@@ -1647,7 +1664,7 @@ void MainWindow::watchChangedFiles()
 void MainWindow::updateRepoLabels()
 {
     const QString name = QDir(m_repo->root()).dirName();
-    setWindowTitle(QStringLiteral("OmaGit — %1").arg(name));
+    setWindowTitle(QStringLiteral("Omagit — %1").arg(name));
     m_repoButton->setText(icon(kFolder) + name + chevron());
     m_repoButton->setToolTip(tr("%1\nClick or Ctrl+R for the repositories opened lately, Ctrl+O to open another one")
                                  .arg(m_repo->root()));

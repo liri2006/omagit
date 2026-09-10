@@ -111,6 +111,12 @@ void OmarchyTheme::load()
         }
     }
 
+    // Whether the theme really names a warm hue: with only color0..color15 to
+    // go on, the "yellow" slot may be anything, so a derived orange can come
+    // out washed and syntax numbers fall back to red instead.
+    m_hasOrange = m_colors.contains(QStringLiteral("orange"))
+        || (m_colors.contains(QStringLiteral("red")) && m_colors.contains(QStringLiteral("yellow")));
+
     // Some themes only ship the base palette; derive the shades we rely on.
     auto ensure = [this](const QString &key, const QColor &value) {
         if (!m_colors.contains(key))
@@ -126,6 +132,19 @@ void OmarchyTheme::load()
     ensure("bright_foreground", mix(fg, m_dark ? Qt::white : Qt::black, 0.3));
     ensure("selection", mix(bg, fg, 0.2));
     ensure("muted", mix(bg, fg, 0.35));
+    // Many themes only ship the ANSI palette (color0..color15) and no named
+    // hues; map the standard slots so syntax colouring follows the theme
+    // instead of falling back to Tokyo Night.
+    auto ensureFromAnsi = [this](const QString &key, const QString &ansi) {
+        if (!m_colors.contains(key) && m_colors.contains(ansi))
+            m_colors.insert(key, m_colors.value(ansi));
+    };
+    ensureFromAnsi("red", "color1");
+    ensureFromAnsi("green", "color2");
+    ensureFromAnsi("yellow", "color3");
+    ensureFromAnsi("blue", "color4");
+    ensureFromAnsi("magenta", "color5");
+    ensureFromAnsi("cyan", "color6");
     ensure("orange", mix(color("red"), color("yellow"), 0.5));
 
     // Icon theme chosen by the Omarchy theme (icons.theme holds e.g. "Yaru-blue").
@@ -302,6 +321,17 @@ QColor OmarchyTheme::color(const QString &key) const
     return QColor(v);
 }
 
+// Keeps a colour inside a lightness band so it stays readable on the diff tints.
+static QColor clampLightness(const QColor &c, qreal minL, qreal maxL)
+{
+    const QColor hsl = c.toHsl();
+    const qreal l = hsl.lightnessF();
+    const qreal want = qBound(minL, l, maxL);
+    if (qFuzzyCompare(want + 1.0, l + 1.0))
+        return c;
+    return QColor::fromHslF(qMax(0.0f, float(hsl.hueF())), float(hsl.saturationF()), float(want)).toRgb();
+}
+
 QColor OmarchyTheme::fill(qreal alpha) const
 {
     return mix(color("background"), color("foreground"), alpha);
@@ -330,6 +360,38 @@ QColor OmarchyTheme::diffHeaderBg() const { return fill(0.06); }
 QColor OmarchyTheme::diffEmptyBg() const { return m_dark ? QColor(66, 66, 66) : QColor(200, 200, 200); }
 QColor OmarchyTheme::diffAddedIcon() const { return color("green"); }
 QColor OmarchyTheme::diffRemovedIcon() const { return color("red"); }
+
+// Syntax colours come from the theme's own hues. The diff paints them over
+// the added (green) and removed (orange) tints, which sit in the middle of
+// the lightness range, so every colour is pushed away from that middle:
+// bright on a dark theme, dark on a light one. Comments stay dimmer than
+// plain text, just far enough from the tints to stay readable.
+QColor OmarchyTheme::syntaxColor(TokenKind kind) const
+{
+    QColor c;
+    qreal minL = 0.0, maxL = 1.0;
+    switch (kind) {
+    case TokenKind::Keyword: c = color("magenta"); break;
+    case TokenKind::Type: c = color("blue"); break;
+    case TokenKind::String: c = color("green"); break;
+    case TokenKind::Number: c = m_hasOrange ? color("orange") : color("red"); break;
+    case TokenKind::Preprocessor: c = color("cyan"); break;
+    case TokenKind::Function: c = color("yellow"); break;
+    case TokenKind::Comment:
+        c = mutedText();
+        // Dimmer than the text pen, but not swallowed by the line tints.
+        if (m_dark)
+            minL = 0.46;
+        else
+            maxL = 0.46;
+        return clampLightness(c, minL, maxL);
+    }
+    if (m_dark)
+        minL = 0.62;
+    else
+        maxL = 0.38;
+    return clampLightness(c, minL, maxL);
+}
 
 void OmarchyTheme::apply(QApplication &app)
 {

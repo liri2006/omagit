@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DiffModel.h"
+
 #include <QColor>
 #include <QFont>
 #include <QHash>
@@ -73,6 +75,9 @@ public:
     QColor diffAddedIcon() const;
     QColor diffRemovedIcon() const;
 
+    // Syntax colouring of the diff text, kept legible over the added/removed tints.
+    QColor syntaxColor(TokenKind kind) const;
+
     QFont monoFont() const { return m_mono; }
 
     static QColor mix(const QColor &a, const QColor &b, qreal amount);
@@ -93,6 +98,7 @@ private:
 
     QHash<QString, QString> m_colors;
     bool m_dark = true;
+    bool m_hasOrange = true;   // the theme names a warm hue of its own
     QString m_name;
     QFont m_mono;
     int m_fontBase = 12;

@@ -1,8 +1,10 @@
 #pragma once
 
 #include "DiffModel.h"
+#include "SyntaxHighlighter.h"
 
 #include <QAbstractScrollArea>
+#include <QColor>
 #include <QFont>
 #include <QPoint>
 #include <QVector>
@@ -43,6 +45,9 @@ public:
     int tabWidth() const { return m_tabWidth; }
     void setShowWhitespace(bool on);
     bool showWhitespace() const { return m_showWhitespace; }
+    void setSyntaxHighlighting(bool on);
+    bool syntaxHighlighting() const { return m_syntax; }
+    Language language() const { return m_language; }
 
 public slots:
     void setMode(Mode mode);
@@ -60,6 +65,7 @@ public slots:
 signals:
     void changeIndexChanged(int index, int total);
     void modeChanged(Mode mode);
+    void syntaxHighlightingChanged(bool on);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -100,6 +106,7 @@ private:
     void scrollToRow(int row);
     void drawMarginIcon(class QPainter &p, const QRect &r, DiffLine::State state) const;
     void drawCell(class QPainter &p, int pane, int row, int y, const QRect &pr);
+    void applySyntax(); // runs the tokeniser over m_doc, or clears it
     void drawMargin(class QPainter &p, int pane, int row, int y, const QRect &pr);
     void goToBlock(int index);
 
@@ -120,6 +127,9 @@ private:
     int m_maxCols = 0;
     int m_tabWidth = 4;
     bool m_showWhitespace = false;
+    bool m_syntax = true;
+    Language m_language = Language::None;
+    QColor m_syntaxPens[7];          // one per TokenKind, refreshed with the theme
     int m_currentBlock = -1;
     Pos m_selAnchor, m_selCursor;
     bool m_dragging = false;

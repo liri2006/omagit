@@ -159,6 +159,7 @@ private:
     QToolButton *m_diffToggle;   // top right corner, checked while the diff pane shows
     QToolButton *m_paneButton;   // one / two panes (Ctrl+T)
     QToolButton *m_wsButton;     // whitespace markers (Ctrl+W)
+    QToolButton *m_syntaxButton; // syntax colouring (Ctrl+L)
     QHBoxLayout *m_toolbarRow;   // the toolbar (+ the diff toggle while the diff pane is hidden)
     QHBoxLayout *m_navRow;       // the diff pane's Prev/Next row (+ the diff toggle while it shows)
     bool m_diffVisible = true;

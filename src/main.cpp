@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
             root = recent.first();
     }
     if (root.isEmpty()) {
-        QMessageBox::critical(nullptr, QStringLiteral("OmaGit"),
+        QMessageBox::critical(nullptr, QStringLiteral("Omagit"),
                               QStringLiteral("%1 is not inside a git repository.\n\n%2").arg(start, error));
         return 1;
     }

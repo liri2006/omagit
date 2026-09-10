@@ -11,6 +11,7 @@ SOURCES += \
     src/GitRepo.cpp \
     src/DiffModel.cpp \
     src/DiffView.cpp \
+    src/SyntaxHighlighter.cpp \
     src/ChangesModel.cpp \
     src/HistoryModel.cpp \
     src/HistoryView.cpp \
@@ -32,6 +33,7 @@ HEADERS += \
     src/GitRepo.h \
     src/DiffModel.h \
     src/DiffView.h \
+    src/SyntaxHighlighter.h \
     src/ChangesModel.h \
     src/HistoryModel.h \
     src/HistoryView.h \

@@ -1,10 +1,10 @@
-# OmaGit
+# Omagit
 
 A small classic *commit dialog* and *history viewer* for Linux, written in
 C++/Qt 6 and themed by [Omarchy](https://omarchy.org). It shows the pending changes of
 a git repository with a side-by-side diff for the selected file, the commit
 history with a branch graph, and plugs into the Nautilus context menu as
-**Open in OmaGit** (only shown inside git repositories).
+**Open in Omagit** (only shown inside git repositories).
 
 ## Features
 
@@ -19,7 +19,9 @@ history with a branch graph, and plugs into the Nautilus context menu as
   (orange removed lines, grey filler; darker variants on dark themes) with green added lines,
   inline (word-level) change highlighting, a margin with +/− icons and line numbers,
   next/previous change navigation (F8 / Shift+F8), text selection
-  and copy, optional whitespace markers (Ctrl+W), and Ctrl+wheel or Ctrl+= / Ctrl+- zoom (Ctrl+0 resets).
+  and copy, optional whitespace markers (Ctrl+W), syntax colouring of the code by file type
+  (Ctrl+L, on by default; the *Syntax* button and the context menu toggle it too, and the
+  choice is remembered), and Ctrl+wheel or Ctrl+= / Ctrl+- zoom (Ctrl+0 resets).
   Drag the center divider to resize the diff panes;
   double-click it to restore an equal split.
 - Commit the checked files with a message (Ctrl+Enter). In the changes list, Space checks or
@@ -49,12 +51,12 @@ history with a branch graph, and plugs into the Nautilus context menu as
   lately (the last 15, checked = the current one) and *Open…* (Ctrl+O) picks a folder anywhere
   inside another repository. Everything — changes, history, branch, Pull/Push counts, the
   working-tree watch — follows the switch. Started outside a repository without a path,
-  OmaGit reopens the last one.
+  Omagit reopens the last one.
 - **Pull, Push and Fetch** in the toolbar above the left section (Ctrl+P / Ctrl+Shift+P / Ctrl+F), in
   both modes and on the Mini rail. The Pull button carries a badge with the number of commits waiting on the
   upstream, the Push button the number not pushed yet; a walking-dots badge shows while
   the count is being refreshed and a new number pops in when it changes. To keep the Pull
-  count current OmaGit fetches by itself: shortly after start, every 3 minutes while the
+  count current Omagit fetches by itself: shortly after start, every 3 minutes while the
   window is open, and when the window comes back to the front after a while — a cheap
   `git fetch --all` whose failures back off up to 15 minutes, so an offline machine is
   left alone (`remote/autoFetchSeconds` in `~/.config/omagit/omagit.conf`, 0 turns it off,
@@ -138,8 +140,8 @@ own Super+K menu: type to filter, ↑/↓ move the cursor, **Enter** runs the hi
 binding, **Esc** closes. The keys follow lazygit's letters with Ctrl in front (Ctrl+Shift for
 its capitals): Ctrl+F fetch, Ctrl+P pull, Ctrl+Shift+P push, Ctrl+Shift+M merge, Ctrl+A check
 all, Ctrl+Shift+A amend, Ctrl+E open, Ctrl+D discard, Ctrl+R recent repositories, Ctrl+S
-filter the history, Ctrl+W whitespace, Ctrl+Shift+R (or F5) refresh, Ctrl+Q quit; Ctrl+1,
-Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list.
+filter the history, Ctrl+W whitespace, Ctrl+L syntax colours, Ctrl+Shift+R (or F5) refresh,
+Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list.
 
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;
@@ -169,6 +171,7 @@ cd tests && qmake6 tests.pro && make && ../build/tests/gitrepo_test
 | `src/MergeDialog.*` | The merge view: source/destination pickers with swap, the merge-tree verdict, merge and abort |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |
+| `src/SyntaxHighlighter.*` | Hand-rolled per-language tokeniser for the diff's syntax colours |
 | `src/ChangesModel.*` | Table model for the changes list (also the files of a commit) |
 | `src/HistoryModel.*` | Commit list model with incremental lane-graph layout |
 | `src/HistoryView.*` | History view: filter, commit table with graph and ref chips, details, files |
@@ -176,4 +179,4 @@ cd tests && qmake6 tests.pro && make && ../build/tests/gitrepo_test
 | `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
 | `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |
-| `nautilus/omagit.py` | Nautilus "Open in OmaGit" menu provider |
+| `nautilus/omagit.py` | Nautilus "Open in Omagit" menu provider |

@@ -1,4 +1,4 @@
-# Nautilus extension: "Open in OmaGit" for folders (and files) inside a git repository.
+# Nautilus extension: "Open in Omagit" for folders (and files) inside a git repository.
 # Install to ~/.local/share/nautilus-python/extensions/omagit.py and restart Nautilus (nautilus -q).
 import os
 import shutil
@@ -42,7 +42,7 @@ def _git_root(path):
     return None
 
 
-class OpenInOmaGitAction(GObject.GObject, Nautilus.MenuProvider):
+class OpenInOmagitAction(GObject.GObject, Nautilus.MenuProvider):
     def _launch(self, _menu, path):
         omagit = _find_omagit()
         if not omagit:
@@ -71,7 +71,7 @@ class OpenInOmaGitAction(GObject.GObject, Nautilus.MenuProvider):
         return path
 
     def _item(self, name, path):
-        item = Nautilus.MenuItem(name=name, label="Open in OmaGit", icon="omagit")
+        item = Nautilus.MenuItem(name=name, label="Open in Omagit", icon="omagit")
         item.connect("activate", self._launch, path)
         return item
 
@@ -80,11 +80,11 @@ class OpenInOmaGitAction(GObject.GObject, Nautilus.MenuProvider):
         path = self._single_path(files)
         if not path or not _git_root(path) or not _find_omagit():
             return []
-        return [self._item("OmaGit::selected", path)]
+        return [self._item("Omagit::selected", path)]
 
     def get_background_items(self, *args):
         folder = args[0] if len(args) == 1 else args[1]
         path = self._single_path([folder])
         if not path or not _git_root(path) or not _find_omagit():
             return []
-        return [self._item("OmaGit::background", path)]
+        return [self._item("Omagit::background", path)]

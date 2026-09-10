@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build OmaGit and install it for the current user:
+# Build Omagit and install it for the current user:
 #   ~/.local/bin/omagit, a desktop entry, an icon, and the Nautilus context-menu extension.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -24,4 +24,4 @@ if [[ "${1:-}" != "--no-restart" ]] && pgrep -x nautilus >/dev/null; then
   nautilus -q || true
 fi
 
-echo "Installed. Run: omagit [path]   or right-click a folder in Nautilus → Open in OmaGit"
+echo "Installed. Run: omagit [path]   or right-click a folder in Nautilus → Open in Omagit"
