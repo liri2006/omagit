@@ -215,6 +215,14 @@ QFont OmarchyTheme::titleFont() const
     return f;
 }
 
+QFont OmarchyTheme::headingFont() const
+{
+    QFont f = m_mono;
+    f.setPixelSize(qRound(m_fontBase * 1.333));
+    f.setWeight(QFont::Medium);
+    return f;
+}
+
 QString OmarchyTheme::glyph(uint codepoint) const
 {
     const QFontMetrics fm(m_mono);
@@ -460,7 +468,7 @@ QLabel#captionLabel { font-size: %caption%px; font-weight: bold; }
 QLabel#bigLabel { font-size: %big%px; }
 QToolButton#keybindingsButton, QToolButton#layoutButton, QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
 QToolButton#layoutButton { color: %fg%; }
-QToolButton#branchButton { color: %acc%; font-size: %title%px; font-weight: bold; }
+QToolButton#branchButton { color: %acc%; font-weight: bold; }
 QToolButton#keybindingsButton:hover, QToolButton#layoutButton:hover, QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
 QToolButton#keybindingsButton:pressed, QToolButton#layoutButton:pressed, QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
 QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: 6px; }
@@ -474,6 +482,11 @@ TickMenu::item { padding-right: %tickpad%px; }
 TickMenu::item:checked { color: %acc%; }
 TickMenu::indicator { width: 0; height: 0; margin: 0; border: none; background: none; image: none; }
 TickMenu QLineEdit { margin: 0; }
+QDialog#keybindingsPanel { background: %bg%; border: 2px solid %acc%; }
+QLineEdit#keybindingsSearch, QLineEdit#keybindingsSearch:hover, QLineEdit#keybindingsSearch:focus {
+    background: transparent; border: none; padding: 0; font-size: %heading%px; font-weight: 500;
+}
+QListView#keybindingsList { background: transparent; border: none; }
 QToolButton#branchPicker { padding: 8px 12px; }
 QToolButton#branchPicker:disabled { background: %fill4%; border-color: %hair20%; }
 QToolButton#swapButton { padding: 0; }
@@ -505,5 +518,6 @@ QAbstractScrollArea { background: %bg%; }
         .replace(QLatin1String("%family%"), m_mono.family())
         .replace(QLatin1String("%base%"), QString::number(m_fontBase))
         .replace(QLatin1String("%title%"), QString::number(titleFont().pixelSize()))
+        .replace(QLatin1String("%heading%"), QString::number(headingFont().pixelSize()))
         .replace(QLatin1String("%big%"), QString::number(qRound(m_fontBase * 1.5)));
 }

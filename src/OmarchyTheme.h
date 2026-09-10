@@ -56,6 +56,7 @@ public:
     QFont uiFont() const;
     QFont captionFont() const;  // bold, ~0.833 × base, used for section labels
     QFont titleFont() const;    // bold, ~1.167 × base
+    QFont headingFont() const;  // medium weight, ~1.333 × base: the shell's menu rows
     // Nerd Font glyph if the UI font has it, otherwise an empty string.
     QString glyph(uint codepoint) const;
 

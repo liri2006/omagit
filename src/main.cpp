@@ -7,8 +7,9 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QMessageBox>
-#include <QKeyEvent>
 #include <QKeySequence>
+#include <QWindow>
+#include <qpa/qwindowsysteminterface.h>
 #include <QPainter>
 #include <QSettings>
 #include <QScrollBar>
@@ -114,14 +115,13 @@ int main(int argc, char *argv[])
             // Inside a dropdown the keys go to its focused field; otherwise
             // to the window itself, where the shortcuts (Ctrl+G, …) live,
             // early enough for a long --screenshot-after to show their effect.
-            QTimer::singleShot(menu.isEmpty() ? qMin(after, 800) : after + 200 + settle, &window, [&window, keys, menu] {
-                QObject *target = menu.isEmpty() ? static_cast<QObject *>(window.windowHandle())
-                                                 : static_cast<QObject *>(QApplication::focusWidget());
-                if (!target)
+            QTimer::singleShot(menu.isEmpty() ? qMin(after, 800) : after + 200 + settle, &window, [&window, keys] {
+                if (!window.windowHandle())
                     return;
                 for (const QString &name : keys) {
                     if (name.startsWith(QLatin1Char('@'))) {
                         // Deliver the keys so far, then move the focus for the rest.
+                        QWindowSystemInterface::flushWindowSystemEvents();
                         QCoreApplication::sendPostedEvents();
                         const QString wanted = name.mid(1).section(QLatin1Char(':'), 0, 0);
                         const bool vbar = name.endsWith(QLatin1String(":vbar"));
@@ -136,9 +136,15 @@ int main(int argc, char *argv[])
                     }
                     const QKeyCombination combo = QKeySequence::fromString(name)[0];
                     const QString text = name.size() == 1 ? name : QString();
-                    QApplication::postEvent(target, new QKeyEvent(QEvent::KeyPress, combo.key(), combo.keyboardModifiers(), text));
-                    QApplication::postEvent(target, new QKeyEvent(QEvent::KeyRelease, combo.key(), combo.keyboardModifiers(), text));
+                    // As the window system would report the key, so that the
+                    // shortcuts see it first; a QKeyEvent posted by hand goes
+                    // straight to the focused widget and never reaches them.
+                    QWindow *win = QGuiApplication::focusWindow() ? QGuiApplication::focusWindow() : window.windowHandle();
+                    QWindowSystemInterface::handleKeyEvent(win, QEvent::KeyPress, combo.key(), combo.keyboardModifiers(), text);
+                    QWindowSystemInterface::handleKeyEvent(win, QEvent::KeyRelease, combo.key(), combo.keyboardModifiers(), text);
                 }
+                // Before the grab, which may be due in this same event loop turn.
+                QWindowSystemInterface::flushWindowSystemEvents();
             });
         }
         QTimer::singleShot(after + (menu.isEmpty() ? 0 : 500 + settle), &window, [&window, file] {

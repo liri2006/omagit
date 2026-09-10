@@ -1,4 +1,4 @@
-QT       += core gui widgets
+QT       += core gui gui-private widgets
 CONFIG   += c++17 release
 TARGET    = omagit
 TEMPLATE  = app
@@ -23,6 +23,7 @@ SOURCES += \
     src/MergeDialog.cpp \
     src/CommitMessageAgent.cpp \
     src/MessageEdit.cpp \
+    src/KeybindingsPanel.cpp \
     src/MainWindow.cpp
 
 HEADERS += \
@@ -44,6 +45,7 @@ HEADERS += \
     src/MergeDialog.h \
     src/CommitMessageAgent.h \
     src/MessageEdit.h \
+    src/KeybindingsPanel.h \
     src/MainWindow.h
 
 RESOURCES += data/omagit.qrc

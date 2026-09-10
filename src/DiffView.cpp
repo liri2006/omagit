@@ -742,15 +742,22 @@ void DiffView::mouseDoubleClickEvent(QMouseEvent *e)
     viewport()->update();
 }
 
+void DiffView::zoomBy(int step)
+{
+    const int base = OmarchyTheme::instance()->monoFont().pixelSize();
+    const int zoom = qBound(kMinFontPx, base + m_zoom + step, kMaxFontPx) - base;
+    if (zoom == m_zoom)
+        return;
+    m_zoom = zoom;
+    refreshTheme();
+}
+
 void DiffView::wheelEvent(QWheelEvent *e)
 {
     if (e->modifiers() & Qt::ControlModifier) {
         const int delta = e->angleDelta().y();
-        if (delta != 0) {
-            const int base = OmarchyTheme::instance()->monoFont().pixelSize();
-            m_zoom = qBound(kMinFontPx, base + m_zoom + (delta > 0 ? 1 : -1), kMaxFontPx) - base;
-            refreshTheme();
-        }
+        if (delta != 0)
+            zoomBy(delta > 0 ? 1 : -1);
         e->accept();
         return;
     }

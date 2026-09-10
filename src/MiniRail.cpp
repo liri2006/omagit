@@ -163,7 +163,6 @@ MiniRailList::MiniRailList(QWidget *parent)
     : QListView(parent)
 {
     setItemDelegate(new MiniDelegate(this));
-    setModelColumn(ChangesModel::Path); // the column carrying the check state
     setFrameShape(QFrame::NoFrame);
     setSelectionMode(SingleSelection);
     setSelectionBehavior(SelectRows);
@@ -216,8 +215,11 @@ void MiniRailList::keyPressEvent(QKeyEvent *event)
     QListView::keyPressEvent(event);
 }
 
-void MiniRailList::toggleChecked(const QModelIndex &index)
+void MiniRailList::toggleChecked(const QModelIndex &current)
 {
+    // The selection model is the changes table's, whose current index may
+    // sit in any column; the check state lives in the Name column.
+    const QModelIndex index = current.siblingAtColumn(ChangesModel::Name);
     const QVariant check = index.data(Qt::CheckStateRole);
     if (!check.isValid())
         return;
@@ -347,8 +349,12 @@ MiniRail::MiniRail(QWidget *parent)
 
 void MiniRail::setSource(QAbstractItemModel *model, QItemSelectionModel *selection)
 {
-    if (m_list->model() != model)
+    if (m_list->model() != model) {
         m_list->setModel(model);
+        // Only once a model is set: QListView ignores a column its model does
+        // not have. Name is the column carrying the check state.
+        m_list->setModelColumn(ChangesModel::Name);
+    }
     if (m_list->selectionModel() != selection)
         m_list->setSelectionModel(selection);
 }

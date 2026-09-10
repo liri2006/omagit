@@ -47,6 +47,9 @@ public:
 public slots:
     void setMode(Mode mode);
     void setTwoPane(bool on) { setMode(on ? TwoPane : OnePane); }
+    // The text size, in px steps from the theme's base (Ctrl+wheel, Ctrl++ / Ctrl+-); 0 is the base.
+    void zoomBy(int step);
+    void resetZoom() { zoomBy(-m_zoom); }
     void nextChange();
     void previousChange();
     void firstChange();

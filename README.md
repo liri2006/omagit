@@ -18,10 +18,13 @@ history with a branch graph, and plugs into the Nautilus context menu as
   is remembered). Both show the whole file as context in a classic diff tool's own line colours
   (orange removed lines, grey filler; darker variants on dark themes) with green added lines,
   inline (word-level) change highlighting, a margin with +/− icons and line numbers,
-  next/previous change navigation (F8 / Shift+F8), optional whitespace markers, text selection
-  and copy, and Ctrl+wheel zoom. Drag the center divider to resize the diff panes;
+  next/previous change navigation (F8 / Shift+F8), text selection
+  and copy, optional whitespace markers (Ctrl+W), and Ctrl+wheel or Ctrl+= / Ctrl+- zoom (Ctrl+0 resets).
+  Drag the center divider to resize the diff panes;
   double-click it to restore an equal split.
-- Commit the checked files with a message (Ctrl+Enter).
+- Commit the checked files with a message (Ctrl+Enter). In the changes list, Space checks or
+  unchecks a file and Ctrl+A all of them; Ctrl+Shift+A ticks *Amend last commit*, Ctrl+E opens
+  the selected file in its own program, Ctrl+D discards its changes (after asking).
 - **Commit message from a coding agent**: the sparkle in the top right corner of the message
   box (Ctrl+G) hands the checked changes (all of them when none is checked) to a coding
   agent CLI and puts its answer in the box, the way Cursor's generate button does; Ctrl+Z
@@ -42,12 +45,12 @@ history with a branch graph, and plugs into the Nautilus context menu as
   remote branch gets a local branch of the same name tracking it (or switches to that local
   branch if it already exists); local changes are carried over, and if git would lose them
   it refuses and says why.
-- **Repository dropdown** in the footer: the repository's name lists the repositories opened
+- **Repository dropdown** in the footer: the repository's name (or Ctrl+R) lists the repositories opened
   lately (the last 15, checked = the current one) and *Open…* (Ctrl+O) picks a folder anywhere
   inside another repository. Everything — changes, history, branch, Pull/Push counts, the
   working-tree watch — follows the switch. Started outside a repository without a path,
   OmaGit reopens the last one.
-- **Pull, Push and Fetch** in the toolbar above the left section (Ctrl+Shift+L / P / F), in
+- **Pull, Push and Fetch** in the toolbar above the left section (Ctrl+P / Ctrl+Shift+P / Ctrl+F), in
   both modes and on the Mini rail. The Pull button carries a badge with the number of commits waiting on the
   upstream, the Push button the number not pushed yet; a walking-dots badge shows while
   the count is being refreshed and a new number pops in when it changes. To keep the Pull
@@ -80,14 +83,14 @@ history with a branch graph, and plugs into the Nautilus context menu as
   already on a remote branch.
 - **History** (Ctrl+2, or `--history`): the commits of the current branch (or *All branches*)
   with a lane graph, branch/remote/tag chips, author, date and SHA; filter by message, author
-  or SHA (Ctrl+F); commits load 500 at a time as you scroll. Selecting a commit shows its
+  or SHA (Ctrl+S); commits load 500 at a time as you scroll. Selecting a commit shows its
   details and the files it touched; selecting a file shows the diff against the parent in
   the same diff pane. Right-click a commit to copy its SHA or message.
 - The toolbar adapts to the width of the left section: labels give way to icons, and icons
   to a *more* menu (Fetch folds first, Pull last), so the section can be dragged as narrow
   as you like; the diff pane can be dragged just as narrow. The toolbar's first button is
   the Docked/Mini toggle; Refresh is the small icon next to the *n / m selected* count (and
-  next to *All branches* in History), F5 works everywhere.
+  next to *All branches* in History), F5 or Ctrl+Shift+R works everywhere.
 - **Docked / Mini** layouts (the toolbar's first button or Ctrl+B; the choice is
   remembered). *Docked* keeps the left section (commit dialog or history) next to the diff
   pane. *Mini* shrinks it to a narrow rail of file miniatures (extension tile, status letter,
@@ -130,8 +133,13 @@ omagit [path]            # any directory or file inside a repository (default: c
 `--history` opens the history view, `--amend` starts with *Amend last commit* ticked,
 `--mini` starts in the Mini layout, `--full` with the diff pane hidden, and `--no-fetch` leaves the network alone.
 
-The footer's info button or **Ctrl+K** opens a searchable keybindings panel in either
-layout. Search by action, key combination, or context; **Esc** closes the panel.
+The footer's info button or **Ctrl+K** opens the keybindings panel, styled after Omarchy's
+own Super+K menu: type to filter, ↑/↓ move the cursor, **Enter** runs the highlighted
+binding, **Esc** closes. The keys follow lazygit's letters with Ctrl in front (Ctrl+Shift for
+its capitals): Ctrl+F fetch, Ctrl+P pull, Ctrl+Shift+P push, Ctrl+Shift+M merge, Ctrl+A check
+all, Ctrl+Shift+A amend, Ctrl+E open, Ctrl+D discard, Ctrl+R recent repositories, Ctrl+S
+filter the history, Ctrl+W whitespace, Ctrl+Shift+R (or F5) refresh, Ctrl+Q quit; Ctrl+1,
+Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list.
 
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;

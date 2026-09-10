@@ -75,6 +75,12 @@ private slots:
     void showMergeDialog();
     void showRepoMenu();
     void openRepositoryDialog();
+    // Ctrl+S: the history view with its filter focused (lazygit's filter key).
+    void focusHistoryFilter();
+    // Ctrl+A in the changes list / Mini rail, Ctrl+Shift+A, Ctrl+D.
+    void toggleAllChecked();
+    void toggleAmend();
+    void discardCurrent();
     // Asks the chosen coding agent for a message describing the checked
     // changes (Ctrl+G); clicking again while it runs stops it.
     void generateMessage();
@@ -96,6 +102,7 @@ private:
     void presentDiff(const QString &unified, const FileChange &change, bool binary, const QString &leftLabel,
                      const QString &rightLabel, const QString &emptyMessage);
     FileChange currentChange(bool *ok) const;
+    void discardChange(const FileChange &change); // asks first
     void checkoutBranch(const QString &name);
     void watchWorkingTree();
     void watchChangedFiles(); // the files in the changes list, for edits made in place
@@ -150,6 +157,8 @@ private:
     QToolButton *m_historyModeButton;
     QToolButton *m_layoutButton; // Docked/Mini toggle in the footer, checked in Mini
     QToolButton *m_diffToggle;   // top right corner, checked while the diff pane shows
+    QToolButton *m_paneButton;   // one / two panes (Ctrl+T)
+    QToolButton *m_wsButton;     // whitespace markers (Ctrl+W)
     QHBoxLayout *m_toolbarRow;   // the toolbar (+ the diff toggle while the diff pane is hidden)
     QHBoxLayout *m_navRow;       // the diff pane's Prev/Next row (+ the diff toggle while it shows)
     bool m_diffVisible = true;
