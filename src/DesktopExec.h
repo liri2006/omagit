@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QProcess>
+#include <QString>
 #include <QStringList>
 #include <QUrl>
 
@@ -31,3 +32,19 @@ inline QStringList desktopExecArguments(const QString &exec, const QString &path
     }
     return result;
 }
+
+// Resolve the default application's label and launch information.
+struct DefaultApp {
+    QString name, icon;
+    QString exec, desktopFile, workingDirectory;
+    bool terminal = false;
+};
+
+DefaultApp defaultAppFor(const QString &filePath);
+
+// Starts `path` in its default application, detached so it outlives Omagit.
+// False with the message to show on failure; `shownPath` is how the file is
+// named in that message (the full path when empty), `fallbackWorkingDirectory`
+// the directory to start in when the desktop entry names none.
+bool openWithDefaultApp(const QString &path, const QString &fallbackWorkingDirectory, QString *error,
+                        const QString &shownPath = QString());

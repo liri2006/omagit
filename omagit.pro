@@ -25,6 +25,11 @@ SOURCES += \
     src/CommitMessageAgent.cpp \
     src/MessageEdit.cpp \
     src/KeybindingsPanel.cpp \
+    src/UiHelpers.cpp \
+    src/DesktopExec.cpp \
+    src/DiffPane.cpp \
+    src/CommitPage.cpp \
+    src/Footer.cpp \
     src/MainWindow.cpp
 
 HEADERS += \
@@ -48,6 +53,10 @@ HEADERS += \
     src/CommitMessageAgent.h \
     src/MessageEdit.h \
     src/KeybindingsPanel.h \
+    src/UiHelpers.h \
+    src/DiffPane.h \
+    src/CommitPage.h \
+    src/Footer.h \
     src/MainWindow.h
 
 RESOURCES += data/omagit.qrc

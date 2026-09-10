@@ -175,7 +175,12 @@ cd tests && qmake6 tests.pro && make && ../build/tests/gitrepo_test
 | `src/ChangesModel.*` | Table model for the changes list (also the files of a commit) |
 | `src/HistoryModel.*` | Commit list model with incremental lane-graph layout |
 | `src/HistoryView.*` | History view: filter, commit table with graph and ref chips, details, files |
-| `src/MainWindow.*` | Window shell: modes and sync buttons, Docked/Mini layouts, diff pane and its toggle, branch and repository dropdowns, footer |
+| `src/MainWindow.*` | Window shell: modes and sync buttons, Docked/Mini layouts, the pages and the diff pane, branches, merging, repositories and the working-tree watch |
+| `src/CommitPage.*` | The commit dialog page: message box with the coding-agent flow, changes list with its context menu, options and the Commit button |
+| `src/DiffPane.*` | The right pane: Prev/Next and the two-pane / whitespace / syntax toggles above the diff view, with their remembered settings |
+| `src/Footer.*` | The footer bar: layout toggle, repository and branch dropdowns, the path or the latest message, keybindings button |
+| `src/UiHelpers.*` | The shell's Nerd Font glyphs and the small widget factories the sections share (section and dim labels, tool / small / dropdown buttons, hairline, menu headers) |
+| `src/DesktopExec.*` | A file's default application, read from its desktop entry, and launching it detached |
 | `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
 | `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |

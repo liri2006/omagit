@@ -1,4 +1,5 @@
 #include "OmarchyTheme.h"
+#include "DiffModel.h" // TokenKind, forward-declared in the header
 
 #include <QApplication>
 #include <QDir>

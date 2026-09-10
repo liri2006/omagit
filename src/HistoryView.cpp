@@ -2,6 +2,7 @@
 #include "ChangesModel.h"
 #include "HistoryModel.h"
 #include "OmarchyTheme.h"
+#include "UiHelpers.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -26,34 +27,9 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+using namespace ui;
+
 namespace {
-
-constexpr uint kMagnify = 0xF0349, kBranch = 0xF062C, kMore = 0xF0140, kRefresh = 0xF0450;
-
-QString icon(uint cp, const QString &fallback = QString())
-{
-    const QString g = OmarchyTheme::instance()->glyph(cp);
-    return g.isEmpty() ? fallback : g + QStringLiteral("  ");
-}
-
-QLabel *dimLabel(const QString &text = QString())
-{
-    auto *l = new QLabel(text);
-    l->setObjectName(QStringLiteral("dimLabel"));
-    l->setFont(OmarchyTheme::instance()->captionFont());
-    return l;
-}
-
-QToolButton *toolButton(const QString &text, const QString &tip = QString())
-{
-    auto *b = new QToolButton;
-    b->setText(text);
-    b->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    b->setToolTip(tip);
-    b->setCursor(Qt::PointingHandCursor);
-    b->setFocusPolicy(Qt::NoFocus);
-    return b;
-}
 
 // Matches the filter text against subject, body, author and hash.
 class CommitFilter : public QSortFilterProxyModel
@@ -309,7 +285,7 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_countLabel = dimLabel();
     footer->addWidget(m_countLabel);
     footer->addStretch();
-    m_moreButton = toolButton(icon(kMore) + tr("Load more"), tr("Load the next 500 commits"));
+    m_moreButton = toolButton(icon(kChevron) + tr("Load more"), tr("Load the next 500 commits"));
     connect(m_moreButton, &QToolButton::clicked, this, &HistoryView::loadMore);
     footer->addWidget(m_moreButton);
     layout->addLayout(footer);

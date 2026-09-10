@@ -1,7 +1,5 @@
 #pragma once
 
-#include "ChangesModel.h"
-#include "CommitMessageAgent.h"
 #include "GitRepo.h"
 #include "PaneLayout.h"
 #include "RemoteSync.h"
@@ -9,21 +7,16 @@
 #include <QMainWindow>
 
 class BadgeButton;
-class DiffView;
+class CommitPage;
+class DiffPane;
+class Footer;
 class Toolbar;
 class HistoryView;
-class MessageEdit;
 class MiniRail;
-class QCheckBox;
 class QFileSystemWatcher;
 class QHBoxLayout;
-class QLabel;
-class QPushButton;
-class QSortFilterProxyModel;
 class QSplitter;
 class QStackedWidget;
-class QTableView;
-class QTimer;
 class QToolButton;
 
 class MainWindow : public QMainWindow
@@ -61,7 +54,6 @@ public slots:
 private slots:
     void showKeybindings();
     void onCurrentRowChanged(const QModelIndex &current);
-    void onCheckedChanged();
     void onAmendToggled(bool on);
     void commit();
     void openInEditor();
@@ -96,12 +88,10 @@ private:
         BadgeButton *fetch, *pull, *push;
     };
     void buildUi();
-    QWidget *buildCommitPage();
     void applyPanes();
     void showDiffFor(const FileChange &change);
     void presentDiff(const QString &unified, const FileChange &change, bool binary, const QString &leftLabel,
                      const QString &rightLabel, const QString &emptyMessage);
-    FileChange currentChange(bool *ok) const;
     void discardChange(const FileChange &change); // asks first
     void checkoutBranch(const QString &name);
     void watchWorkingTree();
@@ -109,8 +99,6 @@ private:
     void updateRepoLabels();
     void updateCommitButton();
     void updateMergeButtons(const MergeState &merge);
-    void setGenerating(bool on);
-    void onMessageGenerated(bool ok, const QString &text);
     static void rememberRepository(const QString &root);
     // The footer's message; `ms` > 0 brings the repository path back after that long.
     void showStatus(const QString &text, int ms = 0);
@@ -119,59 +107,28 @@ private:
     RemoteSync *m_sync;
     Mode m_mode = CommitMode;
     PaneLayout m_layout = PaneLayout::Docked;
-    ChangesModel *m_model;
-    QSortFilterProxyModel *m_proxy;
-    QTableView *m_table;
-    ChangesTableSetup *m_tableSetup;
-    DiffView *m_diff;
+    CommitPage *m_commitPage;
+    DiffPane *m_diffPane;
+    Footer *m_footer;
     HistoryView *m_history;
     QStackedWidget *m_stack;
     Toolbar *m_toolbar;
     QSplitter *m_splitter;
     QWidget *m_left;
-    QWidget *m_rightPane;
     MiniRail *m_rail;
-    MessageEdit *m_message;      // the commit message, with the generate button in its corner
-    QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning
-    CommitMessageAgent *m_agent;
-    QTimer *m_spinner;           // animates the generate button while the agent runs
-    int m_spinnerFrame = 0;
-    bool m_streaming = false;    // a partial answer already replaced the message text
-    QString m_messageBefore;     // the text the user had before the agent started, for a failed run
-    QToolButton *m_branchButton; // the branch name; clicking it lists the branches
-    QToolButton *m_repoButton;   // the repository name beside the branch; clicking it lists recent ones
-    QLabel *m_statusLabel;       // the footer's message, the repository path when there is none
-    QTimer *m_statusTimer;
-    QWidget *m_footerLine;
     QFileSystemWatcher *m_watcher; // the working tree root, the index and the changed files
     QString m_indexFile;
-    QLabel *m_summaryLabel;
-    QLabel *m_changeLabel;
-    QPushButton *m_commitButton;
-    QCheckBox *m_selectAll;
-    QCheckBox *m_showUnversioned;
-    QCheckBox *m_amend;
-    QToolButton *m_prevButton;
-    QToolButton *m_nextButton;
     QToolButton *m_commitModeButton;
     QToolButton *m_historyModeButton;
-    QToolButton *m_layoutButton; // Docked/Mini toggle in the footer, checked in Mini
-    QToolButton *m_diffToggle;   // top right corner, checked while the diff pane shows
-    QToolButton *m_paneButton;   // one / two panes (Ctrl+T)
-    QToolButton *m_wsButton;     // whitespace markers (Ctrl+W)
-    QToolButton *m_syntaxButton; // syntax colouring (Ctrl+L)
     QHBoxLayout *m_toolbarRow;   // the toolbar (+ the diff toggle while the diff pane is hidden)
-    QHBoxLayout *m_navRow;       // the diff pane's Prev/Next row (+ the diff toggle while it shows)
     bool m_diffVisible = true;
     QList<SyncButtons> m_syncButtons; // the toolbar's and the Mini rail's
     QList<BadgeButton *> m_mergeButtons; // the toolbar's and the Mini rail's, marked while a merge waits
     bool m_merging = false;   // a merge is in progress (MERGE_HEAD exists)
     QString m_mergeMessage;   // git's proposed message, put in the box while it is empty
     QString m_initialSelection;
-    QString m_diffSummary;
     QString m_shownDiffKey;    // what the diff pane shows, to skip re-setting an identical document
     bool m_refreshing = false; // the model reset momentarily leaves no row current
-    QString m_headMessage;
     bool m_shown = false;
     bool m_historyDirty = true;
 };

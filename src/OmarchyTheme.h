@@ -1,7 +1,5 @@
 #pragma once
 
-#include "DiffModel.h"
-
 #include <QColor>
 #include <QFont>
 #include <QHash>
@@ -11,6 +9,10 @@
 class QApplication;
 class QFileSystemWatcher;
 class QTimer;
+
+// What a syntax span means, as DiffModel.h defines it; only the name is
+// needed here, so the diff parser stays out of every theme user's includes.
+enum class TokenKind;
 
 // Reads the active Omarchy theme (~/.local/state/omarchy/current/theme/colors.toml)
 // and turns it into a Qt palette + stylesheet. Re-applies itself when the
