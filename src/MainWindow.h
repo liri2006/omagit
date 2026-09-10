@@ -69,6 +69,12 @@ private slots:
     // The merge view (Ctrl+Shift+M): pick the two branches, see what the
     // merge would do, then do it — or abort the one in progress.
     void showMergeDialog();
+    // git (or ssh) is waiting for a login: show the dialog and hand what the
+    // user types back to the helper process that asked.
+    void onAskPassRequest(const AskPassRequest &request);
+    // The same dialog with a made-up github.com request, so a screenshot of
+    // it can be taken (--screenshot-menu login); the answers go nowhere.
+    void showLoginDialog();
     void showRepoMenu();
     void openRepositoryDialog();
     // Ctrl+S: the history view with its filter focused (lazygit's filter key).

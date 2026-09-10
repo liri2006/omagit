@@ -1,4 +1,4 @@
-QT       += core gui gui-private widgets
+QT       += core gui gui-private network widgets
 CONFIG   += c++17
 # An optimised build unless one is asked for on the command line:
 # `qmake6 CONFIG+=debug omagit.pro` gives -g without editing this file.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AskPass.h"
 #include "GitRepo.h"
 
 #include <QDateTime>
@@ -59,6 +60,15 @@ public:
     // and read the new one.
     void reset();
 
+    // The sign-in server the user's own fetches, pulls and pushes run with:
+    // its requestReceived() is what the window shows the login dialog for.
+    // An automatic fetch runs without it and fails silently as before —
+    // nothing the user did not ask for opens a dialog.
+    AskPass *askPass() const { return m_askPass; }
+    // Whether the operation that just finished failed because the sign-in
+    // was cancelled. Valid while finished() is being delivered.
+    bool signInCancelled() const { return m_signInCancelled; }
+
     // Which git command an operation runs, for tooltips.
     QStringList fetchArgs() const;
     QStringList pullArgs() const;
@@ -92,7 +102,9 @@ private:
     UpstreamState m_state;
     Op m_op = None;
     QPointer<QProcess> m_process;
+    AskPass *m_askPass;
     bool m_autoOp = false; // the running fetch was started automatically
+    bool m_signInCancelled = false;
     int m_behindBefore = 0, m_aheadBefore = 0;
     QDateTime m_lastFetch;
     bool m_lastFetchOk = true;

@@ -673,6 +673,13 @@ QListView#keybindingsList { background: transparent; border: none; }
 QToolButton#branchPicker { padding: 8px 12px; }
 QToolButton#branchPicker:disabled { background: %fill4%; border-color: %hair20%; }
 QToolButton#swapButton { padding: 0; }
+/* The show/hide eye inside the sign-in dialog's password field: part of the
+   field, so it carries no chrome of its own — only its glyph lights up. */
+QToolButton#revealButton, QToolButton#revealButton:checked, QToolButton#revealButton:hover {
+    background: transparent; border: 1px solid transparent; padding: 1px 3px; color: %dim%;
+}
+QToolButton#revealButton:hover { color: %fg%; }
+QToolButton#revealButton:checked { color: %acc%; }
 QFrame#mergeVerdict { background: %fill4%; border: 1px solid %bd40%; }
 QListWidget#mergeFiles { background: transparent; border: none; outline: 0; }
 QListWidget#mergeFiles::item { padding: 2px 4px; border: none; }

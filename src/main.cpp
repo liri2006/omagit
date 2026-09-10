@@ -1,3 +1,4 @@
+#include "AskPass.h"
 #include "GitRepo.h"
 #include "MainWindow.h"
 #include "OmarchyTheme.h"
@@ -7,6 +8,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QFile>
 #include <QMessageBox>
 #include <QKeySequence>
 #include <qpa/qwindowsysteminterface.h>
@@ -16,8 +18,44 @@
 #include <QTimer>
 #include <QWindow>
 
+namespace {
+
+// Is this process the askpass helper of a git or ssh run of ours, and what is
+// it being asked? Both point their ASKPASS variable at this binary and run it
+// as `omagit "<prompt>"` — git through a shell, so the explicit
+// `omagit --askpass "<prompt>"` works there as well, while ssh execs the
+// helper directly and can pass no flag of its own. What tells the two apart
+// from someone opening a repository is OMAGIT_ASKPASS_SOCKET: only the app
+// puts it in the environment of the git processes it starts.
+bool askPassPrompt(int argc, char *argv[], QString *prompt)
+{
+    for (int i = 1; i < argc; ++i) {
+        if (qstrcmp(argv[i], "--askpass") != 0)
+            continue;
+        *prompt = i + 1 < argc ? QString::fromLocal8Bit(argv[i + 1]) : QString();
+        return true;
+    }
+    if (!qEnvironmentVariableIsSet("OMAGIT_ASKPASS_SOCKET") || argc != 2 || argv[1][0] == '-')
+        return false;
+    *prompt = QString::fromLocal8Bit(argv[1]);
+    return true;
+}
+
+} // namespace
+
 int main(int argc, char *argv[])
 {
+    // Before the QApplication: as a helper the program answers one question
+    // on stdout and exits, with no window, no theme and no display.
+    QString prompt;
+    if (askPassPrompt(argc, argv, &prompt)) {
+        QCoreApplication app(argc, argv);
+        QFile out;
+        if (!out.open(stdout, QIODevice::WriteOnly))
+            return 1;
+        return askPassClient(qEnvironmentVariable("OMAGIT_ASKPASS_SOCKET"), prompt, &out);
+    }
+
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("omagit"));
     QCoreApplication::setApplicationName(QStringLiteral("omagit"));
@@ -37,7 +75,7 @@ int main(int argc, char *argv[])
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings or merge panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge or login panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -47,6 +85,9 @@ int main(int argc, char *argv[])
     parser.addOption(amendOpt);
     parser.addOption(noFetchOpt);
     parser.addOption(screenshotMenuOpt);
+    // Handled before the QApplication above; here so --help mentions it.
+    QCommandLineOption askPassOpt(QStringLiteral("askpass"), QStringLiteral("Ask the running Omagit for the given credential prompt and print the answer (what git and ssh run)."), QStringLiteral("prompt"));
+    parser.addOption(askPassOpt);
     QCommandLineOption screenshotKeysOpt(QStringLiteral("screenshot-keys"), QStringLiteral("Comma-separated keys (m,a,Down,Return) sent to the focused widget once the --screenshot-menu dropdown is open, or to the window; @objectName[:vbar] or @ClassName[:vbar] focuses that (first visible) widget or its vertical scrollbar first (for testing)."), QStringLiteral("keys"));
     parser.addOption(screenshotKeysOpt);
     parser.process(app);
@@ -107,6 +148,7 @@ int main(int argc, char *argv[])
                     : menu == QLatin1String("keybindings")       ? "showKeybindings"
                     : menu == QLatin1String("agent")             ? "showAgentMenu"
                     : menu == QLatin1String("merge")             ? "showMergeDialog"
+                    : menu == QLatin1String("login")             ? "showLoginDialog"
                                                                  : "showBranchMenu";
                 QMetaObject::invokeMethod(&window, slot);
             });

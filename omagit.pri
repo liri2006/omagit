@@ -6,11 +6,13 @@
 # tests/tests.pro builds exactly these with `QT -= gui`, so nothing listed
 # here may reach for QtGui or QtWidgets.
 OMAGIT_CORE_SOURCES = \
+    $$PWD/src/AskPass.cpp \
     $$PWD/src/GitRepo.cpp \
     $$PWD/src/RemoteSync.cpp \
     $$PWD/src/CommitMessageAgent.cpp
 
 OMAGIT_CORE_HEADERS = \
+    $$PWD/src/AskPass.h \
     $$PWD/src/GitRepo.h \
     $$PWD/src/RemoteSync.h \
     $$PWD/src/CommitMessageAgent.h \
@@ -33,6 +35,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/TickMenu.cpp \
     $$PWD/src/BranchMenu.cpp \
     $$PWD/src/MergeDialog.cpp \
+    $$PWD/src/LoginDialog.cpp \
     $$PWD/src/MessageEdit.cpp \
     $$PWD/src/KeybindingsPanel.cpp \
     $$PWD/src/UiHelpers.cpp \
@@ -57,6 +60,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/TickMenu.h \
     $$PWD/src/BranchMenu.h \
     $$PWD/src/MergeDialog.h \
+    $$PWD/src/LoginDialog.h \
     $$PWD/src/MessageEdit.h \
     $$PWD/src/KeybindingsPanel.h \
     $$PWD/src/UiHelpers.h \

@@ -1,12 +1,18 @@
 // Exercises GitRepo against throw-away repositories: status/diff bases, amend.
 // Build: cd tests && qmake6 tests.pro && make && ./gitrepo_test
+#include "../src/AskPass.h"
 #include "../src/CommitMessageAgent.h"
 #include "../src/GitRepo.h"
 #include "../src/DesktopExec.h"
 #include "../src/RemoteSync.h"
 
+#include <QBuffer>
 #include <QCoreApplication>
+#include <QDataStream>
+#include <QElapsedTimer>
 #include <QEventLoop>
+#include <QLocalSocket>
+#include <QThread>
 #include <QPointer>
 #include <QTimer>
 #include <QDir>
@@ -827,6 +833,326 @@ static void testCommitIgnoredDeletion(const QString &base)
     CHECK(git(dir, {"status", "--porcelain"}) == "M keep.txt");
 }
 
+// --- Signing in ------------------------------------------------------------
+
+static void testAskPassPrompts()
+{
+    AskPassRequest r = parseAskPassPrompt(QStringLiteral("Username for 'https://github.com': "));
+    CHECK(r.kind == AskPassRequest::Username);
+    CHECK(r.target == "https://github.com");
+    CHECK(r.host == "github.com");
+    CHECK(r.user.isEmpty());
+    CHECK(r.context == "https://github.com");
+
+    r = parseAskPassPrompt(QStringLiteral("Password for 'https://andras@github.com': "));
+    CHECK(r.kind == AskPassRequest::Password);
+    CHECK(r.host == "github.com");
+    CHECK(r.user == "andras");
+    CHECK(r.context == "https://github.com"); // the user is who, not where
+
+    // The context is git's own: the scheme, the host, the port and the path
+    // its prompt carries (credential.useHttpPath puts one there), without the
+    // user. The host alone would lump an http remote in with an https one.
+    r = parseAskPassPrompt(QStringLiteral("Password for 'https://alice@example.com:8443/team/repo': "));
+    CHECK(r.host == "example.com");
+    CHECK(r.user == "alice");
+    CHECK(r.context == "https://example.com:8443/team/repo");
+    CHECK(parseAskPassPrompt(QStringLiteral("Username for 'http://example.com': ")).context
+          == "http://example.com");
+
+    r = parseAskPassPrompt(QStringLiteral("Enter passphrase for key '/home/x/.ssh/id_ed25519': "));
+    CHECK(r.kind == AskPassRequest::Passphrase);
+    CHECK(r.keyPath == "/home/x/.ssh/id_ed25519");
+    CHECK(r.host.isEmpty());
+    CHECK(r.context == "/home/x/.ssh/id_ed25519");
+
+    // ssh's second and third go at the same key, worded differently and
+    // asking for the same thing.
+    r = parseAskPassPrompt(QStringLiteral("Bad passphrase, try again for key '/x/id_ed25519': "));
+    CHECK(r.kind == AskPassRequest::Passphrase);
+    CHECK(r.keyPath == "/x/id_ed25519");
+    CHECK(r.context == "/x/id_ed25519");
+
+    // Anything else is shown as git or ssh worded it, quotes and all.
+    const QString hostKey = QStringLiteral("The authenticity of host 'github.com (140.82.121.4)' can't be "
+                                           "established.\nAre you sure you want to continue connecting? ");
+    r = parseAskPassPrompt(hostKey);
+    CHECK(r.kind == AskPassRequest::Other);
+    CHECK(r.prompt == hostKey);
+    CHECK(r.target.isEmpty() && r.host.isEmpty());
+    CHECK(r.context == hostKey);
+}
+
+// What one helper run left behind: its exit status and what it printed.
+struct AskPassRun {
+    int code = -1;
+    QByteArray out;
+};
+
+// Spins the event loop until `ready` holds, or the wait runs out; returns
+// whether it held in the end.
+template <typename Ready>
+static bool spinUntil(Ready ready, int timeoutMs = 5000)
+{
+    QElapsedTimer clock;
+    clock.start();
+    while (!ready() && clock.elapsed() < timeoutMs)
+        QCoreApplication::processEvents(QEventLoop::WaitForMoreEvents, 50);
+    return ready();
+}
+
+// The frame AskPass listens for: a big-endian length and the prompt in UTF-8.
+// Written out here so a test can play the helper without askPassClient, which
+// waits for its answer and would hold this thread while the server needs it.
+static QByteArray promptFrame(const QString &prompt)
+{
+    const QByteArray payload = prompt.toUtf8();
+    QByteArray out;
+    QDataStream stream(&out, QIODevice::WriteOnly);
+    stream.setByteOrder(QDataStream::BigEndian);
+    stream << quint32(payload.size());
+    return out + payload;
+}
+
+// Runs the helper's side in a thread of its own — it blocks on the answer,
+// while the server needs this thread's event loop to give one.
+static AskPassRun runAskPassClient(const QString &socketPath, const QString &prompt)
+{
+    QBuffer buffer;
+    buffer.open(QIODevice::WriteOnly);
+    AskPassRun run;
+    QThread *thread = QThread::create([&] { run.code = askPassClient(socketPath, prompt, &buffer); });
+    QEventLoop loop;
+    QObject::connect(thread, &QThread::finished, &loop, &QEventLoop::quit);
+    QTimer guard; // so a helper that is never answered ends the test instead of hanging it
+    guard.setSingleShot(true);
+    QObject::connect(&guard, &QTimer::timeout, &loop, &QEventLoop::quit);
+    guard.start(20000);
+    thread->start();
+    loop.exec();
+    thread->wait();
+    delete thread;
+    run.out = buffer.data();
+    return run;
+}
+
+static void testAskPassServer()
+{
+    AskPass askPass;
+    CHECK(askPass.env().isEmpty()); // nothing to point git at before it listens
+    CHECK(askPass.listen());
+    CHECK(askPass.listen()); // idempotent
+    const QString helper = QCoreApplication::applicationFilePath();
+    CHECK(askPass.env() == QStringList({"GIT_ASKPASS=" + helper, "SSH_ASKPASS=" + helper,
+                                        "SSH_ASKPASS_REQUIRE=force",
+                                        "OMAGIT_ASKPASS_SOCKET=" + askPass.socketPath()}));
+    CHECK(askPass.socketPath().contains(QString::number(QCoreApplication::applicationPid())));
+
+    QList<AskPassRequest> seen;
+    bool stalled = false; // leave the request standing, the way a dialog does
+    int staleId = 0;      // a dropped request to try answering first
+    QObject::connect(&askPass, &AskPass::requestReceived, &askPass, [&](const AskPassRequest &request) {
+        seen << request;
+        CHECK(request.id > 0);
+        if (stalled)
+            return;
+        // What a dialog left over from a dropped request would say, said now
+        // that somebody else is being asked: it is no answer to this one, and
+        // no refusal of it either.
+        if (staleId) {
+            askPass.cancel(staleId);
+            askPass.answerLogin(staleId, QStringLiteral("mallory"), QStringLiteral("not-hers"));
+            CHECK(!askPass.cancelled());
+            staleId = 0;
+        }
+        switch (request.kind) {
+        case AskPassRequest::Username: askPass.answerLogin(request.id, "alice", "s3cret"); break;
+        // A password prompt only gets this far when no kept login is that
+        // user's, so it is a sign-in of its own — as the dialog does, the user
+        // the URL named comes back with the password typed for it.
+        case AskPassRequest::Password:
+            askPass.answerLogin(request.id, request.user, request.user + "-pw");
+            break;
+        // The passphrase is given once and refused; the second try gives up.
+        case AskPassRequest::Passphrase:
+            request.retry ? askPass.cancel(request.id) : askPass.answerSecret(request.id, "unlock");
+            break;
+        default: askPass.cancel(request.id); break; // nothing else should reach a dialog
+        }
+    });
+
+    const QString userPrompt = QStringLiteral("Username for 'https://example.com': ");
+    const QString passPrompt = QStringLiteral("Password for 'https://alice@example.com': ");
+    const QString keyPrompt = QStringLiteral("Enter passphrase for key '/tmp/key': ");
+    const QString keyAgain = QStringLiteral("Bad passphrase, try again for key '/tmp/key': ");
+
+    // The one sign-in of the operation, collected at the username prompt...
+    AskPassRun run = runAskPassClient(askPass.socketPath(), userPrompt);
+    CHECK(run.code == 0);
+    CHECK(run.out == "alice\n");
+    CHECK(seen.size() == 1 && !seen.at(0).retry);
+
+    // ... answers git's next question without a second dialog...
+    run = runAskPassClient(askPass.socketPath(), passPrompt);
+    CHECK(run.code == 0);
+    CHECK(run.out == "s3cret\n");
+    CHECK(seen.size() == 1);
+
+    // ... and goes on answering for as long as the operation lasts, however
+    // often git asks: a `fetch --all` over two remotes on one host asks for
+    // the username and the password once each per remote.
+    run = runAskPassClient(askPass.socketPath(), userPrompt);
+    CHECK(run.code == 0 && run.out == "alice\n");
+    run = runAskPassClient(askPass.socketPath(), passPrompt);
+    CHECK(run.code == 0 && run.out == "s3cret\n");
+    CHECK(seen.size() == 1);
+
+    // A remote of the same host that names somebody else is somebody else's
+    // sign-in: it asks, and alice's password is not what bob's prompt gets.
+    const QString bobPrompt = QStringLiteral("Password for 'https://bob@example.com': ");
+    run = runAskPassClient(askPass.socketPath(), bobPrompt);
+    CHECK(run.code == 0);
+    CHECK(run.out == "bob-pw\n");
+    CHECK(seen.size() == 2 && seen.at(1).kind == AskPassRequest::Password);
+    CHECK(seen.at(1).user == "bob" && !seen.at(1).retry); // asked about, not asked again
+    // Bob's own prompts are then answered from memory like anyone's.
+    run = runAskPassClient(askPass.socketPath(), bobPrompt);
+    CHECK(run.code == 0 && run.out == "bob-pw\n");
+    CHECK(seen.size() == 2);
+
+    // The same host over http is another credential context — handing it what
+    // was typed for https would put it on the wire in the clear — so it asks.
+    run = runAskPassClient(askPass.socketPath(), QStringLiteral("Username for 'http://example.com': "));
+    CHECK(run.code == 0 && run.out == "alice\n");
+    CHECK(seen.size() == 3 && seen.at(2).context == "http://example.com" && !seen.at(2).retry);
+
+    // A passphrase is not kept: ssh asks up to three times for the same key,
+    // and each try is a dialog of its own.
+    run = runAskPassClient(askPass.socketPath(), keyPrompt);
+    CHECK(run.code == 0);
+    CHECK(run.out == "unlock\n");
+    CHECK(seen.size() == 4 && seen.at(3).kind == AskPassRequest::Passphrase && !seen.at(3).retry);
+
+    // Asked for it once more: the one given was refused, and the dialog says
+    // so. Cancelled here — nothing on stdout, and ssh is told there is no
+    // answer.
+    run = runAskPassClient(askPass.socketPath(), keyAgain);
+    CHECK(run.code == 1);
+    CHECK(run.out.isEmpty());
+    CHECK(askPass.cancelled());
+    CHECK(seen.size() == 5 && seen.at(4).keyPath == "/tmp/key" && seen.at(4).retry);
+
+    // And that is the end of the asking for this operation: git walks on to
+    // the next remote of a `fetch --all` after a refusal and prompts there
+    // too, and every one of those is turned down where it arrives — no second
+    // dialog for a user who has just said no. Kept logins count for nothing
+    // either: the operation is being given up on.
+    for (const QString &prompt : {userPrompt, passPrompt,
+                                  QStringLiteral("Username for 'https://elsewhere.example': "),
+                                  QStringLiteral("Enter passphrase for key '/tmp/other': ")}) {
+        run = runAskPassClient(askPass.socketPath(), prompt);
+        CHECK(run.code == 1);
+        CHECK(run.out.isEmpty());
+    }
+    CHECK(seen.size() == 5);
+
+    // The operation is over: the logins, what was answered and the cancelled
+    // flag go with it, so the next one asks afresh and nothing is a retry.
+    askPass.endOperation();
+    CHECK(!askPass.cancelled());
+    run = runAskPassClient(askPass.socketPath(), userPrompt);
+    CHECK(run.code == 0 && run.out == "alice\n");
+    CHECK(seen.size() == 6 && !seen.at(5).retry);
+    run = runAskPassClient(askPass.socketPath(), keyPrompt);
+    CHECK(run.code == 0 && run.out == "unlock\n");
+    CHECK(seen.size() == 7 && !seen.at(6).retry);
+
+    // A helper that asks and then goes away without waiting: git was killed,
+    // or the ten minutes it allows for an answer ran out. The request is
+    // dropped by id — whoever has it on screen closes that dialog — and git is
+    // running again as far as the timeout is concerned.
+    int dropped = 0, answers = 0;
+    QObject::connect(&askPass, &AskPass::requestDropped, &askPass, [&](int id) { dropped = id; });
+    QObject::connect(&askPass, &AskPass::answered, &askPass, [&] { ++answers; });
+    stalled = true;
+    QLocalSocket abandoned;
+    abandoned.connectToServer(askPass.socketPath());
+    CHECK(abandoned.waitForConnected(5000));
+    abandoned.write(promptFrame(QStringLiteral("Username for 'https://abandoned.example': ")));
+    CHECK(abandoned.waitForBytesWritten(5000));
+    CHECK(spinUntil([&] { return seen.size() == 8; }));
+    CHECK(dropped == 0 && answers == 0); // still being asked
+    const int abandonedId = seen.at(7).id;
+    abandoned.disconnectFromServer();
+    CHECK(spinUntil([&] { return dropped != 0; }));
+    CHECK(dropped == abandonedId);
+    CHECK(answers == 1);
+
+    // The dialog of that request is still on screen until it hears so, and
+    // whatever it says then names a request that is over: the next sign-in —
+    // another host, another user — is neither answered with it nor turned
+    // down by it. (The handler above tries both before answering properly.)
+    stalled = false;
+    staleId = abandonedId;
+    run = runAskPassClient(askPass.socketPath(), QStringLiteral("Username for 'https://after.example': "));
+    CHECK(run.code == 0 && run.out == "alice\n");
+    CHECK(seen.size() == 9 && staleId == 0);
+    CHECK(!askPass.cancelled());
+    CHECK(dropped == abandonedId); // answering it was no reason to drop anything
+
+    // The operation ending under a prompt drops that one as well: git is on
+    // its way out, so the helper is told there is no answer and the dialog is
+    // taken off the screen rather than left to sign in to nothing. The helpers
+    // queued behind it end with it too — another remote of a parallel fetch, a
+    // submodule's — whose turn would otherwise come next: a dialog for an
+    // operation that is over, whose answer would be kept for the one after.
+    // One that has not got its prompt out yet asked for this operation just
+    // the same.
+    stalled = true;
+    QLocalSocket standing, queued, silent;
+    for (QLocalSocket *socket : {&standing, &queued, &silent}) {
+        socket->connectToServer(askPass.socketPath());
+        CHECK(socket->waitForConnected(5000));
+    }
+    standing.write(promptFrame(QStringLiteral("Username for 'https://ending.example': ")));
+    CHECK(standing.waitForBytesWritten(5000));
+    CHECK(spinUntil([&] { return seen.size() == 10; }));
+    queued.write(promptFrame(QStringLiteral("Username for 'https://queued.example': ")));
+    CHECK(queued.waitForBytesWritten(5000));
+    askPass.endOperation();
+    CHECK(dropped == seen.at(9).id);
+    // Turned down where they stand and let go, both of them, and neither is
+    // asked about however long the event loop runs afterwards.
+    const QByteArray cancelledFrame = promptFrame(QStringLiteral("C"));
+    QByteArray answer;
+    CHECK(spinUntil([&] {
+        answer += queued.readAll();
+        return answer.size() >= cancelledFrame.size();
+    }));
+    CHECK(answer == cancelledFrame);
+    CHECK(spinUntil([&] {
+        return queued.state() != QLocalSocket::ConnectedState
+            && silent.state() != QLocalSocket::ConnectedState;
+    }));
+    CHECK(!spinUntil([&] { return seen.size() != 10; }, 200));
+    standing.disconnectFromServer();
+    stalled = false;
+
+    // And nothing of that operation is left over for the next: its prompt is a
+    // first asking, not a retry, and is answered by a dialog rather than out of
+    // a cache that went with it.
+    run = runAskPassClient(askPass.socketPath(), userPrompt);
+    CHECK(run.code == 0 && run.out == "alice\n");
+    CHECK(seen.size() == 11 && !seen.at(10).retry);
+    CHECK(!askPass.cancelled());
+
+    // No socket to talk to: the helper says so instead of waiting.
+    QBuffer nowhere;
+    nowhere.open(QIODevice::WriteOnly);
+    CHECK(askPassClient(QString(), userPrompt, &nowhere) == 1);
+    CHECK(nowhere.data().isEmpty());
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -853,6 +1179,8 @@ int main(int argc, char **argv)
     testPatch(tmp.path());
     testAgentCommands();
     testAgentCatalogs();
+    testAskPassPrompts();
+    testAskPassServer();
     if (failures == 0)
         printf("all checks passed\n");
     return failures == 0 ? 0 : 1;

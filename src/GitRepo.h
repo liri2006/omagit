@@ -186,6 +186,15 @@ public:
     QProcess *runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs = kHistoryTimeoutMs,
                        const QStringList &env = QStringList());
 
+    // The timeout above kills a git run that takes too long — but a run
+    // stopped at a sign-in dialog is waiting for a person, not hanging, and
+    // must not be counted out. Whoever shows the dialog holds the timer while
+    // it is up and starts it afresh (from zero: git begins again where it
+    // left off) once the answer is in. Both do nothing for a process that is
+    // not from runAsync(), or that has finished already.
+    static void holdTimeout(QProcess *process);
+    static void resumeTimeout(QProcess *process);
+
     // --- Working tree -------------------------------------------------------
 
     // Amend mode compares the working tree against the parent of HEAD, so the

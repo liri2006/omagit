@@ -31,8 +31,12 @@ QString firstLine(const QByteArray &text)
 } // namespace
 
 RemoteSync::RemoteSync(GitRepo *repo, QObject *parent)
-    : QObject(parent), m_repo(repo)
+    : QObject(parent), m_repo(repo), m_askPass(new AskPass(this))
 {
+    // A prompt is git waiting for a person, not git hanging: the kill timer
+    // is held while the dialog is up and starts over once the answer is in.
+    connect(m_askPass, &AskPass::requestReceived, this, [this] { GitRepo::holdTimeout(m_process); });
+    connect(m_askPass, &AskPass::answered, this, [this] { GitRepo::resumeTimeout(m_process); });
     m_autoTimer.setSingleShot(true);
     connect(&m_autoTimer, &QTimer::timeout, this, &RemoteSync::autoFetch);
     m_debounce.setSingleShot(true);
@@ -73,6 +77,8 @@ void RemoteSync::reset()
     }
     m_op = None;
     m_autoOp = false;
+    m_askPass->endOperation(); // another repository, other credentials
+    m_signInCancelled = false;
     m_lastFetch = QDateTime();
     m_lastFetchOk = true;
     m_lastFetchError.clear();
@@ -242,14 +248,21 @@ void RemoteSync::start(Op op, const QStringList &args)
     m_op = op;
     m_behindBefore = qMax(0, m_state.behind);
     m_aheadBefore = qMax(0, m_state.ahead);
+    m_signInCancelled = false;
     m_autoTimer.stop();
     emit stateChanged();
     QStringList full = args;
     if (op == Fetch && m_autoOp)
         full << QStringLiteral("--quiet");
+    // Only what the user asked for may put a dialog on screen. An automatic
+    // fetch keeps GIT_TERMINAL_PROMPT=0 and nothing else, so a remote it
+    // cannot sign in to fails quietly and the backoff takes over.
+    QStringList env;
+    if (!m_autoOp && m_askPass->listen())
+        env = m_askPass->env();
     m_process = m_repo->runAsync(full, this, [this, op](int code, const QByteArray &out, const QByteArray &err) {
         onFinished(op, code, out, err);
-    }, op == Fetch ? kFetchTimeoutMs : kTransferTimeoutMs);
+    }, op == Fetch ? kFetchTimeoutMs : kTransferTimeoutMs, env);
 }
 
 void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteArray &err)
@@ -257,6 +270,12 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     Q_UNUSED(out)
     const bool ok = code == 0;
     const bool automatic = m_autoOp;
+    // The sign-in dialog was closed, so git had nothing to log in with and
+    // gave up. Not a failure of the remote: it is reported quietly, without
+    // a message box, and the credentials of this operation are dropped.
+    const bool cancelled = !ok && m_askPass->cancelled();
+    m_signInCancelled = cancelled;
+    m_askPass->endOperation();
     m_op = None;
     m_autoOp = false;
     watchGitDir();
@@ -266,11 +285,17 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     const QString upstream = m_state.upstream;
     switch (op) {
     case Fetch:
-        m_lastFetch = QDateTime::currentDateTime();
-        m_lastFetchOk = ok;
-        m_lastFetchError = ok ? QString() : firstLine(err);
-        m_failures = ok ? 0 : m_failures + 1;
-        if (!ok)
+        // A cancelled sign-in leaves the fetch history and the backoff alone:
+        // nothing was tried, so the button carries no error mark either.
+        if (!cancelled) {
+            m_lastFetch = QDateTime::currentDateTime();
+            m_lastFetchOk = ok;
+            m_lastFetchError = ok ? QString() : firstLine(err);
+            m_failures = ok ? 0 : m_failures + 1;
+        }
+        if (cancelled)
+            message = tr("Fetch cancelled — not signed in");
+        else if (!ok)
             message = (automatic ? tr("Automatic fetch failed: %1") : tr("Fetch failed: %1")).arg(firstLine(err));
         else if (m_state.behind > 0)
             message = tr("Fetched — %n commit(s) to pull from %1", nullptr, m_state.behind).arg(upstream);
@@ -280,7 +305,9 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
             message = tr("Fetched");
         break;
     case Pull:
-        if (!ok)
+        if (cancelled)
+            message = tr("Pull cancelled — not signed in");
+        else if (!ok)
             message = firstLine(err);
         else if (m_behindBefore > 0)
             message = tr("Pulled %n commit(s) from %1", nullptr, m_behindBefore).arg(upstream);
@@ -288,7 +315,9 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
             message = tr("Already up to date with %1").arg(upstream);
         break;
     case Push:
-        if (!ok)
+        if (cancelled)
+            message = tr("Push cancelled — not signed in");
+        else if (!ok)
             message = firstLine(err);
         else if (m_state.hasUpstream() && m_aheadBefore > 0)
             message = tr("Pushed %n commit(s) to %1", nullptr, m_aheadBefore).arg(upstream);
@@ -302,7 +331,7 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     }
     if (!ok && message.isEmpty())
         message = tr("git exited with status %1").arg(code);
-    if (!ok && !err.trimmed().isEmpty() && op != Fetch)
+    if (!ok && !cancelled && !err.trimmed().isEmpty() && op != Fetch)
         message += QStringLiteral("\n\n") + QString::fromUtf8(err).trimmed();
     emit finished(op, ok, automatic, message);
     scheduleAutoFetch();

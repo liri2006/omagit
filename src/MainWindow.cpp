@@ -10,6 +10,7 @@
 #include "DiffView.h"
 #include "HistoryView.h"
 #include "KeybindingsPanel.h"
+#include "LoginDialog.h"
 #include "MiniRail.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
@@ -162,6 +163,9 @@ void MainWindow::buildUi()
     m_syncButtons << bar;
     connect(m_sync, &RemoteSync::stateChanged, this, &MainWindow::updateSyncButtons);
     connect(m_sync, &RemoteSync::finished, this, &MainWindow::onSyncFinished);
+    // git or ssh asked the app (its own askpass helper) for a login: the
+    // dialog answers, RemoteSync hands the answer back to the waiting git.
+    connect(m_sync->askPass(), &AskPass::requestReceived, this, &MainWindow::onAskPassRequest);
     // Merge opens the merge view; its badge says when a merge waits with conflicts.
     m_toolbar->addSeparator();
     auto *mergeButton = toolButton<BadgeButton>(QString());
@@ -914,7 +918,9 @@ void MainWindow::updateSyncButtons()
 
 void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, const QString &message)
 {
-    if (!ok && !automatic) {
+    // A sign-in the user closed is not something to be told off about: the
+    // footer says it quietly and the operation is simply not done.
+    if (!ok && !automatic && !m_sync->signInCancelled()) {
         const QString title = op == RemoteSync::Fetch ? tr("Fetch failed")
                             : op == RemoteSync::Pull  ? tr("Pull failed")
                                                       : tr("Push failed");
@@ -923,6 +929,46 @@ void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, cons
     showStatus(message.section(QLatin1Char('\n'), 0, 0), ok ? kMediumStatusMs : kErrorStatusMs);
     if (op != RemoteSync::Fetch || ok)
         refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Signing in
+
+void MainWindow::onAskPassRequest(const AskPassRequest &request)
+{
+    AskPass *askPass = m_sync->askPass();
+    auto *dialog = new LoginDialog(request, m_repo, this);
+    // Which asking this dialog belongs to travels with it, and every word it
+    // has for AskPass names it: what is typed here answers this request or
+    // nothing.
+    const int id = request.id;
+    connect(dialog, &QDialog::accepted, askPass, [askPass, dialog, id] {
+        // A sign-in to a host is given once: the dialog collected both halves,
+        // and AskPass answers the rest of the operation's prompts with them.
+        // A passphrase (or any other question) is answered as it was asked.
+        const AskPassRequest::Kind kind = dialog->request().kind;
+        if (kind == AskPassRequest::Username || kind == AskPassRequest::Password)
+            askPass->answerLogin(id, dialog->username(), dialog->password());
+        else
+            askPass->answerSecret(id, dialog->password());
+    });
+    connect(dialog, &QDialog::rejected, askPass, [askPass, id] { askPass->cancel(id); });
+    // Nobody is waiting for this one any more: git let it go, or the operation
+    // ended under it. The dialog goes without a word — closing it is what ends
+    // it, not a refusal, and AskPass hears nothing of either.
+    connect(askPass, &AskPass::requestDropped, dialog, [askPass, dialog](int dropped) {
+        if (dropped != dialog->request().id)
+            return;
+        disconnect(dialog, nullptr, askPass, nullptr);
+        dialog->close();
+    });
+    dialog->show();
+}
+
+void MainWindow::showLoginDialog()
+{
+    const AskPassRequest sample = parseAskPassPrompt(QStringLiteral("Username for 'https://github.com': "));
+    (new LoginDialog(sample, m_repo, this))->show();
 }
 
 void MainWindow::openInEditor()

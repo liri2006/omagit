@@ -2,14 +2,18 @@
 // Run: QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ../build/tests/ui_test
 // Exercises the pure logic behind the widgets: the history graph layout, the
 // changes model's check marks, the toolbar's overflow, the keybindings filter,
-// the theme's colors.toml parsing and the merge verdict's wording.
+// the theme's colors.toml parsing and the merge verdict's wording — and, with
+// git itself but no network, the way a fetch signs in.
 #include "../src/ChangesModel.h"
 #include "../src/CommitPage.h"
 #include "../src/HistoryModel.h"
+#include "../src/AskPass.h"
 #include "../src/KeybindingsPanel.h"
+#include "../src/LoginDialog.h"
 #include "../src/MergeDialog.h"
 #include "../src/MessageEdit.h"
 #include "../src/OmarchyTheme.h"
+#include "../src/RemoteSync.h"
 #include "../src/Settings.h"
 #include "../src/Toolbar.h"
 #include "../src/UiHelpers.h"
@@ -18,18 +22,25 @@
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
+#include <QHostAddress>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QPushButton>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QSplitter>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
+#include <QUrl>
 
+#include <functional>
 #include <memory>
 
 // The theme the whole run shares; the theme test puts a fresh one here after
@@ -100,6 +111,96 @@ MergePreview preview(MergePreview::Outcome outcome)
 void settle()
 {
     QTest::qWait(30);
+}
+
+// A remote git can reach but can never sign in to: every request is answered
+// with the 401 and the Basic challenge that make git ask for a username and a
+// password, and then the connection is closed. Nothing of git's own protocol
+// is served — the sign-in never gets that far. git opens a connection per
+// request, so the server goes on accepting for as long as the test lives.
+std::unique_ptr<QTcpServer> unauthorizedServer()
+{
+    auto server = std::make_unique<QTcpServer>();
+    QObject::connect(server.get(), &QTcpServer::newConnection, server.get(), [listener = server.get()] {
+        while (QTcpSocket *socket = listener->nextPendingConnection()) {
+            QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                // Answer once the request headers are in: closing on a socket
+                // with unread data would reach curl as a reset, not a 401.
+                const QByteArray request = socket->property("request").toByteArray() + socket->readAll();
+                if (!request.contains("\r\n\r\n")) {
+                    socket->setProperty("request", request);
+                    return;
+                }
+                socket->write("HTTP/1.1 401 Unauthorized\r\n"
+                              "WWW-Authenticate: Basic realm=\"test\"\r\n"
+                              "Content-Length: 0\r\n"
+                              "Connection: close\r\n"
+                              "\r\n");
+                socket->disconnectFromHost();
+            });
+        }
+    });
+    if (!server->listen(QHostAddress::LocalHost))
+        return {};
+    return server;
+}
+
+// A repository whose remotes all point at that server: one commit, and a main
+// branch that names the first of them as its upstream, so the state has
+// something to fetch. credential.helper= empties the helper list, so no
+// credential helper of this machine answers before the sign-in dialog does.
+// A `users` entry puts a user into the URL of the remote of the same index,
+// the way a remote that says who to sign in as does; git then asks only for
+// that user's password.
+bool signInRepo(const QString &dir, quint16 port, const QStringList &remotes,
+                const QStringList &users = {})
+{
+    if (!git(dir, {"init", "-q", "-b", "main"}) || !commit(dir, QStringLiteral("A"), 1)
+        || !git(dir, {"config", "credential.helper", ""}))
+        return false;
+    for (qsizetype i = 0; i < remotes.size(); ++i) {
+        const QString name = remotes.at(i);
+        const QString user = users.value(i);
+        const QString credentials = user.isEmpty() ? QString() : user + QLatin1Char('@');
+        const QString url = QStringLiteral("http://") + credentials
+            + QStringLiteral("127.0.0.1:%1/%2.git").arg(port).arg(name);
+        if (!git(dir, {QStringLiteral("remote"), QStringLiteral("add"), name, url}))
+            return false;
+    }
+    return git(dir, {QStringLiteral("config"), QStringLiteral("branch.main.remote"), remotes.constFirst()})
+        && git(dir, {"config", "branch.main.merge", "refs/heads/main"});
+}
+
+// What one RemoteSync::finished() carried, kept for the assertions after it.
+struct SyncOutcome {
+    bool done = false;
+    RemoteSync::Op op = RemoteSync::None;
+    bool ok = false;
+    bool automatic = false;
+    bool signInCancelled = false; // as reported while the signal was delivered
+    QString message;
+};
+
+// Connects `sync` up so every request lands in `seen` and is answered by
+// `answer`, and every finished() lands in `outcome`.
+void watchSignIn(RemoteSync *sync, QList<AskPassRequest> *seen, SyncOutcome *outcome,
+                 const std::function<void(const AskPassRequest &)> &answer)
+{
+    QObject::connect(sync->askPass(), &AskPass::requestReceived, sync->askPass(),
+                     [seen, answer](const AskPassRequest &request) {
+                         *seen << request;
+                         answer(request);
+                     });
+    QObject::connect(sync, &RemoteSync::finished, sync,
+                     [sync, outcome](RemoteSync::Op op, bool ok, bool automatic, const QString &message) {
+                         outcome->op = op;
+                         outcome->ok = ok;
+                         outcome->automatic = automatic;
+                         outcome->message = message;
+                         outcome->signInCancelled = sync->signInCancelled();
+                         outcome->done = true;
+                     });
 }
 
 // The buttons of a toolbar that are on screen, in the order they were added.
@@ -622,6 +723,610 @@ private slots:
         QCOMPARE(elsewhere.detail.at(1), QStringLiteral("main is checked out first"));
         const MergeVerdict same = mergeVerdict(preview(MergePreview::Same), false, QStringLiteral("other"));
         QCOMPARE(same.detail.size(), 1);
+    }
+
+    // --- The sign-in dialog and its askpass helper --------------------------
+
+    // The dialog for a request, shown offscreen and kept alive by the caller.
+    // `repo` is what it asks about credential helpers; without one the note
+    // has nothing to go on and says so.
+    static LoginDialog *login(const QString &prompt, bool retry = false, GitRepo *repo = nullptr)
+    {
+        AskPassRequest request = parseAskPassPrompt(prompt);
+        request.retry = retry;
+        auto *dialog = new LoginDialog(request, repo);
+        dialog->setAttribute(Qt::WA_DeleteOnClose, false);
+        dialog->show();
+        return dialog;
+    }
+
+    // Whether any visible label of the dialog says `text`.
+    static bool says(LoginDialog *dialog, const QString &text)
+    {
+        for (const QLabel *label : dialog->findChildren<QLabel *>())
+            if (label->isVisible() && label->text().contains(text))
+                return true;
+        return false;
+    }
+
+    static QPushButton *signInButton(LoginDialog *dialog)
+    {
+        for (QPushButton *button : dialog->findChildren<QPushButton *>())
+            if (button->isDefault())
+                return button;
+        return nullptr;
+    }
+
+    void loginDialogAsksForBothAndSubmitsOnReturn()
+    {
+        std::unique_ptr<LoginDialog> dialog(login(QStringLiteral("Username for 'https://github.com': ")));
+        auto *user = dialog->findChild<QLineEdit *>(QStringLiteral("usernameEdit"));
+        auto *secret = dialog->findChild<QLineEdit *>(QStringLiteral("secretEdit"));
+        auto *reveal = dialog->findChild<QToolButton *>(QStringLiteral("revealButton"));
+        QPushButton *signIn = signInButton(dialog.get());
+        QVERIFY(user && secret && reveal && signIn);
+        QVERIFY(says(dialog.get(), QStringLiteral("Sign in to github.com")));
+        QVERIFY(user->isVisible() && !user->isReadOnly());
+        QVERIFY(secret->isVisible());
+        // Nothing to sign in with yet, and no talk of an earlier try.
+        QVERIFY(!signIn->isEnabled());
+        QVERIFY(!says(dialog.get(), QStringLiteral("Asked again")));
+        user->setText(QStringLiteral("alice"));
+        QVERIFY(!signIn->isEnabled());
+        secret->setText(QStringLiteral("s3cret"));
+        QVERIFY(signIn->isEnabled());
+
+        // The password is hidden until the eye is pressed.
+        QCOMPARE(secret->echoMode(), QLineEdit::Password);
+        reveal->click();
+        QCOMPARE(secret->echoMode(), QLineEdit::Normal);
+        reveal->click();
+        QCOMPARE(secret->echoMode(), QLineEdit::Password);
+
+        QTest::keyClick(secret, Qt::Key_Return);
+        QCOMPARE(dialog->result(), int(QDialog::Accepted));
+        QCOMPARE(dialog->username(), QStringLiteral("alice"));
+        QCOMPARE(dialog->password(), QStringLiteral("s3cret"));
+    }
+
+    void loginDialogShowsTheUserGitAlreadyKnows()
+    {
+        std::unique_ptr<LoginDialog> dialog(login(QStringLiteral("Password for 'https://andras@github.com': ")));
+        auto *user = dialog->findChild<QLineEdit *>(QStringLiteral("usernameEdit"));
+        auto *secret = dialog->findChild<QLineEdit *>(QStringLiteral("secretEdit"));
+        QVERIFY(user->isVisible());
+        QVERIFY(user->isReadOnly());
+        QCOMPARE(user->text(), QStringLiteral("andras"));
+        // The focus starts on the only field left to fill in. (Offscreen no
+        // window is active, so the dialog's focus widget is what to look at.)
+        QCOMPARE(dialog->focusWidget(), static_cast<QWidget *>(secret));
+        QVERIFY(!signInButton(dialog.get())->isEnabled());
+        secret->setText(QStringLiteral("s3cret"));
+        QVERIFY(signInButton(dialog.get())->isEnabled());
+    }
+
+    void loginDialogAsksOnlyForAPassphrase()
+    {
+        std::unique_ptr<LoginDialog> dialog(login(
+            QStringLiteral("Enter passphrase for key '%1/.ssh/id_ed25519': ").arg(QDir::homePath())));
+        QVERIFY(!dialog->findChild<QLineEdit *>(QStringLiteral("usernameEdit"))->isVisible());
+        QVERIFY(dialog->findChild<QLineEdit *>(QStringLiteral("secretEdit"))->isVisible());
+        QVERIFY(says(dialog.get(), QStringLiteral("Unlock ~/.ssh/id_ed25519")));
+        QVERIFY(says(dialog.get(), QStringLiteral("PASSPHRASE")));
+    }
+
+    // ssh asks up to three times for the same key, so the second dialog can
+    // say that the passphrase given to the first one did not work. (An https
+    // sign-in is never asked for twice: git gives the remote up instead.)
+    void loginDialogSaysWhenThePassphraseWasNotAccepted()
+    {
+        const QString key = QStringLiteral("/x/id_ed25519");
+        std::unique_ptr<LoginDialog> plain(login(QStringLiteral("Enter passphrase for key '%1': ").arg(key)));
+        QVERIFY(!says(plain.get(), QStringLiteral("try again")));
+        std::unique_ptr<LoginDialog> again(
+            login(QStringLiteral("Bad passphrase, try again for key '%1': ").arg(key), true));
+        QVERIFY(says(again.get(), QStringLiteral("That passphrase did not unlock the key")));
+    }
+
+    // The note is about this remote, not about credential helpers in general:
+    // a helper set for one URL — `[credential "https://example.com"] helper =
+    // store`, which a plain `--get credential.helper` never sees — is what
+    // will keep the password, and a note saying otherwise promises a secret
+    // is forgotten while git stores it.
+    void loginDialogNamesTheCredentialHelperOfThisRemote()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(git(dir.path(), {"init", "-q", "-b", "main"}));
+        // Empties the helper list of whatever this machine configures, so the
+        // note answers for this repository and nothing else.
+        QVERIFY(git(dir.path(), {"config", "credential.helper", ""}));
+        GitRepo repo(dir.path());
+        const QString userPrompt = QStringLiteral("Username for 'https://example.com': ");
+
+        // The unqualified key is all there is, and it is empty: nothing keeps
+        // what is typed here.
+        std::unique_ptr<LoginDialog> plain(login(userPrompt, false, &repo));
+        QVERIFY(says(plain.get(), QStringLiteral("Not remembered")));
+
+        QVERIFY(git(dir.path(), {"config", "credential.https://example.com.helper", "store"}));
+        std::unique_ptr<LoginDialog> stored(login(userPrompt, false, &repo));
+        QVERIFY(says(stored.get(), QStringLiteral("Remembered by git's credential helper (store)")));
+
+        // The password half of the same sign-in asks about a URL naming the
+        // user; the helper of that remote is found all the same.
+        std::unique_ptr<LoginDialog> password(
+            login(QStringLiteral("Password for 'https://alice@example.com': "), false, &repo));
+        QVERIFY(says(password.get(), QStringLiteral("(store)")));
+
+        // Another host is another matter: no helper is configured for it, and
+        // the note is not to claim one.
+        std::unique_ptr<LoginDialog> elsewhere(
+            login(QStringLiteral("Username for 'https://other.example': "), false, &repo));
+        QVERIFY(says(elsewhere.get(), QStringLiteral("Not remembered")));
+    }
+
+    // Git matches `credential.<url>.helper` against the URL the remote is
+    // configured with, path and all, and only drops the path afterwards — which
+    // is why the prompt has none. A helper set for one path of a host is
+    // therefore invisible from the prompt alone: the remote it belongs to has
+    // to be found again, or the note calls a stored password forgotten.
+    void loginDialogMatchesTheHelperAgainstTheRemotesPath()
+    {
+        const QString userPrompt = QStringLiteral("Username for 'https://example.com': ");
+        // A repository with one remote and a helper configured for `path` of
+        // that same host. The empty unqualified entry, written first, empties
+        // whatever this machine configures.
+        const auto repoWith = [&](QTemporaryDir &dir, const QString &remote, const QString &path) {
+            if (!dir.isValid() || !git(dir.path(), {"init", "-q", "-b", "main"}))
+                return false;
+            return git(dir.path(), {"config", "credential.helper", ""})
+                && git(dir.path(), {"remote", "add", "origin", remote})
+                && git(dir.path(), {"config", QStringLiteral("credential.%1.helper").arg(path), "store"});
+        };
+
+        // The remote lies under the path the helper is configured for: git
+        // stores this password, and the note is to say so.
+        QTemporaryDir under;
+        QVERIFY(repoWith(under, QStringLiteral("https://example.com/team/repo.git"),
+                         QStringLiteral("https://example.com/team")));
+        GitRepo stored(under.path());
+        std::unique_ptr<LoginDialog> kept(login(userPrompt, false, &stored));
+        QVERIFY(says(kept.get(), QStringLiteral("Remembered by git's credential helper (store)")));
+
+        // The password half of the sign-in asks about a URL naming the user;
+        // the remote names none, and is still the remote this is about.
+        std::unique_ptr<LoginDialog> password(
+            login(QStringLiteral("Password for 'https://alice@example.com': "), false, &stored));
+        QVERIFY(says(password.get(), QStringLiteral("(store)")));
+
+        // The same host, the same helper entry, another path: nothing keeps
+        // this one, and matching the pathless prompt would claim otherwise.
+        QTemporaryDir beside;
+        QVERIFY(repoWith(beside, QStringLiteral("https://example.com/other/repo.git"),
+                         QStringLiteral("https://example.com/team")));
+        GitRepo elsewhere(beside.path());
+        std::unique_ptr<LoginDialog> plain(login(userPrompt, false, &elsewhere));
+        QVERIFY(says(plain.get(), QStringLiteral("Not remembered")));
+
+        // Two remotes of that host, one under the path and one beside it: the
+        // prompt does not say which of them git is signing in to, so the note
+        // names the helper without promising it.
+        QVERIFY(git(beside.path(), {"remote", "add", "inside", "https://example.com/team/repo.git"}));
+        std::unique_ptr<LoginDialog> both(login(userPrompt, false, &elsewhere));
+        QVERIFY(says(both.get(), QStringLiteral("Remembered if git's credential helper covers this remote (store)")));
+
+        // A prompt no remote of this repository answers for — a submodule's, a
+        // URL git rewrote, a `git credential fill` of its own — is matched
+        // against the prompt's URL, as it was before there were remotes to ask.
+        QTemporaryDir apart;
+        QVERIFY(repoWith(apart, QStringLiteral("https://example.com/team/repo.git"),
+                         QStringLiteral("https://other.example")));
+        GitRepo unknown(apart.path());
+        std::unique_ptr<LoginDialog> fallback(
+            login(QStringLiteral("Username for 'https://other.example': "), false, &unknown));
+        QVERIFY(says(fallback.get(), QStringLiteral("Remembered by git's credential helper (store)")));
+    }
+
+    // Which remote a prompt is about, without git in the way.
+    void remoteUrlsStandForThePromptsTheyAnswer()
+    {
+        const QUrl target(QStringLiteral("https://example.com"));
+        QVERIFY(remoteUrlMatchesTarget(QStringLiteral("https://example.com/team/repo.git"), target));
+        QVERIFY(remoteUrlMatchesTarget(QStringLiteral("https://EXAMPLE.com/team/repo.git"), target));
+        QVERIFY(!remoteUrlMatchesTarget(QStringLiteral("https://other.example/team/repo.git"), target));
+
+        // The scheme's own port is filled in on either side, and another
+        // scheme is another place — a password meant for https is not to be
+        // matched against a remote that sends it in the clear.
+        QVERIFY(remoteUrlMatchesTarget(QStringLiteral("https://example.com:443/x.git"), target));
+        QVERIFY(!remoteUrlMatchesTarget(QStringLiteral("https://example.com:8443/x.git"), target));
+        QVERIFY(!remoteUrlMatchesTarget(QStringLiteral("http://example.com/x.git"), target));
+        QVERIFY(remoteUrlMatchesTarget(QStringLiteral("https://example.com:8443/x.git"),
+                                       QUrl(QStringLiteral("https://example.com:8443"))));
+
+        // Git names the user in the prompt of a password; the remote may name
+        // it too, or (the username was asked for a moment ago) name none.
+        const QUrl alice(QStringLiteral("https://alice@example.com"));
+        QVERIFY(remoteUrlMatchesTarget(QStringLiteral("https://alice@example.com/x.git"), alice));
+        QVERIFY(remoteUrlMatchesTarget(QStringLiteral("https://example.com/x.git"), alice));
+        QVERIFY(!remoteUrlMatchesTarget(QStringLiteral("https://bob@example.com/x.git"), alice));
+
+        // An ssh remote written the scp way is no URL, and a passphrase or a
+        // question of git's own has no target for a remote to answer for.
+        QVERIFY(!remoteUrlMatchesTarget(QStringLiteral("git@example.com:team/repo.git"), target));
+        QVERIFY(!remoteUrlMatchesTarget(QStringLiteral("https://example.com/x.git"), QUrl()));
+    }
+
+    // Which helper keeps the password is a matter of the order git reads the
+    // configuration in, not of how closely an entry matches: git appends every
+    // helper that applies and empties the list again on every empty value. So
+    // an unqualified `helper = store` written after `[credential
+    // "https://example.com"] helper =` stores the password all the same, and
+    // written before it does not — a difference `--get-urlmatch`, which
+    // answers with the best match alone, cannot report. Neither repository
+    // below needs the machine's own helpers cleared first: the empty entry
+    // does that where it stands.
+    void loginDialogFollowsTheOrderGitReadsCredentialHelpersIn()
+    {
+        const QString userPrompt = QStringLiteral("Username for 'https://example.com': ");
+
+        // The empty entry for this remote comes first — it empties whatever
+        // the machine configures — and `store` is appended after it.
+        QTemporaryDir stores;
+        QVERIFY(stores.isValid());
+        QVERIFY(git(stores.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(git(stores.path(), {"config", "credential.https://example.com.helper", ""}));
+        QVERIFY(git(stores.path(), {"config", "--add", "credential.helper", "store"}));
+        GitRepo storing(stores.path());
+        std::unique_ptr<LoginDialog> stored(login(userPrompt, false, &storing));
+        QVERIFY(says(stored.get(), QStringLiteral("Remembered by git's credential helper (store)")));
+
+        // The other way round the empty entry comes last and empties the list
+        // `store` was in: this remote is kept by nothing.
+        QTemporaryDir forgets;
+        QVERIFY(forgets.isValid());
+        QVERIFY(git(forgets.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(git(forgets.path(), {"config", "credential.helper", "store"}));
+        QVERIFY(git(forgets.path(), {"config", "credential.https://example.com.helper", ""}));
+        GitRepo forgetting(forgets.path());
+        std::unique_ptr<LoginDialog> plain(login(userPrompt, false, &forgetting));
+        QVERIFY(says(plain.get(), QStringLiteral("Not remembered")));
+    }
+
+    // The matching behind that note, without git in the way: git's urlmatch
+    // rules, as far as a credential URL uses them.
+    void credentialHelpersMatchTheUrlTheWayGitDoes()
+    {
+        // One entry as `git config -z --get-regexp` writes it: the key, a
+        // newline, then the value.
+        const auto entry = [](const QString &url, const QString &helper) {
+            return (url.isEmpty() ? QStringLiteral("credential.helper")
+                                  : QStringLiteral("credential.%1.helper").arg(url))
+                + QLatin1Char('\n') + helper;
+        };
+        // Whether a helper configured for `url` alone would keep `target`.
+        const auto keeps = [&entry](const QString &url, const QString &target) {
+            return credentialHelpersFor({entry(url, QStringLiteral("store"))}, QUrl(target))
+                == QStringList{QStringLiteral("store")};
+        };
+
+        // `*.` stands for one or more whole components in front of the host,
+        // and never for none of them.
+        QVERIFY(keeps("https://*.example.com", "https://code.example.com"));
+        QVERIFY(keeps("https://*.example.com", "https://code.eu.example.com"));
+        QVERIFY(!keeps("https://*.example.com", "https://example.com"));
+        QVERIFY(!keeps("https://*.example.com", "https://notexample.com"));
+
+        // The scheme's own port is filled in on both sides before they are
+        // compared, so :443 and no port at all are the same https host — and
+        // another port is another place.
+        QVERIFY(keeps("https://example.com:443", "https://example.com"));
+        QVERIFY(keeps("https://example.com", "https://example.com:443"));
+        QVERIFY(!keeps("https://example.com:8443", "https://example.com"));
+        QVERIFY(!keeps("http://example.com", "https://example.com"));
+
+        // A path covers what lies under it, by whole components.
+        QVERIFY(keeps("https://example.com/team", "https://example.com/team/repo"));
+        QVERIFY(keeps("https://example.com/team/", "https://example.com/team"));
+        QVERIFY(!keeps("https://example.com/team", "https://example.com/teamwork"));
+        QVERIFY(!keeps("https://example.com/team", "https://example.com"));
+
+        // A user in the entry has to be the user signing in; an entry naming
+        // none is about everybody.
+        QVERIFY(keeps("https://alice@example.com", "https://alice@example.com"));
+        QVERIFY(!keeps("https://alice@example.com", "https://bob@example.com"));
+        QVERIFY(!keeps("https://alice@example.com", "https://example.com"));
+        QVERIFY(keeps("https://example.com", "https://bob@example.com"));
+
+        // Order decides between two entries, not closeness of match.
+        const QStringList clearThenStore{entry(QStringLiteral("https://example.com"), QString()),
+                                         entry(QString(), QStringLiteral("store"))};
+        const QStringList storeThenClear{clearThenStore.at(1), clearThenStore.at(0)};
+        const QUrl remote(QStringLiteral("https://example.com"));
+        QCOMPARE(credentialHelpersFor(clearThenStore, remote), QStringList{QStringLiteral("store")});
+        QVERIFY(credentialHelpersFor(storeThenClear, remote).isEmpty());
+        // The empty entry only empties the list where it applies.
+        QCOMPARE(credentialHelpersFor(storeThenClear, QUrl(QStringLiteral("https://other.example"))),
+                 QStringList{QStringLiteral("store")});
+
+        // A passphrase, or a question of git's own, has no URL: nothing
+        // qualified covers it and the unqualified entries are all it is told.
+        QCOMPARE(credentialHelpersFor(storeThenClear, QUrl()), QStringList{QStringLiteral("store")});
+        QVERIFY(credentialHelpersFor({entry(QStringLiteral("https://example.com"),
+                                            QStringLiteral("store"))},
+                                     QUrl())
+                    .isEmpty());
+    }
+
+    // The whole way round with git itself: `git credential fill` asks the
+    // built binary, which is the askpass helper, which asks the server here.
+    // No network is involved — git only wants the credentials.
+    // The application git runs as its askpass helper — the binary itself.
+    // Empty when it is not built, which is all the tests below can do about it.
+    static QString helperBinary()
+    {
+        // ../build/tests/ui_test → the repository root next to it.
+        QString binary = qEnvironmentVariable("OMAGIT_BINARY");
+        if (binary.isEmpty())
+            binary = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../omagit"));
+        binary = QFileInfo(binary).absoluteFilePath();
+        return QFileInfo::exists(binary) ? binary : QString();
+    }
+
+    void askPassAnswersGitCredentialFill()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+
+        AskPass askPass;
+        askPass.setHelperPath(binary);
+        QVERIFY(askPass.listen());
+        int requests = 0;
+        connect(&askPass, &AskPass::requestReceived, &askPass, [&](const AskPassRequest &request) {
+            ++requests;
+            if (request.kind == AskPassRequest::Username)
+                askPass.answerLogin(request.id, QStringLiteral("alice"), QStringLiteral("s3cret"));
+            else
+                askPass.answerSecret(request.id, QStringLiteral("s3cret"));
+        });
+
+        QProcess git;
+        QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+        for (const QString &entry : askPass.env())
+            environment.insert(entry.section(QLatin1Char('='), 0, 0), entry.section(QLatin1Char('='), 1));
+        environment.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
+        git.setProcessEnvironment(environment);
+        // credential.helper= empties the list, so no helper of this machine
+        // answers before ours does.
+        git.start(QStringLiteral("git"), {QStringLiteral("-c"), QStringLiteral("credential.helper="),
+                                          QStringLiteral("credential"), QStringLiteral("fill")});
+        QVERIFY(git.waitForStarted());
+        git.write("protocol=https\nhost=example.com\n\n");
+        git.closeWriteChannel();
+        QTRY_VERIFY_WITH_TIMEOUT(git.state() == QProcess::NotRunning, 30000);
+        const QString answer = QString::fromUtf8(git.readAllStandardOutput());
+        QVERIFY2(answer.contains(QStringLiteral("username=alice")), qPrintable(answer));
+        QVERIFY2(answer.contains(QStringLiteral("password=s3cret")), qPrintable(answer));
+        // One dialog for the two questions: the password came from the cache.
+        QCOMPARE(requests, 1);
+    }
+
+    // --- Signing in on the way to a remote ----------------------------------
+    // The whole path, end to end and without a network: RemoteSync starts a
+    // `git fetch`, git meets a 401 from a server this test runs on 127.0.0.1,
+    // runs the built binary as its askpass helper, and the prompt arrives here
+    // as a request. What the test answers decides how the fetch ends.
+
+    // Closing the dialog ends the fetch quietly, and leaves the fetch history
+    // as it was: nothing was tried, so the Fetch button carries no error mark.
+    void fetchCancelledAtTheSignInDialogIsNotAFailedFetch()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(signInRepo(dir.path(), server->serverPort(), {QStringLiteral("origin")}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        sync.askPass()->setHelperPath(binary);
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome,
+                    [&](const AskPassRequest &request) { sync.askPass()->cancel(request.id); });
+
+        QVERIFY(sync.canFetch());
+        sync.fetch();
+        // git, the helper it starts and the server here: seconds, not milliseconds.
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.done, 30000);
+
+        QCOMPARE(seen.size(), 1);
+        QCOMPARE(seen.constFirst().kind, AskPassRequest::Username);
+        QCOMPARE(seen.constFirst().host, QStringLiteral("127.0.0.1"));
+        QVERIFY(!seen.constFirst().retry);
+        QCOMPARE(outcome.op, RemoteSync::Fetch);
+        QVERIFY(!outcome.ok);
+        QVERIFY(!outcome.automatic);
+        QVERIFY(outcome.signInCancelled);
+        QCOMPARE(outcome.message, QStringLiteral("Fetch cancelled — not signed in"));
+        QVERIFY(sync.lastFetchOk());
+        QVERIFY(sync.lastFetch().isNull());
+    }
+
+    // One sign-in covers the whole fetch: `git fetch --all` asks for the
+    // username and the password of each remote in turn, and after the dialog
+    // that answered the first prompt every other one is answered from memory.
+    // The credentials are wrong — the server here refuses every one — so the
+    // fetch ends as git's own authentication failure, which is a failed fetch
+    // and not a cancelled sign-in.
+    void fetchOverTwoRemotesOnOneHostAsksOnce()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // Two remotes on the one host, both of them fetched by `fetch --all`.
+        QVERIFY(signInRepo(dir.path(), server->serverPort(),
+                           {QStringLiteral("origin"), QStringLiteral("mirror")}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        sync.askPass()->setHelperPath(binary);
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome, [&](const AskPassRequest &request) {
+            sync.askPass()->answerLogin(request.id, QStringLiteral("alice"), QStringLiteral("wrong"));
+        });
+        // Every prompt answered, dialog or not: two per remote, a username
+        // and a password.
+        QSignalSpy answers(sync.askPass(), &AskPass::answered);
+
+        QVERIFY(sync.canFetch());
+        sync.fetch();
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.done, 60000);
+
+        // One dialog for the pair of remotes, and it was not a second try —
+        // the prompts of the second remote were answered from that sign-in.
+        QCOMPARE(seen.size(), 1);
+        QCOMPARE(answers.count(), 4); // a username and a password for each remote
+        QCOMPARE(seen.constFirst().kind, AskPassRequest::Username);
+        QCOMPARE(seen.constFirst().host, QStringLiteral("127.0.0.1"));
+        QVERIFY(!seen.constFirst().retry);
+        QCOMPARE(outcome.op, RemoteSync::Fetch);
+        QVERIFY(!outcome.ok);
+        QVERIFY(!outcome.signInCancelled);
+        // git was signed in and turned down, so it says so itself.
+        QVERIFY2(outcome.message.contains(QStringLiteral("Authentication failed"), Qt::CaseInsensitive),
+                 qPrintable(outcome.message));
+        QVERIFY(!sync.lastFetchOk());
+    }
+
+    // Saying no once says it for the whole fetch: `fetch --all` walks on to
+    // the second remote after git gives the first one up, and the prompt that
+    // arrives from there is turned down where it lands instead of putting a
+    // second dialog in front of a user who has just closed one.
+    void fetchCancelledAtTheFirstOfTwoRemotesAsksOnce()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(signInRepo(dir.path(), server->serverPort(),
+                           {QStringLiteral("origin"), QStringLiteral("mirror")}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        sync.askPass()->setHelperPath(binary);
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome,
+                    [&](const AskPassRequest &request) { sync.askPass()->cancel(request.id); });
+
+        QVERIFY(sync.canFetch());
+        sync.fetch();
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.done, 60000);
+
+        QCOMPARE(seen.size(), 1); // the second remote never got as far as asking
+        QCOMPARE(seen.constFirst().kind, AskPassRequest::Username);
+        QCOMPARE(outcome.op, RemoteSync::Fetch);
+        QVERIFY(!outcome.ok);
+        QVERIFY(outcome.signInCancelled);
+        QCOMPARE(outcome.message, QStringLiteral("Fetch cancelled — not signed in"));
+    }
+
+    // Two remotes on the one host whose URLs name two different users: one
+    // sign-in is not the other's, so each is asked for. Handing bob's prompt
+    // what alice typed would send her password where it does not belong.
+    void fetchOverTwoRemotesWithDifferentUsersAsksForEach()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // http://alice@127.0.0.1:port/a.git and http://bob@…/b.git, fetched in
+        // the order `git fetch --all` takes the remotes in — the order git
+        // lists them, which is by name.
+        QVERIFY(signInRepo(dir.path(), server->serverPort(),
+                           {QStringLiteral("a"), QStringLiteral("b")},
+                           {QStringLiteral("alice"), QStringLiteral("bob")}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        sync.askPass()->setHelperPath(binary);
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome, [&](const AskPassRequest &request) {
+            // What the dialog does: the user comes back from its read-only
+            // field, with the password typed for that user.
+            sync.askPass()->answerLogin(request.id, request.user, QStringLiteral("wrong"));
+        });
+
+        QVERIFY(sync.canFetch());
+        sync.fetch();
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.done, 60000);
+
+        // The URL names who to sign in as, so git asks for the password only.
+        QCOMPARE(seen.size(), 2);
+        QCOMPARE(seen.at(0).kind, AskPassRequest::Password);
+        QCOMPARE(seen.at(0).user, QStringLiteral("alice"));
+        QCOMPARE(seen.at(1).kind, AskPassRequest::Password);
+        QCOMPARE(seen.at(1).user, QStringLiteral("bob"));
+        QVERIFY(!seen.at(1).retry); // a question about somebody else, not the same one again
+        QVERIFY(!outcome.ok);
+        QVERIFY(!outcome.signInCancelled);
+        QVERIFY2(outcome.message.contains(QStringLiteral("Authentication failed"), Qt::CaseInsensitive),
+                 qPrintable(outcome.message));
+    }
+
+    // Nothing the user did not ask for opens a dialog: the automatic fetch
+    // runs without the askpass variables and fails silently, as it did before
+    // there was a dialog to open.
+    void automaticFetchNeverAsksToSignIn()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(signInRepo(dir.path(), server->serverPort(), {QStringLiteral("origin")}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        sync.askPass()->setHelperPath(binary); // a request would reach us if one were made
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome,
+                    [&](const AskPassRequest &request) { sync.askPass()->cancel(request.id); });
+
+        sync.setAutoFetchInterval(RemoteSync::kDefaultInterval);
+        sync.setActive(true); // the window is on screen: the first fetch follows shortly
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.done, 30000);
+
+        QVERIFY(seen.isEmpty());
+        QCOMPARE(outcome.op, RemoteSync::Fetch);
+        QVERIFY(!outcome.ok);
+        QVERIFY(outcome.automatic);
+        QVERIFY(!outcome.signInCancelled);
+        // Unlike a cancelled sign-in, this one was tried and did fail.
+        QVERIFY(!sync.lastFetchOk());
+        QVERIFY(!sync.lastFetch().isNull());
+        sync.setActive(false); // no fetch of the backoff outliving the test
     }
 
     // --- OmarchyTheme -------------------------------------------------------

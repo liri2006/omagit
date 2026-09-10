@@ -3,7 +3,7 @@
 # the lot keeps omagit.pri the only place a new source file is registered.
 # Include this *after* setting TARGET and the suite's own SOURCES.
 
-QT += core gui widgets testlib
+QT += core gui network widgets testlib
 CONFIG += c++17 console
 CONFIG -= app_bundle
 TEMPLATE = app

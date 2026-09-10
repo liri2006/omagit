@@ -63,6 +63,18 @@ history with a branch graph, and plugs into the Nautilus context menu as
   as does `--no-fetch`). Fetches and pushes made in a terminal are picked up through a
   watch on the git directory. Push on a branch without an upstream publishes it
   (`git push -u`); hovering the branch name says which upstream the counts refer to.
+- **Signing in**: an https remote whose credentials git does not have, or an ssh key with a
+  passphrase and no agent, used to end in git's own `could not read Username`. Omagit is its
+  own askpass helper now: git and ssh put their prompt to it, and it puts it to you in a
+  themed dialog — username and password (or token) in one go for an https host, since git
+  asks for the two separately and one sign-in is one dialog, however often git asks (a fetch
+  over several remotes that share a URL — same scheme, host and user — asks once, and one
+  that names another user asks for that user); the passphrase alone for a key. Closing the
+  dialog ends the asking for the whole operation, remotes still to come included.
+  Whether it is remembered is git's business and the dialog says which: a configured
+  credential helper (libsecret and friends) keeps it, without one it is used once and
+  forgotten — nothing is written by Omagit. Only what you start asks: the automatic fetches
+  stay silent and back off as before.
 - **Merge** (the toolbar button after Fetch, Ctrl+Shift+M, also on the Mini rail): a merge view
   with the branch to merge on the left and the branch it goes into on the right — the current
   branch to begin with, the main line (or the branch committed to most recently) on the other
@@ -151,7 +163,7 @@ Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the 
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;
 `--screenshot-after <ms>` sets the delay, e.g. to catch a running fetch; `--screenshot-menu
-branch|repo|agent|keybindings|merge` opens that panel first and includes it in the picture, `--screenshot-keys
+branch|repo|agent|keybindings|merge|login` opens that panel first and includes it in the picture, `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message),
 and `OMAGIT_THEME_DIR=/usr/share/omarchy/themes/tokyo-night` previews another theme.
@@ -170,13 +182,18 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 
 - `gitrepo` (`tests/gitrepo_test.cpp`) exercises the git wrapper against throw-away
   repositories it builds itself: status, amend, history, fetch/pull/push, branches and
-  checkout, merging, root switching. Core only — it is built with `QT -= gui`, which is
+  checkout, merging, root switching, and the sign-in server — the prompts git and ssh send,
+  the helper's end of the socket, and the password a username prompt leaves for the
+  password prompt that follows. Core only — it is built with `QT -= gui`, which is
   what keeps `GitRepo` and its neighbours free of QtGui.
 - `mergedialog` (`tests/mergedialog_test.cpp`) drives the merge view: swapping the
   branches, the verdicts and the layout that must not jump while one is checked.
 - `ui` (`tests/ui_test.cpp`) covers the logic behind the widgets: the history graph's
   lane layout, the changes list's check marks, the toolbar's overflow, the keybindings
-  filter, `colors.toml` parsing with its fallbacks, and the wording of the merge verdict.
+  filter, `colors.toml` parsing with its fallbacks, the wording of the merge verdict, and
+  the sign-in dialog — including one whole round trip through git itself, where
+  `git credential fill` asks the built binary, which asks the dialog (no network involved;
+  the test is skipped when the binary is not built).
 
 ## Layout
 
@@ -185,11 +202,13 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/OmarchyTheme.*` | Parses `colors.toml`, builds the palette/stylesheet, watches for theme switches |
 | `src/GitRepo.*` | Thin wrapper over the `git` CLI: status, diff, commit, amend, log, refs, branches and checkout, merge preview / merge / abort, upstream state, async runs, switchable root |
 | `src/RemoteSync.*` | Fetch / pull / push, the ahead/behind counts, automatic fetching with backoff, git-dir watch |
+| `src/AskPass.*` | Omagit as its own askpass helper: the socket git's and ssh's prompts arrive on, what they mean, one sign-in per operation, and the client side of `--askpass` |
 | `src/BadgeButton.*` | Tool button with a count badge, busy dots and a pop-in animation |
 | `src/Toolbar.*` | Width-adaptive button row: labels → icons → "more" menu |
 | `src/TickMenu.*` | Menu whose checked entries carry an accent tick at the right edge instead of a checkbox (branch, repository, "more" and diff menus) |
 | `src/BranchMenu.*` | The searchable branch dropdown (footer branch button, both sides of the merge view) |
 | `src/MergeDialog.*` | The merge view: source/destination pickers with swap, the merge-tree verdict, merge and abort |
+| `src/LoginDialog.*` | The sign-in: username and password for an https host, an ssh key's passphrase, and whether git will remember it |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |
 | `src/SyntaxHighlighter.*` | Hand-rolled per-language tokeniser for the diff's syntax colours |

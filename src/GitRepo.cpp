@@ -236,6 +236,7 @@ QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback 
     traceCommand(args);
 
     auto *timeout = new QTimer(p);
+    timeout->setObjectName(QStringLiteral("gitTimeout")); // hold/resumeTimeout() find it by this
     timeout->setSingleShot(true);
     timeout->setInterval(timeoutMs);
     connect(timeout, &QTimer::timeout, p, &QProcess::kill);
@@ -262,6 +263,18 @@ QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback 
     p->start(gitExecutable(), fullArgs(args));
     timeout->start();
     return p;
+}
+
+void GitRepo::holdTimeout(QProcess *process)
+{
+    if (auto *timeout = process ? process->findChild<QTimer *>(QStringLiteral("gitTimeout")) : nullptr)
+        timeout->stop();
+}
+
+void GitRepo::resumeTimeout(QProcess *process)
+{
+    if (auto *timeout = process ? process->findChild<QTimer *>(QStringLiteral("gitTimeout")) : nullptr)
+        timeout->start();
 }
 
 void GitRepo::setRoot(const QString &root)
