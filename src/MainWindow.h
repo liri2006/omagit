@@ -111,6 +111,7 @@ private:
         QList<QWidget *> hosts;      // widgets the shortcut belongs to; the window when empty
         QObject *receiver;           // context object of `run`; the window when null
         bool panelRuns;              // false: the panel lists the row but does not run it
+        bool listed = true;          // false: the shortcut works but the panel leaves it out
     };
     // Where the user was before a refresh: the scroll offsets of the two file
     // lists and the place in the diff.

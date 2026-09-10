@@ -296,7 +296,12 @@ void MainWindow::buildUi()
 QList<MainWindow::Binding> MainWindow::bindings()
 {
     const QString commit = tr("Commit view"), history = tr("History"),
-                  diff = tr("Diff"), merge = tr("Merge view"), text = tr("Text fields");
+                  diff = tr("Diff"), merge = tr("Merge view");
+    // Keys too familiar to write down: the shortcut stays, the panel row goes.
+    const auto unlisted = [](Binding b) {
+        b.listed = false;
+        return b;
+    };
     QList<Binding> list;
 
     // The application. The view shortcuts live on the window, not on the
@@ -364,38 +369,16 @@ QList<MainWindow::Binding> MainWindow::bindings()
                     [this] { m_diffPane->toggleWhitespace(); }, {}, m_diffPane}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_L)}, {}, tr("Syntax highlighting"), diff,
                     [this] { m_diffPane->toggleSyntax(); }, {}, m_diffPane}
-         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Plus), QKeySequence(Qt::CTRL | Qt::Key_Equal)},
-                    QStringLiteral("CTRL + PLUS"), tr("Zoom in"), diff,
-                    [this] { m_diffPane->zoomBy(1); }, {}, m_diffPane}
-         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Minus)}, QStringLiteral("CTRL + MINUS"), tr("Zoom out"), diff,
-                    [this] { m_diffPane->zoomBy(-1); }, {}, m_diffPane}
-         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_0)}, {}, tr("Reset zoom"), diff,
-                    [this] { m_diffPane->resetZoom(); }, {}, m_diffPane}
-         // What the diff view and its scroll bars handle themselves.
-         << Binding{{}, QStringLiteral("CTRL + WHEEL"), tr("Zoom"), diff}
-         << Binding{{}, QStringLiteral("CTRL + C"), tr("Copy selection"), diff}
-         << Binding{{}, QStringLiteral("CTRL + A"), tr("Select all"), diff}
-         << Binding{{}, QStringLiteral("ESCAPE"), tr("Clear selection"), diff}
-         << Binding{{}, QStringLiteral("UP / DOWN"), tr("Scroll a line"), diff}
-         << Binding{{}, QStringLiteral("LEFT / RIGHT"), tr("Scroll sideways"), diff}
-         << Binding{{}, QStringLiteral("PAGE DOWN / SPACE"), tr("Scroll a page down"), diff}
-         << Binding{{}, QStringLiteral("PAGE UP"), tr("Scroll a page up"), diff}
-         << Binding{{}, QStringLiteral("CTRL + HOME / CTRL + END"), tr("Beginning / end"), diff};
+         << unlisted({{QKeySequence(Qt::CTRL | Qt::Key_Plus), QKeySequence(Qt::CTRL | Qt::Key_Equal)}, {},
+                      tr("Zoom in"), diff, [this] { m_diffPane->zoomBy(1); }, {}, m_diffPane})
+         << unlisted({{QKeySequence(Qt::CTRL | Qt::Key_Minus)}, {}, tr("Zoom out"), diff,
+                      [this] { m_diffPane->zoomBy(-1); }, {}, m_diffPane})
+         << unlisted({{QKeySequence(Qt::CTRL | Qt::Key_0)}, {}, tr("Reset zoom"), diff,
+                      [this] { m_diffPane->resetZoom(); }, {}, m_diffPane});
 
-    // The merge view, then lists, menus and text fields: all of them belong to
-    // widgets of their own, so the panel only writes them down.
+    // The merge view handles these itself, so the panel only writes them down.
     list << Binding{{}, QStringLiteral("CTRL + S"), tr("Swap the two sides"), merge}
-         << Binding{{}, QStringLiteral("RETURN"), tr("Merge"), merge}
-         << Binding{{}, QStringLiteral("ESCAPE"), tr("Close"), merge}
-         << Binding{{}, QStringLiteral("UP / DOWN"), tr("Move between items"), tr("Lists, menus")}
-         << Binding{{}, QStringLiteral("RETURN"), tr("Choose item"), tr("Menus")}
-         << Binding{{}, QStringLiteral("ESCAPE"), tr("Close menu or panel"), tr("Menus, panels")}
-         << Binding{{}, QStringLiteral("TAB / SHIFT + TAB"), tr("Next / previous control")}
-         << Binding{{}, QStringLiteral("CTRL + Z / CTRL SHIFT + Z"), tr("Undo / redo"), text}
-         << Binding{{}, QStringLiteral("CTRL + C / X / V"), tr("Copy / cut / paste"), text}
-         << Binding{{}, QStringLiteral("CTRL + LEFT / RIGHT"), tr("Move by word"), text}
-         << Binding{{}, QStringLiteral("CTRL + BACKSPACE / DELETE"), tr("Delete previous / next word"), text}
-         << Binding{{}, QStringLiteral("HOME / END"), tr("Line beginning / end"), text};
+         << Binding{{}, QStringLiteral("RETURN"), tr("Merge"), merge};
 
     return list;
 }
@@ -422,6 +405,8 @@ void MainWindow::showKeybindings()
     auto *panel = new KeybindingsPanel(this);
     const QList<Binding> all = bindings();
     for (const Binding &b : all) {
+        if (!b.listed)
+            continue;
         panel->add(b.display.isEmpty() ? keysText(b.keys.first()) : b.display, b.action, b.context,
                    b.panelRuns ? b.run : std::function<void()>());
     }
