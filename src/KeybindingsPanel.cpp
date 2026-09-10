@@ -166,7 +166,9 @@ private:
 };
 
 // The rows, without a scrollbar: the card fades the rows out at the edges
-// that hide more, the way the shell's menu does.
+// that hide more, the way the shell's menu does. The fade's strength tracks
+// how much is still hidden past each edge, so the row peeking at the fold
+// is the dimmed one and a fully scrolled edge carries no fade at all.
 class FadeList : public QListView
 {
 public:
@@ -181,21 +183,23 @@ protected:
             return;
         QPainter p(viewport());
         const QColor bg = OmarchyTheme::instance()->window();
-        const QColor clear(bg.red(), bg.green(), bg.blue(), 0);
         const int h = qMin(space(28), viewport()->height() / 2);
-        if (bar->value() > 0) {
-            QLinearGradient g(0, 0, 0, h);
-            g.setColorAt(0, bg);
-            g.setColorAt(1, clear);
-            p.fillRect(QRect(0, 0, viewport()->width(), h), g);
-        }
-        if (bar->value() < bar->maximum()) {
-            const int top = viewport()->height() - h;
+        if (h <= 0)
+            return;
+        const auto fade = [&p, &bg, h, this](int top, qreal strength, bool down) {
+            if (strength <= 0)
+                return;
+            QColor solid = bg;
+            solid.setAlphaF(qMin<qreal>(1, strength));
+            QColor clear = bg;
+            clear.setAlpha(0);
             QLinearGradient g(0, top, 0, top + h);
-            g.setColorAt(0, clear);
-            g.setColorAt(1, bg);
+            g.setColorAt(0, down ? clear : solid);
+            g.setColorAt(1, down ? solid : clear);
             p.fillRect(QRect(0, top, viewport()->width(), h), g);
-        }
+        };
+        fade(0, qreal(bar->value()) / h, false);
+        fade(viewport()->height() - h, qreal(bar->maximum() - bar->value()) / h, true);
     }
 };
 
@@ -300,11 +304,20 @@ void KeybindingsPanel::fitHeight()
 {
     QWidget *host = parentWidget();
     const int rows = m_model->rowCount();
-    const int rowsHeight = rows * (m_rowHeight + m_rowGap); // each row's size hint includes its gap
+    const int pitch = m_rowHeight + m_rowGap; // each row's size hint includes its gap
     int cap = space(500);
     if (host)
         cap = qMin(cap, host->height() - space(40));
     const int chrome = 2 * m_padding + m_headerHeight;
+    int rowsHeight = rows * pitch;
+    const int available = cap - chrome - m_spacing;
+    if (rows > 0 && rowsHeight > available) {
+        // Like the shell's foldedListHeight: when the rows do not all fit, the
+        // card ends mid-row, whole rows and then a peek of the next one, so a
+        // clipped row tells the eye there is more below the fold.
+        const int full = qMax(1, (available - rowPeek()) / pitch);
+        rowsHeight = qMax(full * pitch + rowPeek(), qMin(available, m_rowHeight));
+    }
     const int height = qMin(cap, chrome + (rows > 0 ? m_spacing + rowsHeight : 0));
     m_list->setVisible(rows > 0);
     setFixedHeight(height);
@@ -331,9 +344,35 @@ void KeybindingsPanel::moveCursor(int delta, bool absolute, bool wrap)
         row = ((row % count) + count) % count; // Down past the last row wraps to the first, Up past the first to the last
     else
         row = qBound(0, row, count - 1);
-    const QModelIndex index = m_model->index(row);
-    m_list->setCurrentIndex(index);
-    m_list->scrollTo(index);
+    m_list->setCurrentIndex(m_model->index(row));
+    revealRow(row);
+}
+
+int KeybindingsPanel::rowPeek() const
+{
+    return qRound(m_rowHeight * 0.55);
+}
+
+// The shell's revealCursor: the cursor row is shown whole, and past it, in
+// either direction that has more rows, the next row keeps peeking in under
+// the fade; scrollTo would park the cursor row itself against the edge.
+void KeybindingsPanel::revealRow(int row)
+{
+    QScrollBar *bar = m_list->verticalScrollBar();
+    const int viewHeight = m_list->viewport()->height();
+    const int top = row * (m_rowHeight + m_rowGap);
+    const int reach = rowPeek() + m_rowGap;
+    int value = bar->value();
+    // Contain first, then make room for the peeking neighbours.
+    if (top < value)
+        value = top;
+    else if (top + m_rowHeight > value + viewHeight)
+        value = top + m_rowHeight - viewHeight;
+    if (row < m_model->rowCount() - 1)
+        value = qMax(value, top + m_rowHeight + reach - viewHeight);
+    if (row > 0)
+        value = qMin(value, top - reach);
+    bar->setValue(qBound(bar->minimum(), value, bar->maximum()));
 }
 
 void KeybindingsPanel::activate(const QModelIndex &index)

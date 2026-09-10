@@ -38,6 +38,10 @@ private:
     void activate(const QModelIndex &index);
     // `wrap` steps from the last row to the first and back; otherwise the ends clamp.
     void moveCursor(int delta, bool absolute, bool wrap = false);
+    // Scrolls `row` fully into view with a peek of its neighbour past it.
+    void revealRow(int row);
+    // How much of the first hidden row shows at the fold, as the shell sizes it.
+    int rowPeek() const;
     void fitHeight();
 
     QLineEdit *m_search;
