@@ -13,6 +13,9 @@
 // so the pass tracks one state for the old side (context + removed lines) and
 // one for the new side (context + added lines): a `/*` that a change opens on
 // one side must not colour the other side's lines.
+//
+// The language table in SyntaxHighlighter.cpp has one row per value below and
+// sizes itself from the last enumerator: keep None first, add new ones at the end.
 enum class Language {
     None,
     Cpp,
@@ -48,7 +51,6 @@ public:
     // Language of `path` from its extension or basename; falls back to the
     // `#!` line of the document's first content line when the name says nothing.
     static Language languageFor(const QString &path, const DiffDocument *docForShebang = nullptr);
-    static QString displayName(Language lang);
 
     // Fills DiffLine::syntax for every content line. O(total characters).
     static void highlight(DiffDocument &doc, Language lang);

@@ -6,7 +6,6 @@
 
 #include <QApplication>
 #include <QClipboard>
-#include <QEvent>
 #include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -27,9 +26,22 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <iterator>
+
 using namespace ui;
 
 namespace {
+
+// The width of the commit list's fixed columns, and the graph column: one
+// lane per line of the graph, plus the margin the node circles need.
+constexpr int kAuthorWidth = 150, kDateWidth = 130, kHashWidth = 96;
+constexpr int kMaxGraphLanes = 12, kGraphMargin = 12;
+
+// One lane, a hair wider than a character of the UI font.
+int laneWidth()
+{
+    return OmarchyTheme::instance()->fontBase() + 2;
+}
 
 // Matches the filter text against subject, body, author and hash.
 class CommitFilter : public QSortFilterProxyModel
@@ -60,8 +72,6 @@ public:
     {
     }
 
-    int laneWidth() const { return OmarchyTheme::instance()->fontBase() + 2; }
-
     void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
         const int col = index.column();
@@ -91,7 +101,7 @@ private:
     {
         static const char *const keys[] = {"blue", "magenta", "cyan", "green", "yellow", "red",
                                            "bright_blue", "bright_magenta", "bright_cyan", "bright_green"};
-        return OmarchyTheme::instance()->color(QLatin1String(keys[i % 10]));
+        return OmarchyTheme::instance()->color(QLatin1String(keys[i % int(std::size(keys))]));
     }
 
     void drawGraph(QPainter *p, const QRect &r, int row) const
@@ -192,7 +202,6 @@ private:
 HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     : QWidget(parent), m_repo(repo)
 {
-    const OmarchyTheme *theme = OmarchyTheme::instance();
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
@@ -238,10 +247,10 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setMinimumSectionSize(40);
     m_table->horizontalHeader()->setHighlightSections(false);
-    m_table->setColumnWidth(HistoryModel::Author, 150);
-    m_table->setColumnWidth(HistoryModel::Date, 130);
-    m_table->setColumnWidth(HistoryModel::Hash, 96);
-    m_table->horizontalHeader()->installEventFilter(this);
+    m_table->setColumnWidth(HistoryModel::Author, kAuthorWidth);
+    m_table->setColumnWidth(HistoryModel::Date, kDateWidth);
+    m_table->setColumnWidth(HistoryModel::Hash, kHashWidth);
+    onHeaderResize(m_table, [this] { fitColumns(); });
     connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &HistoryView::onCommitChanged);
     connect(m_table, &QTableView::customContextMenuRequested, this, &HistoryView::showContextMenu);
     connect(m_table->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
@@ -304,35 +313,28 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     });
 
     m_emptyMessage = tr("No commit selected.");
-    Q_UNUSED(theme)
     applyTheme();
 }
 
-bool HistoryView::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == m_table->horizontalHeader() && event->type() == QEvent::Resize)
-        fitColumns();
-    return QWidget::eventFilter(watched, event);
-}
-
-// Graph column sized to the lanes in use, Message takes the rest (min 240 px).
+// Graph column sized to the lanes in use, Message takes the rest.
 void HistoryView::fitColumns()
 {
-    const int lw = OmarchyTheme::instance()->fontBase() + 2;
     const bool filtering = !static_cast<CommitFilter *>(m_proxy)->text.isEmpty();
-    const int graph = filtering ? 0 : qMin(m_model->laneCount(), 12) * lw + 12;
+    const int graph = filtering ? 0 : qMin(m_model->laneCount(), kMaxGraphLanes) * laneWidth() + kGraphMargin;
     m_table->setColumnWidth(HistoryModel::Graph, graph);
     m_table->setColumnHidden(HistoryModel::Graph, filtering || m_model->laneCount() == 0);
+    // `graph` counts even while the column is hidden: with no lanes loaded yet
+    // its room stays reserved, so the message column does not jump once it is.
     int others = graph;
     for (int c = HistoryModel::Author; c < HistoryModel::ColumnCount; ++c)
         others += m_table->columnWidth(c);
-    m_table->setColumnWidth(HistoryModel::Message, qMax(240, m_table->viewport()->width() - others));
+    fitStretchColumn(m_table, HistoryModel::Message, others);
 }
 
 void HistoryView::applyTheme()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
-    m_table->verticalHeader()->setDefaultSectionSize(qRound(theme->fontBase() * 2.33));
+    m_table->verticalHeader()->setDefaultSectionSize(tableRowHeight());
     m_details->setFont(theme->uiFont());
     m_countLabel->setFont(theme->captionFont());
     m_filesSetup->applyTheme();
@@ -493,9 +495,9 @@ void HistoryView::onCommitChanged()
             shorts << p.left(c.shortHash.size());
         text += tr("Parents:  %1\n").arg(shorts.join(QStringLiteral(", ")));
     }
-    const int row = m_proxy->mapToSource(m_table->currentIndex()).row();
+    const int sourceRow = m_proxy->mapToSource(m_table->currentIndex()).row();
     QStringList refs;
-    for (const RefLabel &l : m_model->labels(row))
+    for (const RefLabel &l : m_model->labels(sourceRow))
         refs << l.name;
     if (!refs.isEmpty())
         text += tr("Refs:     %1\n").arg(refs.join(QStringLiteral(", ")));

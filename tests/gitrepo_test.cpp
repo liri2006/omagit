@@ -7,6 +7,8 @@
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QPointer>
+#include <QTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -42,7 +44,11 @@ static void write(const QString &dir, const QString &name, const QString &conten
 {
     QFile f(QDir(dir).filePath(name));
     QDir().mkpath(QFileInfo(f).absolutePath());
-    f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        fprintf(stderr, "cannot write %s\n", qPrintable(f.fileName()));
+        ++failures;
+        return;
+    }
     f.write(content.toUtf8());
 }
 
@@ -691,6 +697,136 @@ static void testMerge(const QString &base)
     CHECK(GitRepo::mergeArgs("x", true) == QStringList({"merge", "--no-edit", "--no-ff", "x"}));
 }
 
+// Runs one mergeAsync to completion.
+static GitRepo::MergeResult runMerge(GitRepo &repo, const QString &source, bool noFF, QString *error)
+{
+    QEventLoop loop;
+    GitRepo::MergeResult result = GitRepo::MergeFailed;
+    repo.mergeAsync(source, noFF, &repo, [&](GitRepo::MergeResult r, const QString &message) {
+        result = r;
+        if (error)
+            *error = message;
+        loop.quit();
+    });
+    loop.exec();
+    return result;
+}
+
+// The same merges as testMerge, driven through the event loop.
+static void testMergeAsync(const QString &base)
+{
+    const QString dir = initRepo(base + "/merge-async");
+    write(dir, "a.txt", "one\ntwo\nthree\n");
+    write(dir, "b.txt", "b\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "base"});
+    const QString start = git(dir, {"rev-parse", "HEAD"});
+    git(dir, {"checkout", "-q", "-b", "feature"});
+    write(dir, "a.txt", "one\nTWO\nthree\n");
+    git(dir, {"commit", "-q", "-am", "feature work"});
+    git(dir, {"checkout", "-q", "main"});
+
+    GitRepo repo(dir);
+    QString error;
+    // main has nothing of its own: a fast-forward.
+    CHECK(runMerge(repo, "feature", false, &error) == GitRepo::Merged);
+    CHECK(error.isEmpty());
+    CHECK(git(dir, {"rev-parse", "HEAD"}) == git(dir, {"rev-parse", "feature"}));
+    CHECK(repo.headCommit().parents.size() == 1);
+
+    // Both sides moved, in different files: a clean merge commit.
+    git(dir, {"checkout", "-q", "-b", "other", start});
+    write(dir, "b.txt", "B\n");
+    git(dir, {"commit", "-q", "-am", "other work"});
+    CHECK(runMerge(repo, "feature", false, &error) == GitRepo::Merged);
+    CHECK(repo.headCommit().parents.size() == 2);
+    CHECK(!repo.mergeInProgress());
+
+    // Both edited the same line: the merge is left to resolve.
+    git(dir, {"checkout", "-q", "-b", "clash", start});
+    write(dir, "a.txt", "one\n2\nthree\n");
+    git(dir, {"commit", "-q", "-am", "clash work"});
+    CHECK(runMerge(repo, "feature", false, &error) == GitRepo::MergeConflicts);
+    CHECK(error.contains("a.txt"));
+    CHECK(repo.mergeInProgress());
+    CHECK(repo.mergeState().conflicts == QStringList({"a.txt"}));
+    CHECK(repo.abortMerge(&error));
+}
+
+// A caller that goes away mid-run (the merge view closed with Escape) must
+// not take git down with it: the command runs to its end, only the answer
+// is dropped, and the process cleans up after itself.
+static void testRunAsyncOutlivesContext(const QString &base)
+{
+    const QString dir = initRepo(base + "/async-context");
+    write(dir, "a.txt", "one\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "base"});
+    const QString before = git(dir, {"rev-parse", "HEAD"});
+
+    GitRepo repo(dir);
+    bool answered = false;
+    auto *context = new QObject;
+    QProcess *const process = repo.runAsync({"commit", "-q", "--allow-empty", "-m", "orphaned"}, context,
+                                            [&answered](int, const QByteArray &, const QByteArray &) { answered = true; });
+    QPointer<QProcess> alive = process;
+    CHECK(process->parent() == &repo);
+    delete context; // before git is done
+    QEventLoop loop;
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    QObject::connect(process, &QProcess::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    CHECK(!answered);
+    CHECK(!alive); // deleted itself once git was done
+    CHECK(git(dir, {"rev-parse", "HEAD"}) != before);
+    CHECK(git(dir, {"log", "-1", "--format=%s"}) == "orphaned");
+}
+
+// A tracked file that became ignored and was `git rm --cached`: still on disk,
+// so `git add` refuses it and `git commit -- paths` would quietly re-add it.
+static void testCommitIgnoredDeletion(const QString &base)
+{
+    const QString dir = initRepo(base + "/ignored");
+    write(dir, "keep.txt", "k1\n");
+    write(dir, "Makefile.x", "generated\n");
+    write(dir, "tracked.log", "log1\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "initial"});
+    write(dir, ".gitignore", "Makefile*\n*.log\n");
+    git(dir, {"rm", "-q", "--cached", "Makefile.x"});
+    write(dir, "forced.log", "forced\n");
+    git(dir, {"add", "-f", "forced.log"});
+    write(dir, "keep.txt", "k2\n");
+
+    GitRepo repo(dir);
+    QList<FileChange> st = repo.status();
+    CHECK(find(st, "Makefile.x") && find(st, "Makefile.x")->kind == FileChange::Deleted);
+    CHECK(find(st, "forced.log") && find(st, "forced.log")->kind == FileChange::Added);
+
+    // keep.txt stays out of the commit.
+    QString error;
+    const bool ok = repo.commit("ignore generated files", {".gitignore", "Makefile.x", "forced.log"}, &error);
+    CHECK(ok);
+    if (!ok)
+        fprintf(stderr, "commit error: %s\n", qPrintable(error));
+    CHECK(git(dir, {"ls-tree", "--name-only", "HEAD"}) == ".gitignore\nforced.log\nkeep.txt\ntracked.log");
+    CHECK(git(dir, {"show", "HEAD:keep.txt"}) == "k1");
+    CHECK(QFile::exists(dir + "/Makefile.x"));
+    CHECK(git(dir, {"status", "--porcelain"}) == "M keep.txt"); // trimmed: " M keep.txt"
+    CHECK(!QFile::exists(dir + "/.git/omagit-commit-index"));
+
+    // The same through amend, where the scratch index starts from the parent tree.
+    git(dir, {"rm", "-q", "--cached", "tracked.log", "forced.log"});
+    repo.setAmend(true);
+    CHECK(repo.amendCommit("ignore generated files and logs", {".gitignore", "Makefile.x", "forced.log", "tracked.log"},
+                           &error));
+    CHECK(git(dir, {"ls-tree", "--name-only", "HEAD"}) == ".gitignore\nkeep.txt");
+    CHECK(QFile::exists(dir + "/tracked.log") && QFile::exists(dir + "/forced.log"));
+    repo.setAmend(false);
+    CHECK(git(dir, {"status", "--porcelain"}) == "M keep.txt");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -707,10 +843,13 @@ int main(int argc, char **argv)
     testDiscard(tmp.path());
     testAmend(tmp.path());
     testAmendRoot(tmp.path());
+    testCommitIgnoredDeletion(tmp.path());
     testStatusAndHistory(tmp.path());
     testRemote(tmp.path());
     testBranches(tmp.path());
     testMerge(tmp.path());
+    testMergeAsync(tmp.path());
+    testRunAsyncOutlivesContext(tmp.path());
     testPatch(tmp.path());
     testAgentCommands();
     testAgentCatalogs();

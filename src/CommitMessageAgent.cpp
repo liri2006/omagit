@@ -1,4 +1,6 @@
 #include "CommitMessageAgent.h"
+#include "ProcessUtil.h"
+#include "Settings.h"
 
 #include <QDir>
 #include <QFile>
@@ -18,6 +20,10 @@
 namespace {
 constexpr int kTimeoutMs = 180000;
 constexpr int kProbeTimeoutMs = 8000;
+// Agents write their answer a token at a time. Tidying the whole message
+// again per token costs more the longer it gets, and no eye follows it that
+// closely, so the preview is refreshed on a beat instead.
+constexpr int kPreviewIntervalMs = 50;
 
 QHash<QString, AgentCatalog> &catalogCache()
 {
@@ -89,7 +95,7 @@ QStringList AgentCatalog::effortsFor(const QString &model) const
     return efforts;
 }
 
-QList<AgentSpec> CommitMessageAgent::agents()
+QList<AgentSpec> AgentCli::agents()
 {
     static const QList<AgentSpec> list{
         AgentSpec{QStringLiteral("claude"), QStringLiteral("Claude Code"), QStringLiteral("claude")},
@@ -98,7 +104,7 @@ QList<AgentSpec> CommitMessageAgent::agents()
     return list;
 }
 
-AgentSpec CommitMessageAgent::spec(const QString &id)
+AgentSpec AgentCli::spec(const QString &id)
 {
     const QList<AgentSpec> all = agents();
     for (const AgentSpec &a : all)
@@ -107,7 +113,7 @@ AgentSpec CommitMessageAgent::spec(const QString &id)
     return AgentSpec();
 }
 
-QList<AgentSpec> CommitMessageAgent::installedAgents()
+QList<AgentSpec> AgentCli::installedAgents()
 {
     QList<AgentSpec> out;
     const QList<AgentSpec> all = agents();
@@ -117,7 +123,7 @@ QList<AgentSpec> CommitMessageAgent::installedAgents()
     return out;
 }
 
-QString CommitMessageAgent::omarchyDefaultAgent()
+QString AgentCli::omarchyDefaultAgent()
 {
     const QString config = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
     QFile f(config + QStringLiteral("/omarchy/defaults/agent"));
@@ -128,7 +134,7 @@ QString CommitMessageAgent::omarchyDefaultAgent()
 
 // ---- The CLIs' own word on their models and levels ------------------------
 
-QStringList CommitMessageAgent::probeArgs(const QString &agent)
+QStringList AgentCli::probeArgs(const QString &agent)
 {
     if (agent == QLatin1String("claude"))
         return {QStringLiteral("--help")};
@@ -137,8 +143,7 @@ QStringList CommitMessageAgent::probeArgs(const QString &agent)
     return {};
 }
 
-AgentCatalog CommitMessageAgent::parseProbe(const QString &agent, const QByteArray &out, const QByteArray &err,
-                                            int exitCode)
+AgentCatalog AgentCli::parseProbe(const QString &agent, const QByteArray &out, const QByteArray &err, int exitCode)
 {
     AgentCatalog c;
     if (agent == QLatin1String("claude"))
@@ -161,7 +166,7 @@ AgentCatalog CommitMessageAgent::parseProbe(const QString &agent, const QByteArr
 // `claude --help` says, of --model: "Provide an alias for the latest model
 // (e.g. 'fable', 'opus', or 'sonnet') or a model's full name (e.g.
 // 'claude-fable-5')", and of --effort: "(low, medium, high, xhigh, max)".
-AgentCatalog CommitMessageAgent::parseClaudeHelp(const QString &help)
+AgentCatalog AgentCli::parseClaudeHelp(const QString &help)
 {
     AgentCatalog c;
     const QString text = stripAnsi(help);
@@ -193,7 +198,7 @@ AgentCatalog CommitMessageAgent::parseClaudeHelp(const QString &help)
 // `codex debug models`: {"models":[{"slug","display_name","visibility":
 // "list"|"hide","default_reasoning_level","supported_reasoning_levels":
 // [{"effort","description"}],"priority"}]}.
-AgentCatalog CommitMessageAgent::parseCodexModels(const QByteArray &json)
+AgentCatalog AgentCli::parseCodexModels(const QByteArray &json)
 {
     AgentCatalog c;
     QJsonParseError error;
@@ -234,7 +239,7 @@ AgentCatalog CommitMessageAgent::parseCodexModels(const QByteArray &json)
     return c;
 }
 
-AgentCatalog CommitMessageAgent::catalog(const QString &agent, bool refresh)
+AgentCatalog AgentCli::catalog(const QString &agent, bool refresh)
 {
     auto &cache = catalogCache();
     if (!refresh && cache.contains(agent))
@@ -257,24 +262,39 @@ AgentCatalog CommitMessageAgent::catalog(const QString &agent, bool refresh)
     return c;
 }
 
-void CommitMessageAgent::probeAsync(const QString &agent, QObject *context)
+void AgentCli::probeAsync(const QString &agent, QObject *context)
 {
     if (catalogCache().contains(agent))
         return;
     const AgentSpec a = spec(agent);
-    if (!a.isValid() || QStandardPaths::findExecutable(a.binary).isEmpty())
+    if (!a.isValid())
         return;
+    // Both of the ways this can come to nothing are remembered, so that
+    // catalog() does not fall back to the same attempt on the UI thread,
+    // where it waits whole seconds for an answer that will not come.
+    if (QStandardPaths::findExecutable(a.binary).isEmpty()) {
+        AgentCatalog missing;
+        missing.error = QStringLiteral("%1 is not on PATH").arg(a.binary);
+        catalogCache().insert(agent, missing);
+        return;
+    }
     auto *p = new QProcess(context);
     p->setProcessEnvironment(quietEnvironment());
-    connect(p, &QProcess::finished, p, [p, agent](int code, QProcess::ExitStatus) {
+    QObject::connect(p, &QProcess::finished, p, [p, agent](int code, QProcess::ExitStatus) {
         // A menu opened meanwhile may have asked itself; its answer stands.
         if (!catalogCache().contains(agent))
             catalogCache().insert(agent, parseProbe(agent, p->readAllStandardOutput(), p->readAllStandardError(), code));
         p->deleteLater();
     });
-    connect(p, &QProcess::errorOccurred, p, [p](QProcess::ProcessError e) {
-        if (e == QProcess::FailedToStart)
-            p->deleteLater();
+    QObject::connect(p, &QProcess::errorOccurred, p, [p, agent](QProcess::ProcessError e) {
+        if (e != QProcess::FailedToStart)
+            return;
+        if (!catalogCache().contains(agent)) {
+            AgentCatalog failed;
+            failed.error = QStringLiteral("%1 could not be started").arg(p->program());
+            catalogCache().insert(agent, failed);
+        }
+        p->deleteLater();
     });
     p->start(a.binary, probeArgs(agent));
     p->closeWriteChannel();
@@ -282,13 +302,13 @@ void CommitMessageAgent::probeAsync(const QString &agent, QObject *context)
 
 // ---- The choice -------------------------------------------------------------
 
-AgentChoice CommitMessageAgent::savedChoice()
+AgentChoice AgentCli::savedChoice()
 {
-    QSettings settings;
+    QSettings conf;
     AgentChoice c;
-    c.agent = settings.value(QStringLiteral("agent/name")).toString();
-    c.model = settings.value(QStringLiteral("agent/model")).toString();
-    c.effort = settings.value(QStringLiteral("agent/effort")).toString();
+    c.agent = conf.value(settings::kAgentName).toString();
+    c.model = conf.value(settings::kAgentModel).toString();
+    c.effort = conf.value(settings::kAgentEffort).toString();
     const QList<AgentSpec> installed = installedAgents();
     const auto isInstalled = [&](const QString &id) {
         return std::any_of(installed.begin(), installed.end(), [&](const AgentSpec &a) { return a.id == id; });
@@ -304,17 +324,17 @@ AgentChoice CommitMessageAgent::savedChoice()
     return c;
 }
 
-void CommitMessageAgent::saveChoice(const AgentChoice &choice)
+void AgentCli::saveChoice(const AgentChoice &choice)
 {
-    QSettings settings;
-    settings.setValue(QStringLiteral("agent/name"), choice.agent);
-    settings.setValue(QStringLiteral("agent/model"), choice.model);
-    settings.setValue(QStringLiteral("agent/effort"), choice.effort);
+    QSettings conf;
+    conf.setValue(settings::kAgentName, choice.agent);
+    conf.setValue(settings::kAgentModel, choice.model);
+    conf.setValue(settings::kAgentEffort, choice.effort);
 }
 
 // ---- The run ----------------------------------------------------------------
 
-QString CommitMessageAgent::instructions()
+QString AgentCli::instructions()
 {
     return QStringLiteral(
         "Write the git commit message for the change below. Reply with the message only: "
@@ -332,10 +352,9 @@ QString CommitMessageAgent::instructions()
         "The diff:");
 }
 
-CommitMessageAgent::Command CommitMessageAgent::command(const AgentChoice &choice, const QString &diff,
-                                                        const QString &outputFile)
+AgentCommand AgentCli::command(const AgentChoice &choice, const QString &diff, const QString &outputFile)
 {
-    Command cmd;
+    AgentCommand cmd;
     const AgentSpec agent = spec(choice.agent);
     if (!agent.isValid())
         return cmd;
@@ -373,7 +392,7 @@ CommitMessageAgent::Command CommitMessageAgent::command(const AgentChoice &choic
     return cmd;
 }
 
-QString CommitMessageAgent::cleanMessage(const QString &raw)
+QString AgentCli::cleanMessage(const QString &raw)
 {
     QStringList lines = stripAnsi(raw).split(QLatin1Char('\n'));
     for (QString &l : lines) {
@@ -439,13 +458,34 @@ void CommitMessageAgent::cancel()
         return;
     QProcess *p = m_process;
     m_process = nullptr;
-    disconnect(p, nullptr, this, nullptr);
-    p->kill();
-    p->waitForFinished(2000);
+    if (m_previewTimer)
+        m_previewTimer->stop(); // no preview may land after the stop
+    abandonProcess(p, this);
     p->deleteLater();
     if (!m_outputFile.isEmpty())
         QFile::remove(m_outputFile);
     m_outputFile.clear();
+}
+
+// Decode what has arrived, once and for all: a chunk may end in the middle
+// of a character, which the decoder carries over into the next one.
+void CommitMessageAgent::readMore(QProcess *process)
+{
+    m_stdout += m_decoder.decode(process->readAllStandardOutput());
+}
+
+void CommitMessageAgent::showPartial()
+{
+    const QString text = AgentCli::cleanMessage(m_stdout);
+    if (!text.isEmpty())
+        emit partial(text);
+}
+
+void CommitMessageAgent::addError(const QString &text)
+{
+    if (!m_stderr.isEmpty() && !m_stderr.endsWith('\n'))
+        m_stderr += '\n';
+    m_stderr += text.toUtf8();
 }
 
 void CommitMessageAgent::generate(const AgentChoice &choice, const QString &workDir, const QString &diff)
@@ -459,28 +499,38 @@ void CommitMessageAgent::generate(const AgentChoice &choice, const QString &work
     m_agentName = agent.name;
     m_stdout.clear();
     m_stderr.clear();
+    m_decoder = QStringDecoder(QStringDecoder::Utf8);
 
     QString outputFile;
     if (agent.id == QLatin1String("codex")) {
         QTemporaryFile tmp(QDir::tempPath() + QStringLiteral("/omagit-message-XXXXXX.txt"));
         tmp.setAutoRemove(false);
-        if (tmp.open())
-            outputFile = tmp.fileName();
+        if (!tmp.open()) {
+            // Without -o the answer would have to be picked out of codex's
+            // own log, which is guesswork; better to say what went wrong.
+            emit finished(false, tr("Could not write to %1: %2").arg(QDir::tempPath(), tmp.errorString()));
+            return;
+        }
+        outputFile = tmp.fileName();
     }
-    const Command cmd = command(choice, diff, outputFile);
+    const AgentCommand cmd = AgentCli::command(choice, diff, outputFile);
     m_outputFile = cmd.outputFile;
 
     auto *p = new QProcess(this);
     m_process = p;
     p->setWorkingDirectory(workDir);
     p->setProcessEnvironment(quietEnvironment());
+    if (!m_previewTimer) {
+        m_previewTimer = new QTimer(this);
+        m_previewTimer->setSingleShot(true);
+        m_previewTimer->setInterval(kPreviewIntervalMs);
+        connect(m_previewTimer, &QTimer::timeout, this, &CommitMessageAgent::showPartial);
+    }
     connect(p, &QProcess::readyReadStandardOutput, this, [this, p] {
-        m_stdout += p->readAllStandardOutput();
-        if (m_outputFile.isEmpty()) {
-            const QString text = cleanMessage(QString::fromUtf8(m_stdout));
-            if (!text.isEmpty())
-                emit partial(text);
-        }
+        readMore(p);
+        // Codex prints its log here, not the message: nothing to preview.
+        if (m_outputFile.isEmpty() && !m_previewTimer->isActive())
+            m_previewTimer->start();
     });
     connect(p, &QProcess::readyReadStandardError, this, [this, p] { m_stderr += p->readAllStandardError(); });
     connect(p, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
@@ -488,7 +538,7 @@ void CommitMessageAgent::generate(const AgentChoice &choice, const QString &work
     });
     connect(p, &QProcess::errorOccurred, this, [this, p](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
-            m_stderr = tr("%1 could not be started").arg(p->program()).toUtf8();
+            addError(tr("%1 could not be started").arg(p->program()));
             onFinished(-1, true);
         }
     });
@@ -496,6 +546,7 @@ void CommitMessageAgent::generate(const AgentChoice &choice, const QString &work
     timeout->setSingleShot(true);
     connect(timeout, &QTimer::timeout, this, [this, p] {
         if (m_process == p) {
+            // Replaces, not appends: the first stderr line is what gets shown.
             m_stderr = tr("%1 took longer than %2 seconds").arg(m_agentName).arg(kTimeoutMs / 1000).toUtf8();
             p->kill();
         }
@@ -514,7 +565,9 @@ void CommitMessageAgent::onFinished(int exitCode, bool crashed)
     if (!p)
         return;
     m_process = nullptr;
-    m_stdout += p->readAllStandardOutput();
+    if (m_previewTimer)
+        m_previewTimer->stop();
+    readMore(p);
     m_stderr += p->readAllStandardError();
     p->deleteLater();
 
@@ -527,8 +580,8 @@ void CommitMessageAgent::onFinished(int exitCode, bool crashed)
         m_outputFile.clear();
     }
     if (text.trimmed().isEmpty())
-        text = QString::fromUtf8(m_stdout);
-    text = cleanMessage(text);
+        text = m_stdout;
+    text = AgentCli::cleanMessage(text);
 
     // A CLI that reports a problem on stdout and exits 0 all the same.
     static const QRegularExpression complaint(QStringLiteral("^(Not logged in|Please run /login|API Error|Error:|error:)"),

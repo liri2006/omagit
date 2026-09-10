@@ -126,6 +126,11 @@ This builds with `qmake6`, installs `~/.local/bin/omagit`, a desktop entry, an i
 `~/.local/share/nautilus-python/extensions/omagit.py`, then restarts Nautilus so the menu
 appears. `./uninstall.sh` removes everything again.
 
+To build without installing, `qmake6 omagit.pro && make` — optimised, like the installer;
+`qmake6 CONFIG+=debug omagit.pro && make` builds with debug symbols instead. The source
+lists live in `omagit.pri`, which the app and the test projects share, so a new file is
+registered in one place.
+
 ## Usage
 
 ```bash
@@ -151,11 +156,27 @@ m,a,Down,Return` then types into it — or, without a menu, sends the keys to th
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message),
 and `OMAGIT_THEME_DIR=/usr/share/omarchy/themes/tokyo-night` previews another theme.
 
-The git wrapper has a self-contained test program that builds throw-away repositories:
+## Tests
+
+Three self-contained suites, all built and run by one script:
 
 ```bash
-cd tests && qmake6 tests.pro && make && ../build/tests/gitrepo_test
+tests/run.sh            # every suite
+tests/run.sh ui         # only the named ones: gitrepo, mergedialog, ui
 ```
+
+Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
+`omagit.conf`, and the widget suites render offscreen with the Fusion style.
+
+- `gitrepo` (`tests/gitrepo_test.cpp`) exercises the git wrapper against throw-away
+  repositories it builds itself: status, amend, history, fetch/pull/push, branches and
+  checkout, merging, root switching. Core only — it is built with `QT -= gui`, which is
+  what keeps `GitRepo` and its neighbours free of QtGui.
+- `mergedialog` (`tests/mergedialog_test.cpp`) drives the merge view: swapping the
+  branches, the verdicts and the layout that must not jump while one is checked.
+- `ui` (`tests/ui_test.cpp`) covers the logic behind the widgets: the history graph's
+  lane layout, the changes list's check marks, the toolbar's overflow, the keybindings
+  filter, `colors.toml` parsing with its fallbacks, and the wording of the merge verdict.
 
 ## Layout
 

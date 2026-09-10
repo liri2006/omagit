@@ -1,6 +1,7 @@
 #include "GitRepo.h"
 #include "MainWindow.h"
 #include "OmarchyTheme.h"
+#include "Settings.h"
 
 #include <QAbstractScrollArea>
 #include <QApplication>
@@ -8,7 +9,6 @@
 #include <QDir>
 #include <QMessageBox>
 #include <QKeySequence>
-#include <QWindow>
 #include <qpa/qwindowsysteminterface.h>
 #include <QPainter>
 #include <QSettings>
@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
     // A --screenshot run is a test: it must not leave its offscreen geometry behind.
     if (!parser.isSet(screenshotOpt)) {
         QObject::connect(&app, &QApplication::aboutToQuit, [&window] {
-            QSettings().setValue(QStringLiteral("window/geometry"), window.saveGeometry());
+            QSettings().setValue(settings::kWindowGeometry, window.saveGeometry());
         });
     }
     if (parser.isSet(selectOpt))
@@ -95,7 +95,10 @@ int main(int argc, char *argv[])
         QTimer::singleShot(0, &window, [&window] { window.setAmend(true); });
     if (parser.isSet(screenshotOpt)) {
         const QString file = parser.value(screenshotOpt);
-        const int after = parser.value(screenshotAfterOpt).toInt();
+        bool validAfter = false;
+        const int given = parser.value(screenshotAfterOpt).toInt(&validAfter);
+        // A misspelt --screenshot-after would otherwise grab at once.
+        const int after = validAfter ? given : screenshotAfterOpt.defaultValues().first().toInt();
         const QString menu = parser.value(screenshotMenuOpt);
         if (!menu.isEmpty()) {
             // The dropdown runs its own event loop; the grab below happens inside it.

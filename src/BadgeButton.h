@@ -21,7 +21,7 @@ public:
     void setBusy(bool busy);
     bool isBusy() const { return m_busy; }
 
-    QSize sizeHint() const override; // leaves room for a two-digit badge
+    QSize sizeHint() const override; // leaves room for a badge beside the label
 
 signals:
     void badgeChanged(); // count, mark or busy state
@@ -32,6 +32,8 @@ protected:
 
 private:
     QString badgeText() const;
+    QFont badgeFont() const;
+    QSize badgeSize(const QString &text) const;
     int m_count = 0;
     QString m_mark;
     QColor m_markColor;

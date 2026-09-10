@@ -4,11 +4,16 @@
 #include "CommitMessageAgent.h"
 #include "GitRepo.h"
 
+#include <QPoint>
 #include <QWidget>
+
+#include <functional>
 
 class MessageEdit;
 class QCheckBox;
 class QLabel;
+class QLayout;
+class QMenu;
 class QPushButton;
 class QSortFilterProxyModel;
 class QTableView;
@@ -16,31 +21,51 @@ class QTimer;
 class QToolButton;
 
 // The commit dialog: message, changes list, options, buttons.
-// It owns the coding-agent flow that writes the message; everything that
-// needs the repository as a whole (committing, refreshing, the diff pane)
-// is left to the window through the signals below.
+// It owns the coding-agent flow that writes the message and the commit
+// itself; everything that needs the repository as a whole (refreshing, the
+// diff pane) is left to the window through the signals below.
 class CommitPage : public QWidget
 {
     Q_OBJECT
 public:
     explicit CommitPage(GitRepo *repo, QWidget *parent = nullptr);
 
-    ChangesModel *model() const { return m_model; }
+    // The Mini rail shows the same files, through the same selection.
     QSortFilterProxyModel *proxy() const { return m_proxy; }
     QTableView *table() const { return m_table; }
-    MessageEdit *message() const { return m_message; }
-    QCheckBox *amendBox() const { return m_amend; }
-    QCheckBox *selectAllBox() const { return m_selectAll; }
-    QCheckBox *showUnversionedBox() const { return m_showUnversioned; }
-    QPushButton *commitButton() const { return m_commitButton; }
 
     // The row the file actions apply to, independent of the checked files.
     FileChange currentChange(bool *ok) const;
+    // Re-reads the working tree into the changes list.
+    void reload();
+    // The repo-relative paths in the list, in model order (for the file watcher).
+    QStringList paths() const;
+    // Selects the row of `path`, leaving an already current row alone; false
+    // when the list has no such file.
+    bool selectPath(const QString &path);
+    // Selects the first row; false when the list is empty.
+    bool selectFirstRow();
+    // Selects the first file a merge left conflicted, if there is one.
+    void selectFirstConflict();
+    // The scroll offsets of the changes list (x sideways, y down), which
+    // selecting a row again would lose.
+    QPoint scrollOffset() const;
+    void setScrollOffset(const QPoint &offset);
     // Checks every file for the commit, or none when all are checked (lazygit's "a").
     void toggleAllChecked();
     void toggleAmend();
+    // Ticks or unticks "Amend last commit" (nothing while there is none to amend).
+    void setAmendChecked(bool on);
+    // Drops the amend state of the repository just left behind (the message
+    // goes with it, and the window refreshes for the new one).
+    void resetAmend();
     // Ticks the files of the commit being amended (after the refresh that follows).
     void checkHeadPaths();
+    // A merge in progress decides what the Commit button says, whether the
+    // amend box may be ticked, and puts git's proposed message in the box.
+    void setMergeState(const MergeState &merge, const Commit &head);
+    // Presses Commit, as Ctrl+Enter on the button itself does.
+    void clickCommit();
     // Whether the diff pane shows, for what a double-click on a file does.
     void setDiffPaneVisible(bool on) { m_diffPaneVisible = on; }
 
@@ -49,13 +74,15 @@ public:
 public slots:
     void onCheckedChanged();
     void onAmendToggled(bool on);
+    // Writes the checked files (or rewrites the last commit) with the message
+    // in the box, asking first when that would rewrite published history.
+    void commit();
     // Asks the chosen coding agent for a message describing the checked
     // changes (Ctrl+G); clicking again while it runs stops it.
     void generateMessage();
     void showAgentMenu();
 
 signals:
-    void commitRequested();
     void refreshRequested();
     void openRequested();          // the file in its own program
     void showDiffPaneRequested();
@@ -66,6 +93,20 @@ signals:
     void statusMessage(const QString &text, int ms);
 
 private:
+    // The sections of the page, top to bottom, as the constructor builds them.
+    void setupAgent();
+    QLayout *buildMessageSection();
+    QWidget *buildChangesSection();
+    QLayout *buildOptionsRow();
+    QLayout *buildButtonRow();
+    void showFileMenu(const QPoint &pos);
+    // The cog menu's three sections.
+    void addAgentSection(QMenu *menu, const AgentChoice &choice, const std::function<void(const AgentChoice &)> &save);
+    void addModelSection(QMenu *menu, const AgentSpec &agent, const AgentCatalog &catalog, const AgentChoice &choice,
+                         const std::function<void(const AgentChoice &)> &save);
+    void addReasoningSection(QMenu *menu, const QStringList &efforts, const AgentChoice &choice,
+                             const std::function<void(const AgentChoice &)> &save);
+    void updateCommitButton();
     void setGenerating(bool on);
     void onMessageGenerated(bool ok, const QString &text);
 
@@ -87,5 +128,7 @@ private:
     QCheckBox *m_showUnversioned;
     QCheckBox *m_amend;
     QString m_headMessage;
+    bool m_merging = false;      // a merge is in progress (MERGE_HEAD exists)
+    QString m_mergeMessage;      // git's proposed message, put in the box while it is empty
     bool m_diffPaneVisible = true;
 };

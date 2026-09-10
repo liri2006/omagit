@@ -116,6 +116,11 @@ struct MergeState {
     QString message;       // the commit message git proposes (MERGE_MSG without the comments)
 };
 
+// Every query runs a git process in the repository at root(). The const
+// methods keep no state of their own beyond the empty-tree cache, so one
+// worker thread may call them on its own instance (or on a shared one) as long
+// as nothing calls setRoot() meanwhile; runAsync() and the methods built on it
+// need the thread's event loop.
 class GitRepo : public QObject
 {
     Q_OBJECT
@@ -162,6 +167,10 @@ public:
     // Merges `source` into the current branch. MergeConflicts leaves the
     // merge in progress (see mergeState()); `error` gets git's message.
     MergeResult merge(const QString &source, bool noFastForward, QString *error) const;
+    // merge() without blocking: `done` is called from the event loop, and not
+    // at all once `context` is gone.
+    void mergeAsync(const QString &source, bool noFastForward, QObject *context,
+                    std::function<void(MergeResult result, const QString &error)> done);
     MergeState mergeState() const;
     bool mergeInProgress() const;
     // `git merge --abort`: the branch and the working tree go back to how they were.
@@ -171,9 +180,10 @@ public:
     // the event loop when it finishes (exitCode -1: crashed, killed, or not
     // started), and not at all once `context` is gone. Credential prompts are
     // disabled, so a missing login fails instead of hanging. The returned
-    // process is owned by this object.
+    // process is owned by this object and deletes itself when git is done,
+    // so a context that goes first leaves git running to completion.
     using Callback = std::function<void(int exitCode, const QByteArray &out, const QByteArray &err)>;
-    QProcess *runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs = 120000,
+    QProcess *runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs = kHistoryTimeoutMs,
                        const QStringList &env = QStringList());
 
     // --- Working tree -------------------------------------------------------
@@ -204,6 +214,9 @@ public:
     // mode). New files are removed; a rename restores both paths.
     bool discardChanges(const FileChange &change, QString *error) const;
 
+    // Commit HEAD's tree plus the working-tree state of `paths`, like
+    // `git commit -- paths`; other staged changes stay staged. During a merge
+    // the whole index is committed.
     bool commit(const QString &message, const QStringList &paths, QString *error) const;
 
     // Replace HEAD by a commit whose tree is HEAD's parent tree plus the
@@ -229,18 +242,60 @@ public:
     // Runs git and returns stdout. exitCode receives the exit status. `env` holds
     // extra "KEY=VALUE" entries for the child process.
     QByteArray run(const QStringList &args, int *exitCode = nullptr, QByteArray *err = nullptr,
-                   int timeoutMs = 15000, const QStringList &env = QStringList()) const;
+                   int timeoutMs = kQueryTimeoutMs, const QStringList &env = QStringList()) const;
 
 signals:
     void rootChanged(const QString &root);
 
 private:
+    // How long a git command may take before it is killed. Local queries answer
+    // in milliseconds; the longer budgets are there for big repositories and
+    // for commands that run hooks, not because the wait is expected.
+    static constexpr int kProbeTimeoutMs = 5000;      // "is this a repository at all"
+    static constexpr int kQueryTimeoutMs = 15000;     // plain reads of index and refs
+    static constexpr int kWorkTimeoutMs = 60000;      // commands that touch every file
+    static constexpr int kHistoryTimeoutMs = 120000;  // whole-history walks, merge-tree
+    static constexpr int kMergeTimeoutMs = 300000;    // a merge, hooks included
+
+    // What one git process left behind. `code` stays -1 when git never finished.
+    struct GitResult {
+        int code = -1;
+        QByteArray out, err;
+
+        bool ok() const { return code == 0; }
+        QString stderrText() const; // trimmed
+        QString message() const;    // stderrText(), falling back to trimmed stdout
+    };
+
     static void traceCommand(const QStringList &args);
+    // The two -c options every command carries, in front of `args`.
+    static QStringList fullArgs(const QStringList &args);
+    void prepare(QProcess &p, const QStringList &env, bool terminalPrompt) const;
+    GitResult exec(const QStringList &args, int timeoutMs = kQueryTimeoutMs,
+                   const QStringList &env = QStringList()) const;
+    // Hands git's own words to the caller: `error` gets stderr, or `fallback`
+    // when git said nothing. Returns whether the command succeeded.
+    static bool report(const GitResult &r, QString *error, const QString &fallback = QString());
+    // Fails with our own wording, git's message (`detail`) on the next line.
+    static bool fail(QString *error, const QString &message, const QByteArray &detail = QByteArray());
+
     QString emptyTree() const;
+    QString symbolicHead(int *code = nullptr) const; // the branch HEAD points at
     QStringList stageablePaths(const QStringList &paths, const QStringList &env) const;
+    GitResult stageAll(const QStringList &paths, const QStringList &env, int timeoutMs) const;
+    // `git status` as it is parsed everywhere: index/worktree columns and path.
+    QList<FileChange> porcelainStatus(bool *ok = nullptr) const;
     QStringList changedPaths() const; // every path `git status` lists, untracked included
     void applyNumstat(const QByteArray &numstat, QList<FileChange> &changes) const;
     void applyTreeSizes(const QString &commit, QList<FileChange> &changes) const;
+
+    // The steps of mergePreview(), in the order it runs them.
+    bool verifyCommits(const QStringList &refs, QString *error) const;
+    bool countMergeCommits(MergePreview &p) const;
+    QStringList collectMergeStats(MergePreview &p) const; // returns the paths the merge writes
+    void findBlockedPaths(QStringList touched, MergePreview &p) const;
+    void mergeTreeVerdict(MergePreview &p) const;
+    MergeResult interpretMerge(int code, const QByteArray &out, const QByteArray &err, QString *error) const;
 
     QString m_root;
     bool m_amend = false;

@@ -8,7 +8,7 @@ command -v qmake6 >/dev/null || { echo "qmake6 not found — install qt6-base"; 
 python3 -c "import gi; gi.require_version('Nautilus', '4.1')" 2>/dev/null \
   || echo "note: nautilus-python is not installed; the context menu will not appear (omarchy pkg add nautilus-python)"
 
-qmake6 omagit.pro
+qmake6 CONFIG+=release omagit.pro
 make -j"$(nproc)"
 
 install -Dm755 omagit "$HOME/.local/bin/omagit"

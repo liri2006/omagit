@@ -34,6 +34,5 @@ private:
     QToolButton *m_keybindingsButton;
     QLabel *m_statusLabel;       // the footer's message, the repository path when there is none
     QTimer *m_statusTimer;
-    QWidget *m_line;
     QString m_idleText;
 };

@@ -4,191 +4,188 @@
 #include <QHash>
 #include <QSet>
 #include <QStringList>
+#include <array>
 
 namespace {
 
 // ---------------------------------------------------------------- word lists
 
+// Space separated; the sets are built once, with the language table.
+constexpr const char *kCppKeywords =
+    "alignas alignof and and_eq asm bitand bitor break case catch class compl concept const "
+    "consteval constexpr constinit const_cast continue co_await co_return co_yield decltype "
+    "default delete do dynamic_cast else enum explicit export extern false final for friend goto "
+    "if inline mutable namespace new noexcept not not_eq nullptr operator or or_eq override "
+    "private protected public register reinterpret_cast requires return sizeof static "
+    "static_assert static_cast struct switch template this thread_local throw true try typedef "
+    "typeid typename union using virtual volatile while xor xor_eq";
+constexpr const char *kCppTypes =
+    "auto bool char char8_t char16_t char32_t double float int long short signed unsigned void "
+    "wchar_t size_t ssize_t ptrdiff_t intptr_t uintptr_t int8_t int16_t int32_t int64_t uint8_t "
+    "uint16_t uint32_t uint64_t std string wstring string_view vector map unordered_map set "
+    "unordered_set pair tuple array deque list optional variant function shared_ptr unique_ptr "
+    "weak_ptr";
+
+constexpr const char *kPythonKeywords =
+    "and as assert async await break class continue def del elif else except finally for from "
+    "global if import in is lambda match nonlocal not or pass raise return try while with yield";
+constexpr const char *kPythonTypes =
+    "True False None self cls bool bytes bytearray complex dict float frozenset int list object "
+    "set str tuple type abs all any enumerate isinstance issubclass len max min open print range "
+    "repr reversed round sorted sum super zip Exception ValueError TypeError KeyError IndexError "
+    "RuntimeError NotImplementedError";
+
+constexpr const char *kJsKeywords =
+    "abstract as async await break case catch class const constructor continue debugger declare "
+    "default delete do else enum export extends finally for from function get if implements "
+    "import in infer instanceof interface is keyof let namespace new of package private "
+    "protected public readonly require return satisfies set static super switch throw try type "
+    "typeof var void while with yield";
+constexpr const char *kJsTypes =
+    "any bigint boolean never null number object string symbol this undefined unknown true false "
+    "NaN Infinity Array Boolean Date Error JSON Map Math Number Object Promise RegExp Set String "
+    "Symbol WeakMap WeakSet console document globalThis process window";
+
+constexpr const char *kRustKeywords =
+    "as async await break const continue crate dyn else enum extern false fn for if impl in let "
+    "loop match mod move mut pub ref return self Self static struct super trait true type unsafe "
+    "use where while";
+constexpr const char *kRustTypes =
+    "bool char f32 f64 i8 i16 i32 i64 i128 isize str u8 u16 u32 u64 u128 usize String Vec Option "
+    "Some None Result Ok Err Box Rc Arc RefCell Cell Cow HashMap HashSet BTreeMap BTreeSet";
+
+constexpr const char *kGoKeywords =
+    "break case chan const continue default defer else fallthrough for func go goto if import "
+    "interface map package range return select struct switch type var";
+constexpr const char *kGoTypes =
+    "any bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune "
+    "string uint uint8 uint16 uint32 uint64 uintptr true false nil iota append cap close copy "
+    "delete len make new panic print println recover";
+
+constexpr const char *kShellKeywords =
+    "if then else elif fi case esac for while until do done in function select time coproc "
+    "return break continue exit export local readonly declare typeset unset shift source alias "
+    "eval exec set trap";
+constexpr const char *kShellTypes =
+    "echo printf cd pwd read test true false let mapfile getopts command builtin type hash umask "
+    "wait kill jobs bg fg pushd popd dirs";
+
+constexpr const char *kJavaKeywords =
+    "abstract assert break case catch class const continue default do else enum extends final "
+    "finally for goto if implements import instanceof interface native new package permits "
+    "private protected public record return sealed static strictfp super switch synchronized "
+    "this throw throws transient try var volatile while yield";
+constexpr const char *kJavaTypes =
+    "boolean byte char double float int long short void true false null String Object Integer "
+    "Double Float Long Short Boolean Character List Map Set Collection ArrayList HashMap HashSet "
+    "Optional Stream System";
+
+constexpr const char *kKotlinKeywords =
+    "as break by catch class companion const constructor continue crossinline data do dynamic "
+    "else enum expect external final finally for fun get if import in infix init inline inner "
+    "interface internal is lateinit noinline object open operator out override package private "
+    "protected public reified return sealed set super suspend tailrec this throw try typealias "
+    "val var vararg when where while";
+constexpr const char *kKotlinTypes =
+    "Any Boolean Byte Char Double Float Int Long Nothing Short String Unit Array List Map Set "
+    "MutableList MutableMap MutableSet Pair Triple true false null it";
+
+constexpr const char *kDartKeywords =
+    "abstract as assert async await base break case catch class const continue covariant default "
+    "deferred do dynamic else enum export extends extension external factory false final finally "
+    "for get hide if implements import in interface is late library mixin new null on operator "
+    "part required rethrow return sealed set show static super switch sync this throw true try "
+    "typedef var void when while with yield";
+constexpr const char *kDartTypes =
+    "int double num bool String List Map Set Iterable Future Stream Object Null Never Function "
+    "Symbol Type Duration DateTime Uri BigInt Runes Record Widget BuildContext State StatelessWidget "
+    "StatefulWidget print identical";
+
+constexpr const char *kCsharpKeywords =
+    "abstract as async await base break case catch checked class const continue default delegate "
+    "do else enum event explicit extern finally fixed for foreach get goto if implicit in "
+    "interface internal is lock namespace new operator out override params partial private "
+    "protected public readonly record ref return sealed set sizeof stackalloc static struct "
+    "switch this throw try typeof unchecked unsafe using value virtual volatile while yield";
+constexpr const char *kCsharpTypes =
+    "bool byte char decimal double dynamic float int long nint nuint object sbyte short string "
+    "uint ulong ushort var void true false null List Dictionary Task String Int32 Console "
+    "Exception IEnumerable";
+
+constexpr const char *kRubyKeywords =
+    "BEGIN END alias and begin break case class def defined? do else elsif end ensure false for "
+    "if in module next nil not or redo rescue retry return self super then true undef unless "
+    "until when while yield require require_relative include extend attr_accessor attr_reader "
+    "attr_writer";
+constexpr const char *kRubyTypes =
+    "Array Class Comparable Enumerable Exception Float Hash Integer Module Numeric Proc Range "
+    "Regexp String Struct Symbol Time puts print p lambda new";
+
+constexpr const char *kLuaKeywords =
+    "and break do else elseif end false for function goto if in local nil not or repeat return "
+    "then true until while";
+constexpr const char *kLuaTypes =
+    "assert collectgarbage coroutine dofile error getmetatable io ipairs load loadstring math "
+    "next os pairs pcall print rawequal rawget rawlen rawset require select self setmetatable "
+    "string table tonumber tostring type unpack xpcall";
+
+constexpr const char *kSqlKeywords =
+    "add all alter and as asc begin between by cascade case check column commit constraint "
+    "create cross default delete desc distinct drop else end exists foreign from full group "
+    "having if in index inner insert into is join key left like limit not null offset on or "
+    "order outer primary references replace returning right rollback select set table then "
+    "transaction union unique update using values view when where with";
+constexpr const char *kSqlTypes =
+    "bigint blob boolean bytea char date datetime decimal double float int integer json jsonb "
+    "money numeric precision real serial smallint text time timestamp uuid varchar";
+
+constexpr const char *kJsonKeywords = "true false null";
+constexpr const char *kYamlKeywords = "true false null yes no on off True False Null Yes No On Off ~";
+// Shared by TOML and INI, which both only know the two boolean literals.
+constexpr const char *kBooleanKeywords = "true false";
+
+constexpr const char *kCmakeKeywords =
+    "add_compile_definitions add_custom_command add_custom_target add_definitions add_dependencies "
+    "add_executable add_library add_subdirectory add_test break cmake_minimum_required configure_file "
+    "continue else elseif endforeach endfunction endif endmacro endwhile execute_process find_library "
+    "find_package find_path find_program foreach function get_filename_component get_target_property "
+    "if include install list macro math message option project return set set_target_properties "
+    "string target_compile_definitions target_compile_options target_include_directories "
+    "target_link_libraries target_sources unset while";
+constexpr const char *kCmakeTypes =
+    "AND OR NOT EQUAL STREQUAL MATCHES EXISTS DEFINED PRIVATE PUBLIC INTERFACE REQUIRED QUIET "
+    "COMPONENTS TARGET DESTINATION CACHE FORCE STATIC SHARED MODULE ON OFF TRUE FALSE";
+
+constexpr const char *kMakeKeywords =
+    "define else endef endif export ifdef ifeq ifndef ifneq include override sinclude unexport "
+    "vpath -include";
+constexpr const char *kMakeTypes = "MAKE MAKEFLAGS CC CXX CFLAGS CXXFLAGS LDFLAGS SHELL PHONY";
+
+constexpr const char *kQmakeKeywords =
+    "TEMPLATE TARGET CONFIG QT SOURCES HEADERS FORMS RESOURCES DEFINES INCLUDEPATH LIBS DEPENDPATH "
+    "DESTDIR OBJECTS_DIR MOC_DIR UI_DIR RCC_DIR VERSION SUBDIRS PKGCONFIG DISTFILES TRANSLATIONS "
+    "QMAKE_CXXFLAGS QMAKE_CFLAGS QMAKE_LFLAGS QMAKE_TARGET INSTALLS";
+constexpr const char *kQmakeTypes =
+    "android contains count defineReplace defineTest else equals error eval exists for greaterThan "
+    "include isEmpty lessThan macx message requires return unix warning win32";
+
+constexpr const char *kDockerKeywords =
+    "add arg cmd copy entrypoint env expose from healthcheck label maintainer onbuild run shell "
+    "stopsignal user volume workdir as";
+
+QStringList splitWords(const char *words)
+{
+    return words ? QString::fromLatin1(words).split(QLatin1Char(' '), Qt::SkipEmptyParts) : QStringList();
+}
+
 QSet<QString> setOf(const char *words)
 {
     QSet<QString> out;
-    const QStringList list = QString::fromLatin1(words).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    const QStringList list = splitWords(words);
     for (const QString &w : list)
         out.insert(w);
     return out;
 }
-
-// Everything is a function-local static so the tables are built once, on the
-// first line of the first file of that language, and never again.
-#define WORDS(name, words)                              \
-    const QSet<QString> &name()                         \
-    {                                                   \
-        static const QSet<QString> s = setOf(words);    \
-        return s;                                       \
-    }
-
-WORDS(cppKeywords,
-      "alignas alignof and and_eq asm bitand bitor break case catch class compl concept const "
-      "consteval constexpr constinit const_cast continue co_await co_return co_yield decltype "
-      "default delete do dynamic_cast else enum explicit export extern false final for friend goto "
-      "if inline mutable namespace new noexcept not not_eq nullptr operator or or_eq override "
-      "private protected public register reinterpret_cast requires return sizeof static "
-      "static_assert static_cast struct switch template this thread_local throw true try typedef "
-      "typeid typename union using virtual volatile while xor xor_eq")
-WORDS(cppTypes,
-      "auto bool char char8_t char16_t char32_t double float int long short signed unsigned void "
-      "wchar_t size_t ssize_t ptrdiff_t intptr_t uintptr_t int8_t int16_t int32_t int64_t uint8_t "
-      "uint16_t uint32_t uint64_t std string wstring string_view vector map unordered_map set "
-      "unordered_set pair tuple array deque list optional variant function shared_ptr unique_ptr "
-      "weak_ptr")
-
-WORDS(pythonKeywords,
-      "and as assert async await break class continue def del elif else except finally for from "
-      "global if import in is lambda match nonlocal not or pass raise return try while with yield")
-WORDS(pythonTypes,
-      "True False None self cls bool bytes bytearray complex dict float frozenset int list object "
-      "set str tuple type abs all any enumerate isinstance issubclass len max min open print range "
-      "repr reversed round sorted sum super zip Exception ValueError TypeError KeyError IndexError "
-      "RuntimeError NotImplementedError")
-
-WORDS(jsKeywords,
-      "abstract as async await break case catch class const constructor continue debugger declare "
-      "default delete do else enum export extends finally for from function get if implements "
-      "import in infer instanceof interface is keyof let namespace new of package private "
-      "protected public readonly require return satisfies set static super switch throw try type "
-      "typeof var void while with yield")
-WORDS(jsTypes,
-      "any bigint boolean never null number object string symbol this undefined unknown true false "
-      "NaN Infinity Array Boolean Date Error JSON Map Math Number Object Promise RegExp Set String "
-      "Symbol WeakMap WeakSet console document globalThis process window")
-
-WORDS(rustKeywords,
-      "as async await break const continue crate dyn else enum extern false fn for if impl in let "
-      "loop match mod move mut pub ref return self Self static struct super trait true type unsafe "
-      "use where while")
-WORDS(rustTypes,
-      "bool char f32 f64 i8 i16 i32 i64 i128 isize str u8 u16 u32 u64 u128 usize String Vec Option "
-      "Some None Result Ok Err Box Rc Arc RefCell Cell Cow HashMap HashSet BTreeMap BTreeSet")
-
-WORDS(goKeywords,
-      "break case chan const continue default defer else fallthrough for func go goto if import "
-      "interface map package range return select struct switch type var")
-WORDS(goTypes,
-      "any bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune "
-      "string uint uint8 uint16 uint32 uint64 uintptr true false nil iota append cap close copy "
-      "delete len make new panic print println recover")
-
-WORDS(shellKeywords,
-      "if then else elif fi case esac for while until do done in function select time coproc "
-      "return break continue exit export local readonly declare typeset unset shift source alias "
-      "eval exec set trap")
-WORDS(shellTypes,
-      "echo printf cd pwd read test true false let mapfile getopts command builtin type hash umask "
-      "wait kill jobs bg fg pushd popd dirs")
-
-WORDS(javaKeywords,
-      "abstract assert break case catch class const continue default do else enum extends final "
-      "finally for goto if implements import instanceof interface native new package permits "
-      "private protected public record return sealed static strictfp super switch synchronized "
-      "this throw throws transient try var volatile while yield")
-WORDS(javaTypes,
-      "boolean byte char double float int long short void true false null String Object Integer "
-      "Double Float Long Short Boolean Character List Map Set Collection ArrayList HashMap HashSet "
-      "Optional Stream System")
-
-WORDS(kotlinKeywords,
-      "as break by catch class companion const constructor continue crossinline data do dynamic "
-      "else enum expect external final finally for fun get if import in infix init inline inner "
-      "interface internal is lateinit noinline object open operator out override package private "
-      "protected public reified return sealed set super suspend tailrec this throw try typealias "
-      "val var vararg when where while")
-WORDS(kotlinTypes,
-      "Any Boolean Byte Char Double Float Int Long Nothing Short String Unit Array List Map Set "
-      "MutableList MutableMap MutableSet Pair Triple true false null it")
-
-WORDS(dartKeywords,
-      "abstract as assert async await base break case catch class const continue covariant default "
-      "deferred do dynamic else enum export extends extension external factory false final finally "
-      "for get hide if implements import in interface is late library mixin new null on operator "
-      "part required rethrow return sealed set show static super switch sync this throw true try "
-      "typedef var void when while with yield")
-WORDS(dartTypes,
-      "int double num bool String List Map Set Iterable Future Stream Object Null Never Function "
-      "Symbol Type Duration DateTime Uri BigInt Runes Record Widget BuildContext State StatelessWidget "
-      "StatefulWidget print identical")
-
-WORDS(csharpKeywords,
-      "abstract as async await base break case catch checked class const continue default delegate "
-      "do else enum event explicit extern finally fixed for foreach get goto if implicit in "
-      "interface internal is lock namespace new operator out override params partial private "
-      "protected public readonly record ref return sealed set sizeof stackalloc static struct "
-      "switch this throw try typeof unchecked unsafe using value virtual volatile while yield")
-WORDS(csharpTypes,
-      "bool byte char decimal double dynamic float int long nint nuint object sbyte short string "
-      "uint ulong ushort var void true false null List Dictionary Task String Int32 Console "
-      "Exception IEnumerable")
-
-WORDS(rubyKeywords,
-      "BEGIN END alias and begin break case class def defined? do else elsif end ensure false for "
-      "if in module next nil not or redo rescue retry return self super then true undef unless "
-      "until when while yield require require_relative include extend attr_accessor attr_reader "
-      "attr_writer")
-WORDS(rubyTypes,
-      "Array Class Comparable Enumerable Exception Float Hash Integer Module Numeric Proc Range "
-      "Regexp String Struct Symbol Time puts print p lambda new")
-
-WORDS(luaKeywords,
-      "and break do else elseif end false for function goto if in local nil not or repeat return "
-      "then true until while")
-WORDS(luaTypes,
-      "assert collectgarbage coroutine dofile error getmetatable io ipairs load loadstring math "
-      "next os pairs pcall print rawequal rawget rawlen rawset require select self setmetatable "
-      "string table tonumber tostring type unpack xpcall")
-
-WORDS(sqlKeywords,
-      "add all alter and as asc begin between by cascade case check column commit constraint "
-      "create cross default delete desc distinct drop else end exists foreign from full group "
-      "having if in index inner insert into is join key left like limit not null offset on or "
-      "order outer primary references replace returning right rollback select set table then "
-      "transaction union unique update using values view when where with")
-WORDS(sqlTypes,
-      "bigint blob boolean bytea char date datetime decimal double float int integer json jsonb "
-      "money numeric precision real serial smallint text time timestamp uuid varchar")
-
-WORDS(jsonKeywords, "true false null")
-WORDS(yamlKeywords, "true false null yes no on off True False Null Yes No On Off ~")
-WORDS(tomlKeywords, "true false")
-
-WORDS(cmakeKeywords,
-      "add_compile_definitions add_custom_command add_custom_target add_definitions add_dependencies "
-      "add_executable add_library add_subdirectory add_test break cmake_minimum_required configure_file "
-      "continue else elseif endforeach endfunction endif endmacro endwhile execute_process find_library "
-      "find_package find_path find_program foreach function get_filename_component get_target_property "
-      "if include install list macro math message option project return set set_target_properties "
-      "string target_compile_definitions target_compile_options target_include_directories "
-      "target_link_libraries target_sources unset while")
-WORDS(cmakeTypes,
-      "AND OR NOT EQUAL STREQUAL MATCHES EXISTS DEFINED PRIVATE PUBLIC INTERFACE REQUIRED QUIET "
-      "COMPONENTS TARGET DESTINATION CACHE FORCE STATIC SHARED MODULE ON OFF TRUE FALSE")
-
-WORDS(makeKeywords,
-      "define else endef endif export ifdef ifeq ifndef ifneq include override sinclude unexport "
-      "vpath -include")
-WORDS(makeTypes, "MAKE MAKEFLAGS CC CXX CFLAGS CXXFLAGS LDFLAGS SHELL PHONY")
-
-WORDS(qmakeKeywords,
-      "TEMPLATE TARGET CONFIG QT SOURCES HEADERS FORMS RESOURCES DEFINES INCLUDEPATH LIBS DEPENDPATH "
-      "DESTDIR OBJECTS_DIR MOC_DIR UI_DIR RCC_DIR VERSION SUBDIRS PKGCONFIG DISTFILES TRANSLATIONS "
-      "QMAKE_CXXFLAGS QMAKE_CFLAGS QMAKE_LFLAGS QMAKE_TARGET INSTALLS")
-WORDS(qmakeTypes,
-      "android contains count defineReplace defineTest else equals error eval exists for greaterThan "
-      "include isEmpty lessThan macx message requires return unix warning win32")
-
-WORDS(dockerKeywords,
-      "add arg cmd copy entrypoint env expose from healthcheck label maintainer onbuild run shell "
-      "stopsignal user volume workdir as")
-
-#undef WORDS
 
 // --------------------------------------------------------------- language spec
 
@@ -199,345 +196,183 @@ enum Block {
     PyDouble,    // """ ... """
     PySingle,    // ''' ... '''
     LuaBlock,    // --[[ ... ]]
-    XmlComment,  // <!-- ... -->
+    XmlBlock,    // <!-- ... -->
 };
+
+// What the scanner does for a language. Anything not listed for a language is
+// off; the two "No…" flags switch off something that is on nearly everywhere.
+enum Flag : quint32 {
+    FoldCase           = 1u << 0,  // keyword lookup is case-insensitive (SQL, CMake, Dockerfile)
+    HashComment        = 1u << 1,  // '#' to end of line
+    SemicolonComment   = 1u << 2,  // ';' to end of line (ini)
+    CBlockComment      = 1u << 3,  // /* … */
+    LuaLongComment     = 1u << 4,  // --[[ … ]]
+    XmlComment         = 1u << 5,  // <!-- … -->
+    NoDoubleQuote      = 1u << 6,  // "…" is not a literal (markdown)
+    SingleQuote        = 1u << 7,  // '…' is a string
+    SingleQuoteEscapes = 1u << 8,  // … and a backslash escapes inside it
+    CharLiteral        = 1u << 9,  // '…' is a char literal (and 'a may be a lifetime)
+    Backtick           = 1u << 10, // `…` template / command string
+    PyTriple           = 1u << 11, // """…""" and '''…'''
+    RustRaw            = 1u << 12, // r#"…"#
+    NoNumbers          = 1u << 13, // digits are not literals (markdown, html)
+    CPreproc           = 1u << 14, // #include / #define at the start of a line
+    AtDecorator        = 1u << 15, // @foo → Preprocessor
+    HashAttribute      = 1u << 16, // Rust #[…]
+    DollarVar          = 1u << 17, // $VAR / ${…} → Type
+    HashColor          = 1u << 18, // CSS #1a2b3c → Number
+    SectionHeader      = 1u << 19, // [section] at the start of a line → Preprocessor
+    XmlTags            = 1u << 20, // <tag …> → Keyword
+    MarkdownText       = 1u << 21, // headings / quotes / `code`
+    FunctionCalls      = 1u << 22, // name( → Function
+    KeyBeforeColon     = 1u << 23, // name: → Type
+    KeyBeforeEquals    = 1u << 24, // name= → Type
+    ColonIsTarget      = 1u << 25, // … but in a makefile name: is a rule, so Function
+};
+
+// r"", b'', f"", u8"", R"(…)", L"": a short prefix glued to a quote. Only the
+// languages that actually have them go looking.
+constexpr const char *kStringPrefixes = "rbufxRBUFXL8";
+constexpr const char *kDartStringPrefixes = "rR";       // raw strings
+constexpr const char *kSqlStringPrefixes = "bBxXnNeE";  // bit, hex, national, escape literals
 
 struct LangSpec {
-    const QSet<QString> *keywords = nullptr;
-    const QSet<QString> *types = nullptr;
-    bool foldCase = false;      // keyword lookup is case-insensitive (SQL, CMake, Dockerfile)
+    QSet<QString> keywords;
+    QSet<QString> types;
+    const char *lineComment = nullptr;    // "//", "--" …
+    const char *stringPrefixes = nullptr;
+    quint32 flags = 0;
 
-    // Comments
-    const char *lineComment = nullptr;   // "//", "--", "%%" …
-    bool hashComment = false;            // '#' to end of line
-    bool semicolonComment = false;       // ';' to end of line (ini)
-    bool cBlockComment = false;          // /* … */
-    bool luaLongComment = false;         // --[[ … ]]
-    bool xmlComment = false;             // <!-- … -->
-
-    // Literals
-    bool doubleQuote = true;
-    bool singleQuoteString = false;      // '…' is a string
-    bool charLiteral = false;            // '…' is a char literal (and 'a may be a lifetime)
-    bool backtick = false;               // `…` template / command string
-    bool pyTriple = false;               // """…""" and '''…'''
-    bool rustRaw = false;                // r#"…"#
-    bool numbers = true;
-
-    // Extras
-    bool cPreproc = false;               // #include / #define at the start of a line
-    bool atDecorator = false;            // @foo → Preprocessor
-    bool hashAttribute = false;          // Rust #[…]
-    bool dollarVar = false;              // $VAR / ${…} → Type
-    bool hashColor = false;              // CSS #1a2b3c → Number
-    bool sectionHeader = false;          // [section] at the start of a line → Preprocessor
-    bool xmlTags = false;                // <tag …> → Keyword + attributes
-    bool markdown = false;               // headings / quotes / `code`
-    bool functionCalls = false;          // name( → Function
-    bool keyBeforeColon = false;         // name: → colonKind
-    bool keyBeforeEquals = false;        // name= → Type
-    TokenKind colonKind = TokenKind::Type;
+    bool has(quint32 flag) const { return (flags & flag) != 0; }
 };
 
-const LangSpec &specFor(Language lang)
+// The one table: word lists, scanner flags and the file names that pick each
+// language. Adding a language means adding an enumerator and one row here.
+struct LangRow {
+    Language lang;
+    const char *keywords;
+    const char *types;
+    const char *extensions;  // space separated, lower case, no leading dot
+    const char *fileNames;   // space separated basenames, lower case
+    const char *lineComment;
+    const char *stringPrefixes;
+    quint32 flags;
+};
+
+const LangRow kLanguages[] = {
+    {Language::Cpp, kCppKeywords, kCppTypes,
+     "c h cc cpp cxx c++ hpp hh hxx inl ipp m mm", nullptr, "//", kStringPrefixes,
+     CBlockComment | CharLiteral | CPreproc | FunctionCalls},
+    {Language::CSharp, kCsharpKeywords, kCsharpTypes,
+     "cs", nullptr, "//", kStringPrefixes,
+     CBlockComment | CharLiteral | CPreproc | AtDecorator | FunctionCalls},
+    {Language::Java, kJavaKeywords, kJavaTypes,
+     "java", nullptr, "//", nullptr,
+     CBlockComment | CharLiteral | AtDecorator | FunctionCalls},
+    {Language::Kotlin, kKotlinKeywords, kKotlinTypes,
+     "kt kts", nullptr, "//", nullptr,
+     CBlockComment | CharLiteral | AtDecorator | FunctionCalls},
+    {Language::Dart, kDartKeywords, kDartTypes,
+     "dart", nullptr, "//", kDartStringPrefixes,
+     CBlockComment | SingleQuote | SingleQuoteEscapes | PyTriple | AtDecorator | DollarVar
+         | FunctionCalls},
+    {Language::JavaScript, kJsKeywords, kJsTypes,
+     "js jsx mjs cjs", nullptr, "//", nullptr,
+     CBlockComment | SingleQuote | SingleQuoteEscapes | Backtick | AtDecorator | FunctionCalls},
+    {Language::TypeScript, kJsKeywords, kJsTypes,
+     "ts tsx mts cts", nullptr, "//", nullptr,
+     CBlockComment | SingleQuote | SingleQuoteEscapes | Backtick | AtDecorator | FunctionCalls},
+    {Language::Python, kPythonKeywords, kPythonTypes,
+     "py pyw pyi", nullptr, nullptr, kStringPrefixes,
+     HashComment | SingleQuote | SingleQuoteEscapes | PyTriple | AtDecorator | FunctionCalls},
+    {Language::Rust, kRustKeywords, kRustTypes,
+     "rs", nullptr, "//", kStringPrefixes,
+     CBlockComment | CharLiteral | RustRaw | HashAttribute | FunctionCalls},
+    {Language::Go, kGoKeywords, kGoTypes,
+     "go", nullptr, "//", nullptr,
+     CBlockComment | CharLiteral | Backtick | FunctionCalls},
+    {Language::Ruby, kRubyKeywords, kRubyTypes,
+     "rb rake gemspec", nullptr, nullptr, nullptr,
+     HashComment | SingleQuote | DollarVar | FunctionCalls},
+    {Language::Lua, kLuaKeywords, kLuaTypes,
+     "lua", nullptr, "--", nullptr,
+     LuaLongComment | SingleQuote | SingleQuoteEscapes | FunctionCalls},
+    {Language::Shell, kShellKeywords, kShellTypes,
+     "sh bash zsh ksh",
+     ".bashrc .bash_profile .bash_aliases .bash_logout .profile .zshrc .zshenv .zprofile "
+     ".xinitrc pkgbuild",
+     nullptr, nullptr,
+     HashComment | SingleQuote | Backtick | DollarVar},
+    {Language::Sql, kSqlKeywords, kSqlTypes,
+     "sql", nullptr, "--", kSqlStringPrefixes,
+     FoldCase | CBlockComment | SingleQuote | SingleQuoteEscapes | FunctionCalls},
+    // "//" is for .jsonc and is harmless in strict JSON.
+    {Language::Json, kJsonKeywords, nullptr,
+     "json jsonc", nullptr, "//", nullptr,
+     0},
+    {Language::Yaml, kYamlKeywords, nullptr,
+     "yml yaml", nullptr, nullptr, nullptr,
+     HashComment | SingleQuote | KeyBeforeColon},
+    {Language::Toml, kBooleanKeywords, nullptr,
+     "toml", nullptr, nullptr, nullptr,
+     HashComment | SingleQuote | SectionHeader | KeyBeforeEquals},
+    {Language::Ini, kBooleanKeywords, nullptr,
+     "ini conf cfg desktop service properties", ".gitconfig .editorconfig", nullptr, nullptr,
+     HashComment | SemicolonComment | SectionHeader | KeyBeforeEquals},
+    {Language::Markdown, nullptr, nullptr,
+     "md markdown", nullptr, nullptr, nullptr,
+     MarkdownText | NoNumbers | NoDoubleQuote},
+    {Language::Css, nullptr, nullptr,
+     "css scss sass less", nullptr, nullptr, nullptr,
+     CBlockComment | SingleQuote | AtDecorator | HashColor | KeyBeforeColon},
+    {Language::Html, nullptr, nullptr,
+     "html htm xhtml xml svg qrc ui", nullptr, nullptr, nullptr,
+     XmlComment | XmlTags | SingleQuote | KeyBeforeEquals | NoNumbers},
+    {Language::Make, kMakeKeywords, kMakeTypes,
+     "mk make", "makefile gnumakefile", nullptr, nullptr,
+     HashComment | SingleQuote | DollarVar | KeyBeforeColon | ColonIsTarget},
+    {Language::QMake, kQmakeKeywords, kQmakeTypes,
+     "pro pri prf", nullptr, nullptr, nullptr,
+     HashComment | SingleQuote | DollarVar},
+    {Language::CMake, kCmakeKeywords, kCmakeTypes,
+     "cmake", "cmakelists.txt", nullptr, nullptr,
+     FoldCase | HashComment | DollarVar | FunctionCalls},
+    {Language::Dockerfile, kDockerKeywords, nullptr,
+     nullptr, "dockerfile containerfile", nullptr, nullptr,
+     FoldCase | HashComment | SingleQuote | DollarVar},
+};
+
+// Dockerfile is the last enumerator, so this covers every language.
+constexpr size_t kLanguageCount = size_t(Language::Dockerfile) + 1;
+
+struct LangTable {
+    std::array<LangSpec, kLanguageCount> specs; // Language::None keeps the defaults
+    QHash<QString, Language> byExtension;
+    QHash<QString, Language> byName;
+};
+
+// Built once, on the first diff that needs it, and never again.
+const LangTable &languageTable()
 {
-    static LangSpec none;
-
-    static const LangSpec cpp = [] {
-        LangSpec s;
-        s.keywords = &cppKeywords();
-        s.types = &cppTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.charLiteral = true;
-        s.cPreproc = true;
-        s.functionCalls = true;
-        return s;
+    static const LangTable table = [] {
+        LangTable t;
+        for (const LangRow &row : kLanguages) {
+            LangSpec &spec = t.specs[size_t(row.lang)];
+            spec.keywords = setOf(row.keywords);
+            spec.types = setOf(row.types);
+            spec.lineComment = row.lineComment;
+            spec.stringPrefixes = row.stringPrefixes;
+            spec.flags = row.flags;
+            const QStringList extensions = splitWords(row.extensions);
+            for (const QString &extension : extensions)
+                t.byExtension.insert(extension, row.lang);
+            const QStringList names = splitWords(row.fileNames);
+            for (const QString &name : names)
+                t.byName.insert(name, row.lang);
+        }
+        return t;
     }();
-
-    static const LangSpec python = [] {
-        LangSpec s;
-        s.keywords = &pythonKeywords();
-        s.types = &pythonTypes();
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.pyTriple = true;
-        s.atDecorator = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec js = [] {
-        LangSpec s;
-        s.keywords = &jsKeywords();
-        s.types = &jsTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.singleQuoteString = true;
-        s.backtick = true;
-        s.atDecorator = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec rust = [] {
-        LangSpec s;
-        s.keywords = &rustKeywords();
-        s.types = &rustTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.charLiteral = true;
-        s.rustRaw = true;
-        s.hashAttribute = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec go = [] {
-        LangSpec s;
-        s.keywords = &goKeywords();
-        s.types = &goTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.charLiteral = true;
-        s.backtick = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec shell = [] {
-        LangSpec s;
-        s.keywords = &shellKeywords();
-        s.types = &shellTypes();
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.backtick = true;
-        s.dollarVar = true;
-        return s;
-    }();
-
-    static const LangSpec java = [] {
-        LangSpec s;
-        s.keywords = &javaKeywords();
-        s.types = &javaTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.charLiteral = true;
-        s.atDecorator = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec kotlin = [] {
-        LangSpec s;
-        s.keywords = &kotlinKeywords();
-        s.types = &kotlinTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.charLiteral = true;
-        s.atDecorator = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec dart = [] {
-        LangSpec s;
-        s.keywords = &dartKeywords();
-        s.types = &dartTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.singleQuoteString = true;
-        s.pyTriple = true;
-        s.atDecorator = true;
-        s.dollarVar = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec csharp = [] {
-        LangSpec s;
-        s.keywords = &csharpKeywords();
-        s.types = &csharpTypes();
-        s.lineComment = "//";
-        s.cBlockComment = true;
-        s.charLiteral = true;
-        s.cPreproc = true;
-        s.atDecorator = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec ruby = [] {
-        LangSpec s;
-        s.keywords = &rubyKeywords();
-        s.types = &rubyTypes();
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.dollarVar = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec lua = [] {
-        LangSpec s;
-        s.keywords = &luaKeywords();
-        s.types = &luaTypes();
-        s.lineComment = "--";
-        s.luaLongComment = true;
-        s.singleQuoteString = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec sql = [] {
-        LangSpec s;
-        s.keywords = &sqlKeywords();
-        s.types = &sqlTypes();
-        s.foldCase = true;
-        s.lineComment = "--";
-        s.cBlockComment = true;
-        s.singleQuoteString = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec json = [] {
-        LangSpec s;
-        s.keywords = &jsonKeywords();
-        s.lineComment = "//"; // .jsonc, harmless in strict JSON
-        return s;
-    }();
-
-    static const LangSpec yaml = [] {
-        LangSpec s;
-        s.keywords = &yamlKeywords();
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.keyBeforeColon = true;
-        s.atDecorator = false;
-        return s;
-    }();
-
-    static const LangSpec toml = [] {
-        LangSpec s;
-        s.keywords = &tomlKeywords();
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.sectionHeader = true;
-        s.keyBeforeEquals = true;
-        return s;
-    }();
-
-    static const LangSpec ini = [] {
-        LangSpec s;
-        s.keywords = &tomlKeywords();
-        s.hashComment = true;
-        s.semicolonComment = true;
-        s.sectionHeader = true;
-        s.keyBeforeEquals = true;
-        return s;
-    }();
-
-    static const LangSpec markdown = [] {
-        LangSpec s;
-        s.markdown = true;
-        s.numbers = false;
-        s.doubleQuote = false;
-        return s;
-    }();
-
-    static const LangSpec css = [] {
-        LangSpec s;
-        s.cBlockComment = true;
-        s.singleQuoteString = true;
-        s.atDecorator = true;
-        s.hashColor = true;
-        s.keyBeforeColon = true;
-        return s;
-    }();
-
-    static const LangSpec html = [] {
-        LangSpec s;
-        s.xmlComment = true;
-        s.xmlTags = true;
-        s.singleQuoteString = true;
-        s.keyBeforeEquals = true;
-        s.numbers = false;
-        return s;
-    }();
-
-    static const LangSpec make = [] {
-        LangSpec s;
-        s.keywords = &makeKeywords();
-        s.types = &makeTypes();
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.dollarVar = true;
-        s.keyBeforeColon = true;
-        s.colonKind = TokenKind::Function;
-        return s;
-    }();
-
-    static const LangSpec qmake = [] {
-        LangSpec s;
-        s.keywords = &qmakeKeywords();
-        s.types = &qmakeTypes();
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.dollarVar = true;
-        return s;
-    }();
-
-    static const LangSpec cmake = [] {
-        LangSpec s;
-        s.keywords = &cmakeKeywords();
-        s.types = &cmakeTypes();
-        s.foldCase = true;
-        s.hashComment = true;
-        s.dollarVar = true;
-        s.functionCalls = true;
-        return s;
-    }();
-
-    static const LangSpec docker = [] {
-        LangSpec s;
-        s.keywords = &dockerKeywords();
-        s.foldCase = true;
-        s.hashComment = true;
-        s.singleQuoteString = true;
-        s.dollarVar = true;
-        return s;
-    }();
-
-    switch (lang) {
-    case Language::Cpp: return cpp;
-    case Language::CSharp: return csharp;
-    case Language::Java: return java;
-    case Language::Kotlin: return kotlin;
-    case Language::Dart: return dart;
-    case Language::JavaScript:
-    case Language::TypeScript: return js;
-    case Language::Python: return python;
-    case Language::Rust: return rust;
-    case Language::Go: return go;
-    case Language::Ruby: return ruby;
-    case Language::Lua: return lua;
-    case Language::Shell: return shell;
-    case Language::Sql: return sql;
-    case Language::Json: return json;
-    case Language::Yaml: return yaml;
-    case Language::Toml: return toml;
-    case Language::Ini: return ini;
-    case Language::Markdown: return markdown;
-    case Language::Css: return css;
-    case Language::Html: return html;
-    case Language::Make: return make;
-    case Language::QMake: return qmake;
-    case Language::CMake: return cmake;
-    case Language::Dockerfile: return docker;
-    case Language::None: break;
-    }
-    return none;
+    return table;
 }
 
 // -------------------------------------------------------------- the scanner
@@ -556,13 +391,12 @@ inline bool matchAt(const QString &t, int i, const char *lit)
     return true;
 }
 
-// r"", b'', f"", u8"", R"(…)", L"": a short prefix glued to a quote.
-inline bool isStringPrefix(const QString &word)
+inline bool isStringPrefix(const QString &word, const char *allowed)
 {
-    if (word.isEmpty() || word.size() > 3)
+    if (!allowed || word.isEmpty() || word.size() > 3)
         return false;
     for (const QChar c : word) {
-        if (!QLatin1String("rbufxRBUFXL8").contains(c))
+        if (!QLatin1String(allowed).contains(c))
             return false;
     }
     return true;
@@ -631,354 +465,416 @@ QChar peekNonSpace(const QString &t, int i)
     return i < t.size() ? t.at(i) : QChar();
 }
 
-void scanLine(const QString &t, const LangSpec &s, Block &state, QVector<SyntaxSpan> &out)
+// One line of one language. Each step looks at the character at `i` and returns
+// how many characters it consumed, or 0 when it does not apply; run() calls
+// them in a fixed order, and that order is the tokeniser's precedence.
+struct LineScanner {
+    LineScanner(const QString &text, const LangSpec &spec, Block &blockState, QVector<SyntaxSpan> &spans)
+        : t(text), n(text.size()), s(spec), state(blockState), out(spans) {}
+
+    void run();
+
+    void add(int start, int length, TokenKind kind);
+    int resumeBlock();
+    void scanMarkdown(int i);
+    int comment(int i);
+    int hash(int i);
+    int sectionHeader(int i);
+    int xmlTag(int i);
+    int decorator(int i);
+    int dollarVar(int i);
+    int quoted(int i);
+    int number(int i);
+    int identifier(int i);
+
+    const QString &t;
+    const int n;
+    const LangSpec &s;
+    Block &state;
+    QVector<SyntaxSpan> &out;
+    int firstNonSpace = 0;
+};
+
+void LineScanner::add(int start, int length, TokenKind kind)
 {
-    const int n = t.size();
+    if (length > 0)
+        out.append({start, length, kind});
+}
+
+// Finishes a block that an earlier line opened. Returns where the rest of the
+// line starts, which is the line length when the block still has not closed.
+int LineScanner::resumeBlock()
+{
+    if (state == NoBlock)
+        return 0;
+    QLatin1String end("*/");
+    TokenKind kind = TokenKind::Comment;
+    switch (state) {
+    case CBlock: end = QLatin1String("*/"); break;
+    case PyDouble: end = QLatin1String("\"\"\""); kind = TokenKind::String; break;
+    case PySingle: end = QLatin1String("'''"); kind = TokenKind::String; break;
+    case LuaBlock: end = QLatin1String("]]"); break;
+    case XmlBlock: end = QLatin1String("-->"); break;
+    case NoBlock: break;
+    }
+    const int idx = t.indexOf(end);
+    if (idx < 0) {
+        add(0, n, kind);
+        return n;
+    }
+    add(0, idx + end.size(), kind);
+    state = NoBlock;
+    return idx + end.size();
+}
+
+// Markdown has no tokens to speak of: a heading, a quote or a fence claims the
+// whole line, otherwise only `code` and [links] are marked up.
+void LineScanner::scanMarkdown(int i)
+{
+    if (firstNonSpace < n) {
+        const QChar c = t.at(firstNonSpace);
+        if (c == QLatin1Char('#')) {
+            add(firstNonSpace, n - firstNonSpace, TokenKind::Keyword);
+            return;
+        }
+        if (c == QLatin1Char('>')) {
+            add(firstNonSpace, n - firstNonSpace, TokenKind::Comment);
+            return;
+        }
+        if (matchAt(t, firstNonSpace, "```")) {
+            add(firstNonSpace, n - firstNonSpace, TokenKind::String);
+            return;
+        }
+    }
+    while (i < n) {
+        if (t.at(i) == QLatin1Char('`')) {
+            const int end = endOfQuoted(t, i, QLatin1Char('`'), false);
+            add(i, end - i, TokenKind::String);
+            i = end;
+            continue;
+        }
+        if (t.at(i) == QLatin1Char('[')) {
+            const int close = t.indexOf(QLatin1Char(']'), i);
+            if (close > i) {
+                add(i, close - i + 1, TokenKind::Type);
+                i = close + 1;
+                continue;
+            }
+        }
+        ++i;
+    }
+}
+
+int LineScanner::comment(int i)
+{
+    const QChar c = t.at(i);
+    if (s.has(LuaLongComment) && matchAt(t, i, "--[[")) {
+        const int close = t.indexOf(QLatin1String("]]"), i + 4);
+        if (close < 0) {
+            add(i, n - i, TokenKind::Comment);
+            state = LuaBlock;
+            return n - i;
+        }
+        add(i, close + 2 - i, TokenKind::Comment);
+        return close + 2 - i;
+    }
+    if (s.lineComment && matchAt(t, i, s.lineComment)) {
+        add(i, n - i, TokenKind::Comment);
+        return n - i;
+    }
+    if (s.has(CBlockComment) && c == QLatin1Char('/') && i + 1 < n && t.at(i + 1) == QLatin1Char('*')) {
+        const int close = t.indexOf(QLatin1String("*/"), i + 2);
+        if (close < 0) {
+            add(i, n - i, TokenKind::Comment);
+            state = CBlock;
+            return n - i;
+        }
+        add(i, close + 2 - i, TokenKind::Comment);
+        return close + 2 - i;
+    }
+    if (s.has(XmlComment) && matchAt(t, i, "<!--")) {
+        const int close = t.indexOf(QLatin1String("-->"), i + 4);
+        if (close < 0) {
+            add(i, n - i, TokenKind::Comment);
+            state = XmlBlock;
+            return n - i;
+        }
+        add(i, close + 3 - i, TokenKind::Comment);
+        return close + 3 - i;
+    }
+    if (s.has(SemicolonComment) && c == QLatin1Char(';')) {
+        add(i, n - i, TokenKind::Comment);
+        return n - i;
+    }
+    return 0;
+}
+
+// '#' is a comment, a preprocessor directive, an attribute or a colour,
+// depending on the language and on where it sits.
+int LineScanner::hash(int i)
+{
+    if (t.at(i) != QLatin1Char('#'))
+        return 0;
+    if (s.has(HashAttribute) && i + 1 < n
+        && (t.at(i + 1) == QLatin1Char('[') || t.at(i + 1) == QLatin1Char('!'))) {
+        int j = i + 1, depth = 0;
+        while (j < n) {
+            if (t.at(j) == QLatin1Char('['))
+                ++depth;
+            else if (t.at(j) == QLatin1Char(']') && --depth == 0)
+                break;
+            ++j;
+        }
+        const int end = j < n ? j + 1 : n;
+        add(i, end - i, TokenKind::Preprocessor);
+        return end - i;
+    }
+    if (s.has(CPreproc) && i == firstNonSpace) {
+        int j = i + 1;
+        while (j < n && t.at(j).isSpace())
+            ++j;
+        const int nameStart = j;
+        while (j < n && t.at(j).isLetter())
+            ++j;
+        add(i, j - i, TokenKind::Preprocessor);
+        const QString directive = t.mid(nameStart, j - nameStart);
+        int end = j;
+        if (directive == QLatin1String("include") || directive == QLatin1String("import")) {
+            while (end < n && t.at(end).isSpace())
+                ++end;
+            if (end < n && t.at(end) == QLatin1Char('<')) {
+                const int close = t.indexOf(QLatin1Char('>'), end);
+                const int stop = close < 0 ? n : close + 1;
+                add(end, stop - end, TokenKind::String);
+                end = stop;
+            }
+        }
+        return end - i;
+    }
+    if (s.has(HashColor) && i + 1 < n && isIdent(t.at(i + 1))) {
+        int j = i + 1;
+        while (j < n && t.at(j).isLetterOrNumber())
+            ++j;
+        add(i, j - i, TokenKind::Number);
+        return j - i;
+    }
+    if (s.has(HashComment) && (i == firstNonSpace || t.at(i - 1).isSpace())) {
+        add(i, n - i, TokenKind::Comment);
+        return n - i;
+    }
+    return 1;
+}
+
+int LineScanner::sectionHeader(int i)
+{
+    if (!s.has(SectionHeader) || t.at(i) != QLatin1Char('[') || i != firstNonSpace)
+        return 0;
+    const int close = t.lastIndexOf(QLatin1Char(']'));
+    const int end = close < i ? n : close + 1;
+    add(i, end - i, TokenKind::Preprocessor);
+    return end - i;
+}
+
+int LineScanner::xmlTag(int i)
+{
+    if (!s.has(XmlTags) || t.at(i) != QLatin1Char('<'))
+        return 0;
+    int j = i + 1;
+    if (j < n && (t.at(j) == QLatin1Char('/') || t.at(j) == QLatin1Char('!') || t.at(j) == QLatin1Char('?')))
+        ++j;
+    const int nameStart = j;
+    while (j < n && (isIdent(t.at(j)) || t.at(j) == QLatin1Char('-') || t.at(j) == QLatin1Char(':')))
+        ++j;
+    if (j == nameStart)
+        return 1;
+    add(i, j - i, TokenKind::Keyword);
+    return j - i;
+}
+
+int LineScanner::decorator(int i)
+{
+    if (!s.has(AtDecorator) || t.at(i) != QLatin1Char('@') || i + 1 >= n || !isIdentStart(t.at(i + 1)))
+        return 0;
+    int j = i + 1;
+    while (j < n && (isIdent(t.at(j)) || t.at(j) == QLatin1Char('.') || t.at(j) == QLatin1Char('-')))
+        ++j;
+    add(i, j - i, TokenKind::Preprocessor);
+    return j - i;
+}
+
+int LineScanner::dollarVar(int i)
+{
+    if (!s.has(DollarVar) || t.at(i) != QLatin1Char('$') || i + 1 >= n)
+        return 0;
+    const QChar next = t.at(i + 1);
+    if (next == QLatin1Char('{')) {
+        const int close = t.indexOf(QLatin1Char('}'), i + 2);
+        const int end = close < 0 ? n : close + 1;
+        add(i, end - i, TokenKind::Type);
+        return end - i;
+    }
+    if (isIdent(next)) {
+        int j = i + 1;
+        while (j < n && isIdent(t.at(j)))
+            ++j;
+        add(i, j - i, TokenKind::Type);
+        return j - i;
+    }
+    return 1;
+}
+
+int LineScanner::quoted(int i)
+{
+    const QChar c = t.at(i);
+    if (s.has(PyTriple) && (matchAt(t, i, "\"\"\"") || matchAt(t, i, "'''"))) {
+        const bool dbl = c == QLatin1Char('"');
+        const QLatin1String quote(dbl ? "\"\"\"" : "'''");
+        const int close = t.indexOf(quote, i + 3);
+        if (close < 0) {
+            add(i, n - i, TokenKind::String);
+            state = dbl ? PyDouble : PySingle;
+            return n - i;
+        }
+        add(i, close + 3 - i, TokenKind::String);
+        return close + 3 - i;
+    }
+    if (!s.has(NoDoubleQuote) && c == QLatin1Char('"')) {
+        const int end = endOfQuoted(t, i, QLatin1Char('"'), true);
+        add(i, end - i, TokenKind::String);
+        return end - i;
+    }
+    if (s.has(SingleQuote) && c == QLatin1Char('\'')) {
+        const int end = endOfQuoted(t, i, QLatin1Char('\''), s.has(SingleQuoteEscapes));
+        add(i, end - i, TokenKind::String);
+        return end - i;
+    }
+    if (s.has(Backtick) && c == QLatin1Char('`')) {
+        const int end = endOfQuoted(t, i, QLatin1Char('`'), true);
+        add(i, end - i, TokenKind::String);
+        return end - i;
+    }
+    if (s.has(CharLiteral) && c == QLatin1Char('\'')) {
+        // 'a', '\n', '\x41' — but not a Rust lifetime ('a), and an
+        // unterminated quote must not swallow the rest of the line.
+        const int end = endOfQuoted(t, i, QLatin1Char('\''), true);
+        const bool closed = end - i >= 2 && end <= n && t.at(end - 1) == QLatin1Char('\'');
+        if (!closed || end - i > 12)
+            return 1;
+        add(i, end - i, TokenKind::String);
+        return end - i;
+    }
+    return 0;
+}
+
+int LineScanner::number(int i)
+{
+    const QChar c = t.at(i);
+    if (s.has(NoNumbers) || !(c.isDigit() || (c == QLatin1Char('.') && i + 1 < n && t.at(i + 1).isDigit())))
+        return 0;
+    // Not a number when it is the tail of an identifier (foo2).
+    if (i > 0 && isIdent(t.at(i - 1)))
+        return 1;
+    const int end = endOfNumber(t, i);
+    add(i, end - i, TokenKind::Number);
+    return end - i;
+}
+
+int LineScanner::identifier(int i)
+{
+    if (!isIdentStart(t.at(i)))
+        return 0;
+    int j = i;
+    while (j < n && isIdent(t.at(j)))
+        ++j;
+    const QString word = t.mid(i, j - i);
+
+    // Prefixed string literals: r"", f"", b'', u8"", R"(…)", r#"…"#
+    if (j < n && isStringPrefix(word, s.stringPrefixes)
+        && (t.at(j) == QLatin1Char('"')
+            || ((s.has(SingleQuote) || s.has(CharLiteral)) && t.at(j) == QLatin1Char('\'')))) {
+        const int end = endOfQuoted(t, j, t.at(j), true);
+        add(i, end - i, TokenKind::String);
+        return end - i;
+    }
+    if (s.has(RustRaw) && word == QLatin1String("r") && j < n && t.at(j) == QLatin1Char('#')) {
+        int hashes = 0;
+        while (j + hashes < n && t.at(j + hashes) == QLatin1Char('#'))
+            ++hashes;
+        if (j + hashes < n && t.at(j + hashes) == QLatin1Char('"')) {
+            const QString terminator = QLatin1Char('"') + QString(hashes, QLatin1Char('#'));
+            const int close = t.indexOf(terminator, j + hashes + 1);
+            const int end = close < 0 ? n : close + terminator.size();
+            add(i, end - i, TokenKind::String);
+            return end - i;
+        }
+    }
+
+    const QString key = s.has(FoldCase) ? word.toLower() : word;
+    if (s.keywords.contains(key)) {
+        add(i, j - i, TokenKind::Keyword);
+    } else if (s.types.contains(key)) {
+        add(i, j - i, TokenKind::Type);
+    } else {
+        const QChar next = peekNonSpace(t, j);
+        if (s.has(KeyBeforeColon) && next == QLatin1Char(':'))
+            add(i, j - i, s.has(ColonIsTarget) ? TokenKind::Function : TokenKind::Type);
+        else if (s.has(KeyBeforeEquals) && next == QLatin1Char('='))
+            add(i, j - i, TokenKind::Type);
+        else if (s.has(FunctionCalls) && next == QLatin1Char('('))
+            add(i, j - i, TokenKind::Function);
+    }
+    return j - i;
+}
+
+void LineScanner::run()
+{
     out.clear();
     if (n == 0)
         return;
 
-    auto add = [&out](int start, int length, TokenKind kind) {
-        if (length > 0)
-            out.append({start, length, kind});
-    };
+    int i = resumeBlock();
+    if (i >= n)
+        return;
 
-    int i = 0;
-
-    // Finish a block that an earlier line opened.
-    if (state != NoBlock) {
-        QLatin1String end("*/");
-        TokenKind kind = TokenKind::Comment;
-        switch (state) {
-        case CBlock: end = QLatin1String("*/"); break;
-        case PyDouble: end = QLatin1String("\"\"\""); kind = TokenKind::String; break;
-        case PySingle: end = QLatin1String("'''"); kind = TokenKind::String; break;
-        case LuaBlock: end = QLatin1String("]]"); break;
-        case XmlComment: end = QLatin1String("-->"); break;
-        case NoBlock: break;
-        }
-        const int idx = t.indexOf(end);
-        if (idx < 0) {
-            add(0, n, kind);
-            return;
-        }
-        add(0, idx + end.size(), kind);
-        i = idx + end.size();
-        state = NoBlock;
-    }
-
-    int firstNonSpace = 0;
     while (firstNonSpace < n && t.at(firstNonSpace).isSpace())
         ++firstNonSpace;
 
-    if (s.markdown) {
-        if (firstNonSpace < n) {
-            const QChar c = t.at(firstNonSpace);
-            if (c == QLatin1Char('#')) {
-                add(firstNonSpace, n - firstNonSpace, TokenKind::Keyword);
-                return;
-            }
-            if (c == QLatin1Char('>')) {
-                add(firstNonSpace, n - firstNonSpace, TokenKind::Comment);
-                return;
-            }
-            if (matchAt(t, firstNonSpace, "```")) {
-                add(firstNonSpace, n - firstNonSpace, TokenKind::String);
-                return;
-            }
-        }
-        while (i < n) {
-            if (t.at(i) == QLatin1Char('`')) {
-                const int end = endOfQuoted(t, i, QLatin1Char('`'), false);
-                add(i, end - i, TokenKind::String);
-                i = end;
-                continue;
-            }
-            if (t.at(i) == QLatin1Char('[')) {
-                const int close = t.indexOf(QLatin1Char(']'), i);
-                if (close > i) {
-                    add(i, close - i + 1, TokenKind::Type);
-                    i = close + 1;
-                    continue;
-                }
-            }
-            ++i;
-        }
+    if (s.has(MarkdownText)) {
+        scanMarkdown(i);
         return;
     }
 
     while (i < n) {
-        const QChar c = t.at(i);
-        if (c.isSpace()) {
+        if (t.at(i).isSpace()) {
             ++i;
             continue;
         }
-
-        // ---- comments
-        if (s.luaLongComment && matchAt(t, i, "--[[")) {
-            const int close = t.indexOf(QLatin1String("]]"), i + 4);
-            if (close < 0) {
-                add(i, n - i, TokenKind::Comment);
-                state = LuaBlock;
-                return;
-            }
-            add(i, close + 2 - i, TokenKind::Comment);
-            i = close + 2;
-            continue;
-        }
-        if (s.lineComment && matchAt(t, i, s.lineComment)) {
-            add(i, n - i, TokenKind::Comment);
-            return;
-        }
-        if (s.cBlockComment && c == QLatin1Char('/') && i + 1 < n && t.at(i + 1) == QLatin1Char('*')) {
-            const int close = t.indexOf(QLatin1String("*/"), i + 2);
-            if (close < 0) {
-                add(i, n - i, TokenKind::Comment);
-                state = CBlock;
-                return;
-            }
-            add(i, close + 2 - i, TokenKind::Comment);
-            i = close + 2;
-            continue;
-        }
-        if (s.xmlComment && matchAt(t, i, "<!--")) {
-            const int close = t.indexOf(QLatin1String("-->"), i + 4);
-            if (close < 0) {
-                add(i, n - i, TokenKind::Comment);
-                state = XmlComment;
-                return;
-            }
-            add(i, close + 3 - i, TokenKind::Comment);
-            i = close + 3;
-            continue;
-        }
-        if (s.semicolonComment && c == QLatin1Char(';')) {
-            add(i, n - i, TokenKind::Comment);
-            return;
-        }
-
-        // ---- '#': comment, preprocessor, attribute or colour
-        if (c == QLatin1Char('#')) {
-            if (s.hashAttribute && i + 1 < n
-                && (t.at(i + 1) == QLatin1Char('[') || t.at(i + 1) == QLatin1Char('!'))) {
-                int j = i + 1, depth = 0;
-                while (j < n) {
-                    if (t.at(j) == QLatin1Char('['))
-                        ++depth;
-                    else if (t.at(j) == QLatin1Char(']') && --depth == 0)
-                        break;
-                    ++j;
-                }
-                const int end = j < n ? j + 1 : n;
-                add(i, end - i, TokenKind::Preprocessor);
-                i = end;
-                continue;
-            }
-            if (s.cPreproc && i == firstNonSpace) {
-                int j = i + 1;
-                while (j < n && t.at(j).isSpace())
-                    ++j;
-                const int nameStart = j;
-                while (j < n && t.at(j).isLetter())
-                    ++j;
-                add(i, j - i, TokenKind::Preprocessor);
-                const QString directive = t.mid(nameStart, j - nameStart);
-                i = j;
-                if (directive == QLatin1String("include") || directive == QLatin1String("import")) {
-                    while (i < n && t.at(i).isSpace())
-                        ++i;
-                    if (i < n && t.at(i) == QLatin1Char('<')) {
-                        const int close = t.indexOf(QLatin1Char('>'), i);
-                        const int end = close < 0 ? n : close + 1;
-                        add(i, end - i, TokenKind::String);
-                        i = end;
-                    }
-                }
-                continue;
-            }
-            if (s.hashColor && i + 1 < n && isIdent(t.at(i + 1))) {
-                int j = i + 1;
-                while (j < n && t.at(j).isLetterOrNumber())
-                    ++j;
-                add(i, j - i, TokenKind::Number);
-                i = j;
-                continue;
-            }
-            if (s.hashComment && (i == firstNonSpace || t.at(i - 1).isSpace())) {
-                add(i, n - i, TokenKind::Comment);
-                return;
-            }
-            ++i;
-            continue;
-        }
-
-        // ---- [section] headers
-        if (s.sectionHeader && c == QLatin1Char('[') && i == firstNonSpace) {
-            const int close = t.lastIndexOf(QLatin1Char(']'));
-            const int end = close < i ? n : close + 1;
-            add(i, end - i, TokenKind::Preprocessor);
-            i = end;
-            continue;
-        }
-
-        // ---- <tag …>
-        if (s.xmlTags && c == QLatin1Char('<')) {
-            int j = i + 1;
-            if (j < n && (t.at(j) == QLatin1Char('/') || t.at(j) == QLatin1Char('!') || t.at(j) == QLatin1Char('?')))
-                ++j;
-            const int nameStart = j;
-            while (j < n && (isIdent(t.at(j)) || t.at(j) == QLatin1Char('-') || t.at(j) == QLatin1Char(':')))
-                ++j;
-            if (j > nameStart) {
-                add(i, j - i, TokenKind::Keyword);
-                i = j;
-                continue;
-            }
-            ++i;
-            continue;
-        }
-
-        // ---- decorators / at-rules
-        if (s.atDecorator && c == QLatin1Char('@') && i + 1 < n && isIdentStart(t.at(i + 1))) {
-            int j = i + 1;
-            while (j < n && (isIdent(t.at(j)) || t.at(j) == QLatin1Char('.') || t.at(j) == QLatin1Char('-')))
-                ++j;
-            add(i, j - i, TokenKind::Preprocessor);
-            i = j;
-            continue;
-        }
-
-        // ---- $VAR, ${…}
-        if (s.dollarVar && c == QLatin1Char('$') && i + 1 < n) {
-            const QChar next = t.at(i + 1);
-            if (next == QLatin1Char('{')) {
-                const int close = t.indexOf(QLatin1Char('}'), i + 2);
-                const int end = close < 0 ? n : close + 1;
-                add(i, end - i, TokenKind::Type);
-                i = end;
-                continue;
-            }
-            if (isIdent(next)) {
-                int j = i + 1;
-                while (j < n && isIdent(t.at(j)))
-                    ++j;
-                add(i, j - i, TokenKind::Type);
-                i = j;
-                continue;
-            }
-            ++i;
-            continue;
-        }
-
-        // ---- strings
-        if (s.pyTriple && (matchAt(t, i, "\"\"\"") || matchAt(t, i, "'''"))) {
-            const bool dbl = t.at(i) == QLatin1Char('"');
-            const QLatin1String quote(dbl ? "\"\"\"" : "'''");
-            const int close = t.indexOf(quote, i + 3);
-            if (close < 0) {
-                add(i, n - i, TokenKind::String);
-                state = dbl ? PyDouble : PySingle;
-                return;
-            }
-            add(i, close + 3 - i, TokenKind::String);
-            i = close + 3;
-            continue;
-        }
-        if (s.doubleQuote && c == QLatin1Char('"')) {
-            const int end = endOfQuoted(t, i, QLatin1Char('"'), true);
-            add(i, end - i, TokenKind::String);
-            i = end;
-            continue;
-        }
-        if (s.singleQuoteString && c == QLatin1Char('\'')) {
-            const int end = endOfQuoted(t, i, QLatin1Char('\''), s.lineComment != nullptr || s.pyTriple);
-            add(i, end - i, TokenKind::String);
-            i = end;
-            continue;
-        }
-        if (s.backtick && c == QLatin1Char('`')) {
-            const int end = endOfQuoted(t, i, QLatin1Char('`'), true);
-            add(i, end - i, TokenKind::String);
-            i = end;
-            continue;
-        }
-        if (s.charLiteral && c == QLatin1Char('\'')) {
-            // 'a', '\n', '\x41' — but not a Rust lifetime ('a), and an
-            // unterminated quote must not swallow the rest of the line.
-            const int end = endOfQuoted(t, i, QLatin1Char('\''), true);
-            const bool closed = end - i >= 2 && end <= n && t.at(end - 1) == QLatin1Char('\'');
-            if (closed && end - i <= 12) {
-                add(i, end - i, TokenKind::String);
-                i = end;
-                continue;
-            }
-            ++i;
-            continue;
-        }
-
-        // ---- numbers
-        if (s.numbers && (c.isDigit() || (c == QLatin1Char('.') && i + 1 < n && t.at(i + 1).isDigit()))) {
-            // Not a number when it is the tail of an identifier (foo2).
-            if (i > 0 && isIdent(t.at(i - 1))) {
-                ++i;
-                continue;
-            }
-            const int end = endOfNumber(t, i);
-            add(i, end - i, TokenKind::Number);
-            i = end;
-            continue;
-        }
-
-        // ---- identifiers
-        if (isIdentStart(c)) {
-            int j = i;
-            while (j < n && isIdent(t.at(j)))
-                ++j;
-            const QString word = t.mid(i, j - i);
-
-            // Prefixed string literals: r"", f"", b'', u8"", R"(…)", r#"…"#
-            if (j < n && isStringPrefix(word)
-                && (t.at(j) == QLatin1Char('"')
-                    || ((s.singleQuoteString || s.charLiteral) && t.at(j) == QLatin1Char('\'')))) {
-                const int end = endOfQuoted(t, j, t.at(j), true);
-                add(i, end - i, TokenKind::String);
-                i = end;
-                continue;
-            }
-            if (s.rustRaw && word == QLatin1String("r") && j < n && t.at(j) == QLatin1Char('#')) {
-                int hashes = 0;
-                while (j + hashes < n && t.at(j + hashes) == QLatin1Char('#'))
-                    ++hashes;
-                if (j + hashes < n && t.at(j + hashes) == QLatin1Char('"')) {
-                    const QString terminator = QLatin1Char('"') + QString(hashes, QLatin1Char('#'));
-                    const int close = t.indexOf(terminator, j + hashes + 1);
-                    const int end = close < 0 ? n : close + terminator.size();
-                    add(i, end - i, TokenKind::String);
-                    i = end;
-                    continue;
-                }
-            }
-
-            const QString key = s.foldCase ? word.toLower() : word;
-            if (s.keywords && s.keywords->contains(key)) {
-                add(i, j - i, TokenKind::Keyword);
-            } else if (s.types && s.types->contains(key)) {
-                add(i, j - i, TokenKind::Type);
-            } else {
-                const QChar next = peekNonSpace(t, j);
-                if (s.keyBeforeColon && next == QLatin1Char(':'))
-                    add(i, j - i, s.colonKind);
-                else if (s.keyBeforeEquals && next == QLatin1Char('='))
-                    add(i, j - i, TokenKind::Type);
-                else if (s.functionCalls && next == QLatin1Char('('))
-                    add(i, j - i, TokenKind::Function);
-            }
-            i = j;
-            continue;
-        }
-
-        ++i;
+        int length = comment(i);
+        if (length == 0)
+            length = hash(i);
+        if (length == 0)
+            length = sectionHeader(i);
+        if (length == 0)
+            length = xmlTag(i);
+        if (length == 0)
+            length = decorator(i);
+        if (length == 0)
+            length = dollarVar(i);
+        if (length == 0)
+            length = quoted(i);
+        if (length == 0)
+            length = number(i);
+        if (length == 0)
+            length = identifier(i);
+        // Anything none of the steps recognises is one character of punctuation.
+        i += qMax(1, length);
     }
+}
+
+void scanLine(const QString &t, const LangSpec &s, Block &state, QVector<SyntaxSpan> &out)
+{
+    LineScanner scanner(t, s, state, out);
+    scanner.run();
 }
 
 } // namespace
@@ -987,84 +883,23 @@ void scanLine(const QString &t, const LangSpec &s, Block &state, QVector<SyntaxS
 
 Language SyntaxHighlighter::languageFor(const QString &path, const DiffDocument *docForShebang)
 {
-    static const QHash<QString, Language> byExtension = {
-        {QStringLiteral("c"), Language::Cpp},       {QStringLiteral("h"), Language::Cpp},
-        {QStringLiteral("cc"), Language::Cpp},      {QStringLiteral("cpp"), Language::Cpp},
-        {QStringLiteral("cxx"), Language::Cpp},     {QStringLiteral("c++"), Language::Cpp},
-        {QStringLiteral("hpp"), Language::Cpp},     {QStringLiteral("hh"), Language::Cpp},
-        {QStringLiteral("hxx"), Language::Cpp},     {QStringLiteral("inl"), Language::Cpp},
-        {QStringLiteral("ipp"), Language::Cpp},     {QStringLiteral("m"), Language::Cpp},
-        {QStringLiteral("mm"), Language::Cpp},
-        {QStringLiteral("py"), Language::Python},   {QStringLiteral("pyw"), Language::Python},
-        {QStringLiteral("pyi"), Language::Python},
-        {QStringLiteral("js"), Language::JavaScript}, {QStringLiteral("jsx"), Language::JavaScript},
-        {QStringLiteral("mjs"), Language::JavaScript}, {QStringLiteral("cjs"), Language::JavaScript},
-        {QStringLiteral("ts"), Language::TypeScript}, {QStringLiteral("tsx"), Language::TypeScript},
-        {QStringLiteral("mts"), Language::TypeScript}, {QStringLiteral("cts"), Language::TypeScript},
-        {QStringLiteral("rs"), Language::Rust},     {QStringLiteral("go"), Language::Go},
-        {QStringLiteral("sh"), Language::Shell},    {QStringLiteral("bash"), Language::Shell},
-        {QStringLiteral("zsh"), Language::Shell},   {QStringLiteral("ksh"), Language::Shell},
-        {QStringLiteral("json"), Language::Json},   {QStringLiteral("jsonc"), Language::Json},
-        {QStringLiteral("yml"), Language::Yaml},    {QStringLiteral("yaml"), Language::Yaml},
-        {QStringLiteral("toml"), Language::Toml},
-        {QStringLiteral("md"), Language::Markdown}, {QStringLiteral("markdown"), Language::Markdown},
-        {QStringLiteral("css"), Language::Css},     {QStringLiteral("scss"), Language::Css},
-        {QStringLiteral("sass"), Language::Css},    {QStringLiteral("less"), Language::Css},
-        {QStringLiteral("html"), Language::Html},   {QStringLiteral("htm"), Language::Html},
-        {QStringLiteral("xhtml"), Language::Html},  {QStringLiteral("xml"), Language::Html},
-        {QStringLiteral("svg"), Language::Html},    {QStringLiteral("qrc"), Language::Html},
-        {QStringLiteral("ui"), Language::Html},
-        {QStringLiteral("java"), Language::Java},   {QStringLiteral("kt"), Language::Kotlin},
-        {QStringLiteral("kts"), Language::Kotlin},  {QStringLiteral("cs"), Language::CSharp},
-        {QStringLiteral("dart"), Language::Dart},
-        {QStringLiteral("rb"), Language::Ruby},     {QStringLiteral("rake"), Language::Ruby},
-        {QStringLiteral("gemspec"), Language::Ruby},
-        {QStringLiteral("lua"), Language::Lua},
-        {QStringLiteral("pro"), Language::QMake},   {QStringLiteral("pri"), Language::QMake},
-        {QStringLiteral("prf"), Language::QMake},
-        {QStringLiteral("cmake"), Language::CMake},
-        {QStringLiteral("mk"), Language::Make},     {QStringLiteral("make"), Language::Make},
-        {QStringLiteral("ini"), Language::Ini},     {QStringLiteral("conf"), Language::Ini},
-        {QStringLiteral("cfg"), Language::Ini},     {QStringLiteral("desktop"), Language::Ini},
-        {QStringLiteral("service"), Language::Ini}, {QStringLiteral("properties"), Language::Ini},
-        {QStringLiteral("sql"), Language::Sql},
-    };
-    static const QHash<QString, Language> byName = {
-        {QStringLiteral("makefile"), Language::Make},
-        {QStringLiteral("gnumakefile"), Language::Make},
-        {QStringLiteral("cmakelists.txt"), Language::CMake},
-        {QStringLiteral("dockerfile"), Language::Dockerfile},
-        {QStringLiteral("containerfile"), Language::Dockerfile},
-        {QStringLiteral(".bashrc"), Language::Shell},
-        {QStringLiteral(".bash_profile"), Language::Shell},
-        {QStringLiteral(".bash_aliases"), Language::Shell},
-        {QStringLiteral(".bash_logout"), Language::Shell},
-        {QStringLiteral(".profile"), Language::Shell},
-        {QStringLiteral(".zshrc"), Language::Shell},
-        {QStringLiteral(".zshenv"), Language::Shell},
-        {QStringLiteral(".zprofile"), Language::Shell},
-        {QStringLiteral(".xinitrc"), Language::Shell},
-        {QStringLiteral(".gitconfig"), Language::Ini},
-        {QStringLiteral(".editorconfig"), Language::Ini},
-        {QStringLiteral("pkgbuild"), Language::Shell},
-    };
-
+    const LangTable &table = languageTable();
     const QFileInfo info(path);
     const QString name = info.fileName().toLower();
-    if (byName.contains(name))
-        return byName.value(name);
+    if (table.byName.contains(name))
+        return table.byName.value(name);
     if (name.startsWith(QLatin1String("dockerfile")))
         return Language::Dockerfile;
     if (name.startsWith(QLatin1String("makefile")))
         return Language::Make;
-    const Language byExt = byExtension.value(info.suffix().toLower(), Language::None);
+    const Language byExt = table.byExtension.value(info.suffix().toLower(), Language::None);
     if (byExt != Language::None)
         return byExt;
 
     // Nothing in the name: try the interpreter line of the first content line.
     if (docForShebang) {
         for (const DiffLine &l : docForShebang->lines) {
-            if (l.state == DiffLine::Header || l.state == DiffLine::Empty)
+            if (l.state == DiffLine::Header)
                 continue;
             const QString first = l.text.trimmed();
             if (!first.startsWith(QLatin1String("#!")))
@@ -1086,39 +921,6 @@ Language SyntaxHighlighter::languageFor(const QString &path, const DiffDocument 
     return Language::None;
 }
 
-QString SyntaxHighlighter::displayName(Language lang)
-{
-    switch (lang) {
-    case Language::None: return QStringLiteral("Plain text");
-    case Language::Cpp: return QStringLiteral("C/C++");
-    case Language::CSharp: return QStringLiteral("C#");
-    case Language::Java: return QStringLiteral("Java");
-    case Language::Kotlin: return QStringLiteral("Kotlin");
-    case Language::Dart: return QStringLiteral("Dart");
-    case Language::JavaScript: return QStringLiteral("JavaScript");
-    case Language::TypeScript: return QStringLiteral("TypeScript");
-    case Language::Python: return QStringLiteral("Python");
-    case Language::Rust: return QStringLiteral("Rust");
-    case Language::Go: return QStringLiteral("Go");
-    case Language::Ruby: return QStringLiteral("Ruby");
-    case Language::Lua: return QStringLiteral("Lua");
-    case Language::Shell: return QStringLiteral("Shell");
-    case Language::Sql: return QStringLiteral("SQL");
-    case Language::Json: return QStringLiteral("JSON");
-    case Language::Yaml: return QStringLiteral("YAML");
-    case Language::Toml: return QStringLiteral("TOML");
-    case Language::Ini: return QStringLiteral("INI");
-    case Language::Markdown: return QStringLiteral("Markdown");
-    case Language::Css: return QStringLiteral("CSS");
-    case Language::Html: return QStringLiteral("HTML/XML");
-    case Language::Make: return QStringLiteral("Makefile");
-    case Language::QMake: return QStringLiteral("qmake");
-    case Language::CMake: return QStringLiteral("CMake");
-    case Language::Dockerfile: return QStringLiteral("Dockerfile");
-    }
-    return QString();
-}
-
 void SyntaxHighlighter::clear(DiffDocument &doc)
 {
     for (DiffLine &l : doc.lines)
@@ -1131,7 +933,7 @@ void SyntaxHighlighter::highlight(DiffDocument &doc, Language lang)
         clear(doc);
         return;
     }
-    const LangSpec &spec = specFor(lang);
+    const LangSpec &spec = languageTable().specs[size_t(lang)];
 
     // The diff interleaves two files. `oldState` follows the base version
     // (context + removed lines), `newState` the working tree (context +
@@ -1143,7 +945,6 @@ void SyntaxHighlighter::highlight(DiffDocument &doc, Language lang)
     for (DiffLine &l : doc.lines) {
         switch (l.state) {
         case DiffLine::Header:
-        case DiffLine::Empty:
             l.syntax.clear();
             break;
         case DiffLine::Added:
@@ -1155,6 +956,8 @@ void SyntaxHighlighter::highlight(DiffDocument &doc, Language lang)
         case DiffLine::Normal:
             if (oldState == newState) {
                 scanLine(l.text, spec, newState, l.syntax);
+                // Not a no-op: the line may have opened or closed a block, and
+                // a context line does that for both versions of the file.
                 oldState = newState;
             } else {
                 // The two versions disagree here (a change edited a comment

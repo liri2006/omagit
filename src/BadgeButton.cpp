@@ -5,6 +5,17 @@
 #include <QTimerEvent>
 #include <QVariantAnimation>
 
+namespace {
+// How far the badge hangs over the top-right corner of the button's border.
+constexpr int kBadgeInset = 3;
+// The room sizeHint() keeps free beside the label. badgeSize() is wider than
+// this as soon as the badge carries a digit (15px at the default theme font,
+// 21 for two digits, 34 for "999+"), so a badge does cover the end of the
+// label; widening every Pull and Push button to fit would move the whole
+// toolbar, which is a call of its own.
+constexpr int kBadgeReserve = 14;
+} // namespace
+
 BadgeButton::BadgeButton(QWidget *parent)
     : QToolButton(parent)
 {
@@ -16,9 +27,28 @@ BadgeButton::BadgeButton(QWidget *parent)
     connect(m_pop, &QVariantAnimation::valueChanged, this, qOverload<>(&QWidget::update));
 }
 
+// The caption font, bold and a shade smaller: small enough for a corner,
+// still legible against the accent colour.
+QFont BadgeButton::badgeFont() const
+{
+    QFont f = OmarchyTheme::instance()->captionFont();
+    f.setBold(true);
+    f.setPixelSize(qMax(8, f.pixelSize() - 1));
+    return f;
+}
+
+// The box the badge fills for `text`, or the walking dots when it is empty.
+// A pill: never narrower than it is tall.
+QSize BadgeButton::badgeSize(const QString &text) const
+{
+    const QFontMetrics fm(badgeFont());
+    const int h = fm.height() + 2;
+    return QSize(text.isEmpty() ? h + 6 : qMax(h, fm.horizontalAdvance(text) + 8), h);
+}
+
 QSize BadgeButton::sizeHint() const
 {
-    return QToolButton::sizeHint() + QSize(14, 0);
+    return QToolButton::sizeHint() + QSize(kBadgeReserve, 0);
 }
 
 void BadgeButton::setCount(int count)
@@ -92,14 +122,9 @@ void BadgeButton::paintEvent(QPaintEvent *event)
         return;
 
     const OmarchyTheme *t = OmarchyTheme::instance();
-    QFont f = t->captionFont();
-    f.setBold(true);
-    f.setPixelSize(qMax(8, f.pixelSize() - 1));
-    const QFontMetrics fm(f);
-    const int h = fm.height() + 2;
-    const int w = m_busy ? h + 6 : qMax(h, fm.horizontalAdvance(text) + 8);
+    const QSize box = badgeSize(text);
     // Inside the button, overlapping the top-right corner of its border.
-    QRectF badge(width() - w - 3, 2, w, h);
+    QRectF badge(width() - box.width() - kBadgeInset, 2, box.width(), box.height());
 
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -115,10 +140,10 @@ void BadgeButton::paintEvent(QPaintEvent *event)
     QColor fill = m_busy ? t->fill(0.30) : (!m_mark.isEmpty() ? m_markColor : t->accent());
     p.setPen(Qt::NoPen);
     p.setBrush(fill);
-    p.drawRoundedRect(badge, h / 2.0, h / 2.0);
+    p.drawRoundedRect(badge, box.height() / 2.0, box.height() / 2.0);
     if (m_busy) {
         // Three dots, the active one in the accent colour, walking left to right.
-        const qreal r = qMax(1.5, h / 7.0);
+        const qreal r = qMax(1.5, box.height() / 7.0);
         const qreal step = badge.width() / 4.0;
         for (int i = 0; i < 3; ++i) {
             p.setBrush(i == m_busyPhase ? t->accent() : t->mutedText());
@@ -126,7 +151,7 @@ void BadgeButton::paintEvent(QPaintEvent *event)
         }
         return;
     }
-    p.setFont(f);
+    p.setFont(badgeFont());
     p.setPen(t->window());
     p.drawText(badge, Qt::AlignCenter, text);
 }

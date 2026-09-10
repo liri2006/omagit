@@ -1,65 +1,19 @@
 QT       += core gui gui-private widgets
-CONFIG   += c++17 release
+CONFIG   += c++17
+# An optimised build unless one is asked for on the command line:
+# `qmake6 CONFIG+=debug omagit.pro` gives -g without editing this file.
+!CONFIG(debug, debug|release): CONFIG += release
 TARGET    = omagit
 TEMPLATE  = app
 
 DEFINES += QT_DEPRECATED_WARNINGS OMAGIT_VERSION=\\\"0.2.0\\\"
 
-SOURCES += \
-    src/main.cpp \
-    src/OmarchyTheme.cpp \
-    src/GitRepo.cpp \
-    src/DiffModel.cpp \
-    src/DiffView.cpp \
-    src/SyntaxHighlighter.cpp \
-    src/ChangesModel.cpp \
-    src/HistoryModel.cpp \
-    src/HistoryView.cpp \
-    src/MiniRail.cpp \
-    src/RemoteSync.cpp \
-    src/BadgeButton.cpp \
-    src/Toolbar.cpp \
-    src/TickMenu.cpp \
-    src/BranchMenu.cpp \
-    src/MergeDialog.cpp \
-    src/CommitMessageAgent.cpp \
-    src/MessageEdit.cpp \
-    src/KeybindingsPanel.cpp \
-    src/UiHelpers.cpp \
-    src/DesktopExec.cpp \
-    src/DiffPane.cpp \
-    src/CommitPage.cpp \
-    src/Footer.cpp \
-    src/MainWindow.cpp
+include(omagit.pri)
 
-HEADERS += \
-    src/DesktopExec.h \
-    src/OmarchyTheme.h \
-    src/GitRepo.h \
-    src/DiffModel.h \
-    src/DiffView.h \
-    src/SyntaxHighlighter.h \
-    src/ChangesModel.h \
-    src/HistoryModel.h \
-    src/HistoryView.h \
-    src/MiniRail.h \
-    src/PaneLayout.h \
-    src/RemoteSync.h \
-    src/BadgeButton.h \
-    src/Toolbar.h \
-    src/TickMenu.h \
-    src/BranchMenu.h \
-    src/MergeDialog.h \
-    src/CommitMessageAgent.h \
-    src/MessageEdit.h \
-    src/KeybindingsPanel.h \
-    src/UiHelpers.h \
-    src/DiffPane.h \
-    src/CommitPage.h \
-    src/Footer.h \
-    src/MainWindow.h
+SOURCES += $$OMAGIT_CORE_SOURCES $$OMAGIT_WIDGET_SOURCES src/main.cpp
+HEADERS += $$OMAGIT_CORE_HEADERS $$OMAGIT_WIDGET_HEADERS
 
-RESOURCES += data/omagit.qrc
+RESOURCES += $$OMAGIT_RESOURCES
 
 OBJECTS_DIR = build/obj
 MOC_DIR     = build/moc

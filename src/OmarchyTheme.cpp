@@ -1,5 +1,6 @@
 #include "OmarchyTheme.h"
 #include "DiffModel.h" // TokenKind, forward-declared in the header
+#include "TickMenu.h"  // the tick it reserves room for is part of the menu metrics
 
 #include <QApplication>
 #include <QDir>
@@ -12,12 +13,16 @@
 #include <QPalette>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStandardPaths>
 #include <QStyleFactory>
 #include <QTextStream>
 #include <QTimer>
 
 static OmarchyTheme *s_instance = nullptr;
+
+// How long omarchy-font-current gets to answer, blocking or not.
+static constexpr int kFontQueryTimeout = 1500;
 
 static QString omarchyStateDir()
 {
@@ -70,8 +75,15 @@ OmarchyTheme::OmarchyTheme(QObject *parent)
     setupWatcher();
 }
 
+OmarchyTheme::~OmarchyTheme()
+{
+    if (s_instance == this)
+        s_instance = nullptr;
+}
+
 OmarchyTheme *OmarchyTheme::instance()
 {
+    Q_ASSERT(s_instance);
     return s_instance;
 }
 
@@ -157,25 +169,90 @@ void OmarchyTheme::load()
     }
 }
 
+// The desktop's terminal font, which the first paint already needs: worth the
+// blocking wait once at startup, but not on every theme change (see reload()).
 void OmarchyTheme::loadFont()
 {
     QString family;
-    const QString bin = QStandardPaths::findExecutable(QStringLiteral("omarchy-font-current"));
+    const QString bin = fontBinary();
     if (!bin.isEmpty()) {
         QProcess p;
         p.start(bin, QStringList());
-        if (p.waitForFinished(1500) && p.exitCode() == 0)
+        if (p.waitForFinished(kFontQueryTimeout) && p.exitCode() == 0)
             family = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
     }
-    if (family.isEmpty())
-        family = QStringLiteral("JetBrainsMono Nerd Font");
+    setFontFamily(family);
+}
 
+QString OmarchyTheme::fontBinary()
+{
+    return QStandardPaths::findExecutable(QStringLiteral("omarchy-font-current"));
+}
+
+// An empty family (no helper, a failed or slow run) falls back the way the
+// blocking query always has.
+void OmarchyTheme::setFontFamily(const QString &reported)
+{
+    const QString family = reported.isEmpty() ? QStringLiteral("JetBrainsMono Nerd Font") : reported;
     m_mono = QFont(family);
     if (!QFontDatabase::hasFamily(family))
         m_mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_mono.setStyleHint(QFont::Monospace);
     m_mono.setFixedPitch(true);
     m_mono.setPixelSize(m_fontBase);
+}
+
+// Same answer as loadFont(), same timeout, but off the event loop: a theme
+// directory that changes must never freeze the window for it. Only one query
+// is ever in flight; a newer reload replaces the pending one.
+void OmarchyTheme::loadFontLater()
+{
+    if (QProcess *const stale = m_fontQuery) {
+        m_fontQuery = nullptr; // its callbacks see the change and do nothing
+        stale->kill();
+        stale->deleteLater();
+    }
+    const QString bin = fontBinary();
+    if (bin.isEmpty()) {
+        fontQueryFinished(QString());
+        return;
+    }
+    QProcess *const p = new QProcess(this);
+    m_fontQuery = p;
+    auto answer = [this, p](const QString &family) {
+        if (m_fontQuery != p)
+            return; // already superseded
+        m_fontQuery = nullptr;
+        if (p->state() != QProcess::NotRunning)
+            p->kill(); // the timeout path: deleting a running process would wait for it
+        p->deleteLater();
+        fontQueryFinished(family);
+    };
+    connect(p, &QProcess::finished, this, [p, answer](int code, QProcess::ExitStatus status) {
+        answer(code == 0 && status == QProcess::NormalExit
+                   ? QString::fromUtf8(p->readAllStandardOutput()).trimmed()
+                   : QString());
+    });
+    connect(p, &QProcess::errorOccurred, this, [answer] { answer(QString()); });
+    QTimer::singleShot(kFontQueryTimeout, p, [answer] { answer(QString()); });
+    p->start(bin, QStringList());
+}
+
+// The rest of reload(), once the font is known: colours, shell.toml and the
+// font land together, so no paint in between sees half a theme.
+void OmarchyTheme::fontQueryFinished(const QString &family)
+{
+    load();
+    loadShellToml();
+    setFontFamily(family);
+    rearmWatcher();
+    const QString before = m_reloadSignature;
+    m_reloadSignature.clear();
+    if (signature() == before)
+        return;
+    if (m_app)
+        apply(*m_app);
+    emit changed();
 }
 
 // [font] base-size from the theme's shell.toml, overridden by the user's
@@ -299,16 +376,9 @@ QString OmarchyTheme::signature() const
 
 void OmarchyTheme::reload()
 {
-    const QString before = signature();
-    load();
-    loadShellToml();
-    loadFont();
-    rearmWatcher();
-    if (signature() == before)
-        return;
-    if (m_app)
-        apply(*m_app);
-    emit changed();
+    if (m_reloadSignature.isEmpty())
+        m_reloadSignature = signature(); // what the pending reload compares against
+    loadFontLater(); // reads everything and finishes in fontQueryFinished()
 }
 
 void OmarchyTheme::reapplyLater()
@@ -318,8 +388,20 @@ void OmarchyTheme::reapplyLater()
 
 QColor OmarchyTheme::color(const QString &key) const
 {
-    const QString v = m_colors.value(key, defaultColors().value(key, QStringLiteral("#ff00ff")));
-    return QColor(v);
+    const auto own = m_colors.constFind(key);
+    if (own != m_colors.cend())
+        return QColor(*own);
+    const auto fallback = defaultColors().constFind(key);
+    if (fallback != defaultColors().cend())
+        return QColor(*fallback);
+    // Neither the theme nor Tokyo Night names it: magenta is loud enough to
+    // spot, but only the first sighting is worth a line in the log.
+    static QSet<QString> warned;
+    if (!warned.contains(key)) {
+        warned.insert(key);
+        qWarning("OmarchyTheme: no colour named \"%s\"", qPrintable(key));
+    }
+    return QColor(QStringLiteral("#ff00ff"));
 }
 
 // Keeps a colour inside a lightness band so it stays readable on the diff tints.
@@ -437,28 +519,66 @@ void OmarchyTheme::apply(QApplication &app)
     app.setStyleSheet(buildStyleSheet());
 }
 
+// Fills every %name% of the sheet from `tokens` in one pass, so no token can
+// swallow the start of a longer one (%hair% inside %hair20%) and a name with
+// no value is reported instead of leaking into the sheet.
+static QString substitute(const QString &sheet, const QHash<QString, QString> &tokens)
+{
+    static const QRegularExpression tokenRe(QStringLiteral("%([A-Za-z0-9]+)%"));
+    QString out;
+    out.reserve(sheet.size());
+    qsizetype at = 0;
+    QRegularExpressionMatchIterator it = tokenRe.globalMatch(sheet);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        const auto value = tokens.constFind(m.captured(1));
+        if (value == tokens.cend()) {
+            qWarning("OmarchyTheme: stylesheet token %%%s%% has no value", qPrintable(m.captured(1)));
+            Q_ASSERT_X(false, "OmarchyTheme::buildStyleSheet", "unknown stylesheet token");
+            continue; // leave it in place; the sheet is broken either way
+        }
+        out += QStringView(sheet).sliced(at, m.capturedStart() - at);
+        out += *value;
+        at = m.capturedEnd();
+    }
+    out += QStringView(sheet).sliced(at);
+    return out;
+}
+
 // Mirrors the shell's control kit (Ui/Button.qml, TextField.qml, Menu.qml):
 // square corners, transparent-ish fills from foreground alpha, 1px borders,
 // accent text for the selected/current item, popups framed by the accent.
 QString OmarchyTheme::buildStyleSheet() const
 {
-    const QString bg = window().name(), fg = text().name(), acc = accent().name();
-    const QString dim = mutedText().name();
-    const QString fill4 = normalFill().name(), fill8 = hoverFill().name();
-    const QString fill18 = selectedFill().name(), fill22 = pressedFill().name();
-    const QString sel35 = selectionFill().name();
-    const QString bd40 = normalBorder().name(), bd25 = hoverBorder().name();
-    const QString hair = hairline().name(), hair20 = border().name();
-    const QString disabled = fill(0.45).name();
-    const int caption = captionFont().pixelSize();
-    // TickMenu paints its check mark at the right edge of the item, inside this padding.
-    const QString tick = glyph(0xF012C); // md-check
-    const int tickPad = 14 + (tick.isEmpty() ? 0 : QFontMetrics(uiFont()).horizontalAdvance(tick) + 10);
+    const QHash<QString, QString> tokens{
+        {QStringLiteral("bg"), window().name()},
+        {QStringLiteral("fg"), text().name()},
+        {QStringLiteral("acc"), accent().name()},
+        {QStringLiteral("dim"), mutedText().name()},
+        {QStringLiteral("fill4"), normalFill().name()},
+        {QStringLiteral("fill8"), hoverFill().name()},
+        {QStringLiteral("fill18"), selectedFill().name()},
+        {QStringLiteral("fill22"), pressedFill().name()},
+        {QStringLiteral("sel35"), selectionFill().name()},
+        {QStringLiteral("bd40"), normalBorder().name()},
+        {QStringLiteral("bd25"), hoverBorder().name()},
+        {QStringLiteral("hair"), hairline().name()},
+        {QStringLiteral("hair20"), border().name()},
+        {QStringLiteral("disabled"), fill(0.45).name()},
+        {QStringLiteral("caption"), QString::number(captionFont().pixelSize())},
+        // TickMenu paints its check mark at the right edge of the item, inside this padding.
+        {QStringLiteral("tickpad"), QString::number(14 + TickMenu::tickReserve())},
+        {QStringLiteral("family"), m_mono.family()},
+        {QStringLiteral("base"), QString::number(m_fontBase)},
+        {QStringLiteral("heading"), QString::number(headingFont().pixelSize())},
+        {QStringLiteral("big"), QString::number(qRound(m_fontBase * 1.5))},
+    };
 
-    return QStringLiteral(R"(
+    return substitute(QStringLiteral(R"(
 QMainWindow, QDialog, QMessageBox { background: %bg%; }
 QWidget { color: %fg%; font-family: "%family%"; font-size: %base%px; }
-QToolTip { background: %bg%; color: %fg%; border: 1px solid %fg%; padding: 4px 8px; }
+/* railTip is the Mini rail's own tooltip label, framed like a real one. */
+QToolTip, QLabel#railTip { background: %bg%; color: %fg%; border: 1px solid %fg%; padding: 4px 8px; }
 
 QPlainTextEdit, QTextEdit, QLineEdit {
     background: %fill4%; color: %fg%; border: 1px solid %bd40%; border-radius: 0;
@@ -561,26 +681,6 @@ QToolBar { background: %bg%; border: none; spacing: 8px; }
 DiffView { border: 1px solid %bd40%; background: %bg%; }
 QMessageBox QLabel { color: %fg%; }
 QAbstractScrollArea { background: %bg%; }
-)")
-        .replace(QLatin1String("%bg%"), bg)
-        .replace(QLatin1String("%fg%"), fg)
-        .replace(QLatin1String("%acc%"), acc)
-        .replace(QLatin1String("%dim%"), dim)
-        .replace(QLatin1String("%fill4%"), fill4)
-        .replace(QLatin1String("%fill8%"), fill8)
-        .replace(QLatin1String("%fill18%"), fill18)
-        .replace(QLatin1String("%fill22%"), fill22)
-        .replace(QLatin1String("%sel35%"), sel35)
-        .replace(QLatin1String("%bd40%"), bd40)
-        .replace(QLatin1String("%bd25%"), bd25)
-        .replace(QLatin1String("%hair20%"), hair20)
-        .replace(QLatin1String("%hair%"), hair)
-        .replace(QLatin1String("%disabled%"), disabled)
-        .replace(QLatin1String("%caption%"), QString::number(caption))
-        .replace(QLatin1String("%tickpad%"), QString::number(tickPad))
-        .replace(QLatin1String("%family%"), m_mono.family())
-        .replace(QLatin1String("%base%"), QString::number(m_fontBase))
-        .replace(QLatin1String("%title%"), QString::number(titleFont().pixelSize()))
-        .replace(QLatin1String("%heading%"), QString::number(headingFont().pixelSize()))
-        .replace(QLatin1String("%big%"), QString::number(qRound(m_fontBase * 1.5)));
+)"),
+                      tokens);
 }

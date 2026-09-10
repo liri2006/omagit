@@ -4,11 +4,14 @@
 #include <QStringList>
 #include <QToolButton>
 
+#include <functional>
+
 class QAction;
 class QDateTime;
 class QFont;
 class QLabel;
 class QMenu;
+class QTableView;
 class QWidget;
 
 // The small widget helpers the window's sections share: the Nerd Font glyphs
@@ -64,9 +67,24 @@ QToolButton *smallButton(uint glyph, const QString &fallback, const QString &tip
 // A borderless button that reads like a label and drops a menu down on click.
 QToolButton *dropdownButton(const QString &objectName);
 
-QWidget *hairline();
+// A 1 px separator line that follows the theme by itself, so the sections
+// that hold one do not each have to re-colour it. A vertical one keeps its
+// height free for whoever lays it out.
+QWidget *hairline(Qt::Orientation orientation = Qt::Horizontal);
 
 // A dim caption inside a menu, like the section labels of the dialog.
 QAction *addMenuHeader(QMenu *menu, const QString &text);
+
+// The shared geometry of the window's tables: one row of a file or commit
+// list, and the narrowest the column taking up the leftover width may get —
+// below that the table scrolls sideways instead of squeezing it further.
+int tableRowHeight();
+constexpr int kMinStretchColumn = 240;
+
+// Gives `column` whatever the other columns, `others` px wide together, leave.
+void fitStretchColumn(QTableView *table, int column, int others);
+
+// Runs `fit` on every resize of the table's horizontal header.
+void onHeaderResize(QTableView *table, std::function<void()> fit);
 
 } // namespace ui

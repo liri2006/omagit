@@ -1,7 +1,5 @@
 #include "HistoryModel.h"
 
-#include <QLocale>
-
 HistoryModel::HistoryModel(GitRepo *repo, QObject *parent)
     : QAbstractTableModel(parent), m_repo(repo)
 {

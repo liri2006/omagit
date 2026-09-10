@@ -23,8 +23,7 @@ Footer::Footer(QWidget *parent)
     auto *rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(8);
-    m_line = hairline();
-    rootLayout->addWidget(m_line);
+    rootLayout->addWidget(hairline());
     auto *footer = new QHBoxLayout;
     footer->setSpacing(8);
     footer->addWidget(m_layoutButton);
@@ -65,7 +64,4 @@ void Footer::applyTheme()
     const OmarchyTheme *theme = OmarchyTheme::instance();
     m_branchButton->setFont(theme->uiFont());
     m_repoButton->setFont(theme->uiFont());
-    QPalette pal = m_line->palette();
-    pal.setColor(QPalette::Window, theme->border());
-    m_line->setPalette(pal);
 }

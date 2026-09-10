@@ -8,6 +8,7 @@
 
 class QApplication;
 class QFileSystemWatcher;
+class QProcess;
 class QTimer;
 
 // What a syntax span means, as DiffModel.h defines it; only the name is
@@ -23,7 +24,9 @@ class OmarchyTheme : public QObject
     Q_OBJECT
 public:
     explicit OmarchyTheme(QObject *parent = nullptr);
+    ~OmarchyTheme() override;
 
+    // Never null while a theme exists; every widget in the app dereferences it.
     static OmarchyTheme *instance();
 
     void apply(QApplication &app);
@@ -89,7 +92,11 @@ signals:
 
 private:
     void load();
-    void loadFont();
+    void loadFont();      // blocking; only the constructor can afford it
+    void loadFontLater(); // and the reload path, which cannot
+    void fontQueryFinished(const QString &family);
+    static QString fontBinary();
+    void setFontFamily(const QString &reported);
     void loadShellToml();
     void setupWatcher();
     void rearmWatcher();
@@ -107,4 +114,6 @@ private:
     QApplication *m_app = nullptr;
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer *m_debounce = nullptr;
+    QProcess *m_fontQuery = nullptr; // the font query of a reload still running
+    QString m_reloadSignature;       // non-empty while that reload is pending
 };

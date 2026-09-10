@@ -7,6 +7,8 @@
 #include <QObject>
 #include <QSet>
 
+#include <functional>
+
 class QTableView;
 
 // The list of changes in the commit dialog. Also used, without
@@ -55,6 +57,10 @@ signals:
     void checkedChanged();
 
 private:
+    // What the three setters above share: pick the rows, then tell the views
+    // that the whole column of check marks may have moved.
+    void setChecked(const std::function<bool(const FileChange &)> &pick, bool checked);
+
     QList<FileChange> m_changes;
     QSet<QString> m_checked;
     bool m_checkable = true;
@@ -62,16 +68,13 @@ private:
 
 // Applies the shared look of a changes table (column widths, row height, no
 // grid) and keeps the Path column filling the leftover width, never narrower
-// than 240 px (then the view scrolls horizontally).
+// than ui::kMinStretchColumn (then the view scrolls horizontally).
 class ChangesTableSetup : public QObject
 {
     Q_OBJECT
 public:
     explicit ChangesTableSetup(QTableView *table);
     void applyTheme();
-
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void fitPathColumn();

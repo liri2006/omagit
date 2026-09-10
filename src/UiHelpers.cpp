@@ -5,12 +5,65 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QEvent>
 #include <QFontMetrics>
+#include <QHeaderView>
 #include <QLabel>
 #include <QMenu>
+#include <QPalette>
+#include <QTableView>
 #include <QWidgetAction>
 
 namespace ui {
+namespace {
+
+// A separator that re-colours itself on a theme change: every section of the
+// window holds one or more, and none of them wants its own applyTheme().
+class Hairline : public QWidget
+{
+public:
+    explicit Hairline(Qt::Orientation orientation)
+    {
+        setAutoFillBackground(true);
+        if (orientation == Qt::Horizontal)
+            setFixedHeight(1);
+        else
+            setFixedWidth(1);
+        recolor();
+        connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, [this] { recolor(); });
+    }
+
+private:
+    void recolor()
+    {
+        QPalette pal = palette();
+        pal.setColor(QPalette::Window, OmarchyTheme::instance()->border());
+        setPalette(pal);
+    }
+};
+
+// Calls back on every resize of the widget it watches.
+class ResizeWatcher : public QObject
+{
+public:
+    ResizeWatcher(QObject *parent, std::function<void()> run)
+        : QObject(parent), m_run(std::move(run))
+    {
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Resize)
+            m_run();
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void()> m_run;
+};
+
+} // namespace
 
 QString icon(uint cp, const QString &fallback)
 {
@@ -49,10 +102,10 @@ QString ago(const QDateTime &when)
 {
     const qint64 secs = when.secsTo(QDateTime::currentDateTime());
     if (secs < 60)
-        return QCoreApplication::translate("MainWindow", "just now");
+        return QCoreApplication::translate("ui", "just now");
     if (secs < 3600)
-        return QCoreApplication::translate("MainWindow", "%n minute(s) ago", nullptr, int(secs / 60));
-    return QCoreApplication::translate("MainWindow", "%n hour(s) ago", nullptr, int(secs / 3600));
+        return QCoreApplication::translate("ui", "%n minute(s) ago", nullptr, int(secs / 60));
+    return QCoreApplication::translate("ui", "%n hour(s) ago", nullptr, int(secs / 3600));
 }
 
 QLabel *sectionLabel(const QString &text)
@@ -86,12 +139,9 @@ QToolButton *dropdownButton(const QString &objectName)
     return b;
 }
 
-QWidget *hairline()
+QWidget *hairline(Qt::Orientation orientation)
 {
-    auto *w = new QWidget;
-    w->setFixedHeight(1);
-    w->setAutoFillBackground(true);
-    return w;
+    return new Hairline(orientation);
 }
 
 QAction *addMenuHeader(QMenu *menu, const QString &text)
@@ -102,6 +152,23 @@ QAction *addMenuHeader(QMenu *menu, const QString &text)
     action->setDefaultWidget(label);
     menu->addAction(action);
     return action;
+}
+
+// The shell's list row: 2.33 × the base font, so the rows grow with the text size.
+int tableRowHeight()
+{
+    return qRound(OmarchyTheme::instance()->fontBase() * 2.33);
+}
+
+void fitStretchColumn(QTableView *table, int column, int others)
+{
+    table->setColumnWidth(column, qMax(kMinStretchColumn, table->viewport()->width() - others));
+}
+
+void onHeaderResize(QTableView *table, std::function<void()> fit)
+{
+    QHeaderView *header = table->horizontalHeader();
+    header->installEventFilter(new ResizeWatcher(header, std::move(fit)));
 }
 
 } // namespace ui

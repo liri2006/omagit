@@ -27,6 +27,10 @@ public:
     enum Op { None, Fetch, Pull, Push };
     Q_ENUM(Op)
 
+    // Seconds between automatic fetches to begin with: often enough that the
+    // pull count is rarely stale, rare enough to go unnoticed.
+    static constexpr int kDefaultInterval = 180;
+
     explicit RemoteSync(GitRepo *repo, QObject *parent = nullptr);
     ~RemoteSync() override;
 
@@ -93,7 +97,7 @@ private:
     QDateTime m_lastFetch;
     bool m_lastFetchOk = true;
     QString m_lastFetchError;
-    int m_interval = 180;
+    int m_interval = kDefaultInterval;
     int m_failures = 0;
     bool m_active = false;
     QTimer m_autoTimer;

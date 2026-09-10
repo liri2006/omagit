@@ -2,18 +2,50 @@
 
 #include "GitRepo.h"
 
+#include <QCoreApplication>
 #include <QDialog>
-#include <QList>
 
 class BranchPicker;
+class VerdictCard;
 class QCheckBox;
-class QFrame;
+class QGridLayout;
+class QHBoxLayout;
 class QLabel;
-class QListWidget;
 class QPushButton;
-class QThread;
 class QTimer;
 class QToolButton;
+
+// What the merge view has to say about a merge: the wording of the verdict
+// card and what the Merge button makes of it. A plain value — worked out
+// from a preview by mergeVerdict() and then only shown — so the wording can
+// be read (and changed) in one place.
+struct MergeVerdict {
+    Q_DECLARE_TR_FUNCTIONS(MergeDialog)
+public:
+    enum Kind {
+        Checking, // the spinner: the answer is still being worked out
+        Info,     // nothing to merge, or nothing to merge into
+        Good,     // the merge would go through
+        Bad       // conflicts, a failure, or a merge already in progress
+    };
+
+    Kind kind = Info;
+    QString headline;
+    QStringList detail; // one line each
+    QStringList files;  // the paths listed under the detail
+    QString warning;    // beside the warning sign at the foot of the card
+    QString buttonTip;  // of the Merge button
+    bool canMerge = false;
+
+    // The spinner with a message, and a failure with git's own words.
+    static MergeVerdict checking(const QString &headline);
+    static MergeVerdict problem(const QString &headline, const QString &detail);
+};
+
+// The verdict for `preview`, with the "always create a merge commit" box in
+// mind. `currentBranch` is the checked-out one: another destination is
+// checked out first, which the detail says.
+MergeVerdict mergeVerdict(const MergePreview &preview, bool noFastForward, const QString &currentBranch);
 
 // The merge view: the branch to merge on the left, the branch it goes into
 // on the right (the current one to begin with), a swap button between
@@ -27,7 +59,6 @@ class MergeDialog : public QDialog
     Q_OBJECT
 public:
     explicit MergeDialog(GitRepo *repo, QWidget *parent = nullptr);
-    ~MergeDialog() override;
 
     QString source() const { return m_source; }
     QString destination() const { return m_destination; }
@@ -47,9 +78,10 @@ protected:
     void showEvent(QShowEvent *e) override;
 
 private:
-    enum Kind { Checking, Info, Good, Bad };
-
     void buildUi();
+    QGridLayout *buildBranchRow();
+    QCheckBox *buildNoFastForwardBox();
+    QHBoxLayout *buildButtonRow();
     void applyTheme();
     void updatePickers();
     void pickSource();
@@ -57,14 +89,16 @@ private:
     QString defaultSource(const QString &destination) const;
     void schedulePreview();
     void runPreview();
+    void applyPreview(const MergePreview &preview, int generation);
     void showPreview();
     void showMergeState();
-    void setVerdict(Kind kind, const QString &headline, const QString &detail, const QStringList &files = QStringList(),
-                    const QString &warning = QString());
+    void setVerdict(const MergeVerdict &verdict);
     void setBusy(bool busy);
-    int typicalVerdictHeight() const;
     void fitToContent();
+    bool checkoutDestination(const QString &destination);
     void startMerge();
+    void finishMerge(const QString &source, const QString &destination, bool fastForward,
+                     GitRepo::MergeResult result, const QString &error);
     void abortMerge();
 
     GitRepo *m_repo;
@@ -73,10 +107,7 @@ private:
     MergePreview m_preview;
     bool m_previewReady = false; // m_preview describes the branches on screen
     int m_generation = 0;        // preview runs still in flight are told apart by this
-    QList<QThread *> m_threads;
     QTimer *m_debounce;
-    QTimer *m_spinner;
-    int m_spinnerFrame = 0;
     MergeState m_state; // the merge already in progress when the view opened
     bool m_merging = false;
     int m_verdictHeight = 0; // of the card showing the last verdict, held while the next is checked
@@ -84,10 +115,7 @@ private:
     QLabel *m_sourceCaption, *m_destinationCaption;
     BranchPicker *m_sourcePicker, *m_destinationPicker;
     QToolButton *m_swapButton;
-    QFrame *m_verdict;
-    QLabel *m_verdictIcon, *m_headline, *m_detail, *m_warningIcon, *m_warning;
-    QWidget *m_warningRow;
-    QListWidget *m_files;
+    VerdictCard *m_card;
     QCheckBox *m_noFastForward;
     QPushButton *m_mergeButton, *m_cancelButton, *m_abortButton;
 };

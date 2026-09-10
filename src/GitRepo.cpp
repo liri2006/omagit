@@ -6,10 +6,18 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSet>
 #include <QStandardPaths>
 #include <QTimer>
 
 #include <algorithm>
+
+// The whole file as context, so the diff viewer can show it like
+// a classic one-pane diff view.
+static const QString kWholeFileContext = QStringLiteral("-U1000000");
+// How much of an untracked file is read to count its lines; beyond that the
+// count would cost more than it is worth.
+static constexpr qint64 kUntrackedProbeBytes = 8 * 1024 * 1024;
 
 QString FileChange::statusText() const
 {
@@ -38,6 +46,64 @@ static QString gitExecutable()
     return git.isEmpty() ? QStringLiteral("git") : git;
 }
 
+// `git diff --name-only -z a b`, both sides of a rename included.
+static QStringList nulSeparated(const QByteArray &out)
+{
+    QStringList list;
+    for (const QByteArray &entry : out.split('\0'))
+        if (!entry.isEmpty())
+            list << QString::fromUtf8(entry);
+    return list;
+}
+
+// One name per line, as `git remote` and `for-each-ref` print them.
+static QStringList trimmedLines(const QByteArray &out)
+{
+    QStringList list;
+    for (const QByteArray &line : out.split('\n')) {
+        const QString name = QString::fromUtf8(line).trimmed();
+        if (!name.isEmpty())
+            list << name;
+    }
+    return list;
+}
+
+namespace {
+struct NumstatEntry {
+    QString path;    // the new side
+    QString oldPath; // renames only
+    bool binary = false;
+    int added = 0, removed = 0;
+};
+} // namespace
+
+// Output of `git diff --numstat -z`: "add\tdel\tpath\0", or "add\tdel\t\0old\0new\0"
+// for renames. Binary files report "-" for both counts.
+static QList<NumstatEntry> parseNumstat(const QByteArray &numstat)
+{
+    QList<NumstatEntry> list;
+    const QList<QByteArray> np = numstat.split('\0');
+    for (int i = 0; i < np.size(); ++i) {
+        const QList<QByteArray> cols = np[i].split('\t');
+        if (cols.size() < 3)
+            continue;
+        NumstatEntry e;
+        e.path = QString::fromUtf8(cols[2]);
+        if (e.path.isEmpty() && i + 2 < np.size()) { // the rename form
+            e.oldPath = QString::fromUtf8(np[i + 1]);
+            e.path = QString::fromUtf8(np[i + 2]);
+            i += 2;
+        }
+        e.binary = cols[0] == "-";
+        if (!e.binary) {
+            e.added = cols[0].toInt();
+            e.removed = cols[1].toInt();
+        }
+        list.append(e);
+    }
+    return list;
+}
+
 GitRepo::GitRepo(const QString &root, QObject *parent)
     : QObject(parent), m_root(root)
 {
@@ -51,7 +117,7 @@ QString GitRepo::findRoot(const QString &path, QString *error)
     QProcess p;
     p.setWorkingDirectory(dir);
     p.start(gitExecutable(), {QStringLiteral("rev-parse"), QStringLiteral("--show-toplevel")});
-    if (!p.waitForFinished(5000) || p.exitCode() != 0) {
+    if (!p.waitForFinished(kProbeTimeoutMs) || p.exitCode() != 0) {
         if (error)
             *error = QString::fromUtf8(p.readAllStandardError()).trimmed();
         return QString();
@@ -71,12 +137,54 @@ void GitRepo::traceCommand(const QStringList &args)
     fflush(stderr);
 }
 
-QByteArray GitRepo::run(const QStringList &args, int *exitCode, QByteArray *err, int timeoutMs,
-                        const QStringList &env) const
+QString GitRepo::GitResult::stderrText() const
 {
-    QProcess p;
+    return QString::fromUtf8(err).trimmed();
+}
+
+QString GitRepo::GitResult::message() const
+{
+    // Some git commands (merge above all) explain a failure on stdout.
+    const QString text = stderrText();
+    return text.isEmpty() ? QString::fromUtf8(out).trimmed() : text;
+}
+
+bool GitRepo::report(const GitResult &r, QString *error, const QString &fallback)
+{
+    if (r.ok())
+        return true;
+    if (error) {
+        *error = r.stderrText();
+        if (error->isEmpty())
+            *error = fallback;
+    }
+    return false;
+}
+
+bool GitRepo::fail(QString *error, const QString &message, const QByteArray &detail)
+{
+    if (error) {
+        *error = message;
+        if (!detail.trimmed().isEmpty())
+            *error += QStringLiteral("\n") + QString::fromUtf8(detail).trimmed();
+    }
+    return false;
+}
+
+QStringList GitRepo::fullArgs(const QStringList &args)
+{
+    QStringList full{QStringLiteral("-c"), QStringLiteral("core.quotepath=off"),
+                     QStringLiteral("-c"), QStringLiteral("color.ui=never")};
+    full += args;
+    return full;
+}
+
+void GitRepo::prepare(QProcess &p, const QStringList &env, bool terminalPrompt) const
+{
     p.setWorkingDirectory(m_root);
     QProcessEnvironment pe = QProcessEnvironment::systemEnvironment();
+    if (!terminalPrompt)
+        pe.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
     // status and diff would otherwise take .git/index.lock to refresh the
     // index, and that alone wakes the .git watcher, which asks for another
     // status: an endless refresh loop.
@@ -86,48 +194,56 @@ QByteArray GitRepo::run(const QStringList &args, int *exitCode, QByteArray *err,
         pe.insert(kv.left(eq), kv.mid(eq + 1));
     }
     p.setProcessEnvironment(pe);
-    QStringList full{QStringLiteral("-c"), QStringLiteral("core.quotepath=off"),
-                     QStringLiteral("-c"), QStringLiteral("color.ui=never")};
-    full += args;
+}
+
+GitRepo::GitResult GitRepo::exec(const QStringList &args, int timeoutMs, const QStringList &env) const
+{
+    GitResult r;
+    QProcess p;
+    prepare(p, env, true);
     traceCommand(args);
-    p.start(gitExecutable(), full);
+    p.start(gitExecutable(), fullArgs(args));
     if (!p.waitForFinished(timeoutMs)) {
         p.kill();
-        if (exitCode)
-            *exitCode = -1;
-        if (err)
-            *err = "git timed out";
-        return QByteArray();
+        r.err = "git timed out";
+        return r; // code stays -1
     }
+    r.code = p.exitCode();
+    r.err = p.readAllStandardError();
+    r.out = p.readAllStandardOutput();
+    return r;
+}
+
+QByteArray GitRepo::run(const QStringList &args, int *exitCode, QByteArray *err, int timeoutMs,
+                        const QStringList &env) const
+{
+    const GitResult r = exec(args, timeoutMs, env);
     if (exitCode)
-        *exitCode = p.exitCode();
+        *exitCode = r.code;
     if (err)
-        *err = p.readAllStandardError();
-    return p.readAllStandardOutput();
+        *err = r.err;
+    return r.out;
 }
 
 QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs,
                             const QStringList &env)
 {
+    // Parented here, not to the context: a context that dies first (the merge
+    // view closed with Escape) must not take a running git down with it. The
+    // process cleans up after itself instead, whether or not anyone listens.
     auto *p = new QProcess(this);
-    p->setWorkingDirectory(m_root);
-    QProcessEnvironment pe = QProcessEnvironment::systemEnvironment();
-    pe.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
-    pe.insert(QStringLiteral("GIT_OPTIONAL_LOCKS"), QStringLiteral("0"));
-    for (const QString &kv : env) {
-        const int eq = kv.indexOf(QLatin1Char('='));
-        pe.insert(kv.left(eq), kv.mid(eq + 1));
-    }
-    p->setProcessEnvironment(pe);
-    QStringList full{QStringLiteral("-c"), QStringLiteral("core.quotepath=off"),
-                     QStringLiteral("-c"), QStringLiteral("color.ui=never")};
-    full += args;
+    prepare(*p, env, false);
     traceCommand(args);
 
     auto *timeout = new QTimer(p);
     timeout->setSingleShot(true);
     timeout->setInterval(timeoutMs);
     connect(timeout, &QTimer::timeout, p, &QProcess::kill);
+    connect(p, &QProcess::finished, p, &QObject::deleteLater);
+    connect(p, &QProcess::errorOccurred, p, [p](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            p->deleteLater();
+    });
     connect(p, &QProcess::finished, context, [p, done](int code, QProcess::ExitStatus status) {
         const QByteArray out = p->readAllStandardOutput();
         QByteArray err = p->readAllStandardError();
@@ -136,16 +252,14 @@ QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback 
             if (err.trimmed().isEmpty())
                 err = "git did not finish (killed after the timeout)";
         }
-        p->deleteLater();
         done(code, out, err);
     });
-    connect(p, &QProcess::errorOccurred, context, [p, done](QProcess::ProcessError error) {
+    connect(p, &QProcess::errorOccurred, context, [done](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return; // every other error is followed by finished()
-        p->deleteLater();
         done(-1, QByteArray(), "could not start git");
     });
-    p->start(gitExecutable(), full);
+    p->start(gitExecutable(), fullArgs(args));
     timeout->start();
     return p;
 }
@@ -160,16 +274,26 @@ void GitRepo::setRoot(const QString &root)
     emit rootChanged(root);
 }
 
+// The branch HEAD points at; empty (and `code` non-zero) when HEAD is detached
+// or unborn.
+QString GitRepo::symbolicHead(int *code) const
+{
+    const GitResult r = exec({QStringLiteral("symbolic-ref"), QStringLiteral("--short"), QStringLiteral("HEAD")});
+    if (code)
+        *code = r.code;
+    return QString::fromUtf8(r.out).trimmed();
+}
+
 QString GitRepo::branch() const
 {
     int code = 0;
-    QByteArray out = run({QStringLiteral("symbolic-ref"), QStringLiteral("--short"), QStringLiteral("HEAD")}, &code);
+    const QString head = symbolicHead(&code);
     if (code == 0)
-        return QString::fromUtf8(out).trimmed();
-    out = run({QStringLiteral("rev-parse"), QStringLiteral("--short"), QStringLiteral("HEAD")}, &code);
+        return head;
+    const QByteArray out = run({QStringLiteral("rev-parse"), QStringLiteral("--short"), QStringLiteral("HEAD")}, &code);
     if (code == 0)
-        return QStringLiteral("detached at ") + QString::fromUtf8(out).trimmed();
-    return QStringLiteral("(no commits yet)");
+        return tr("detached at %1").arg(QString::fromUtf8(out).trimmed());
+    return tr("(no commits yet)");
 }
 
 bool GitRepo::hasHead() const
@@ -197,17 +321,8 @@ QString GitRepo::gitDir() const
 
 QStringList GitRepo::remotes() const
 {
-    int code = 0;
-    const QByteArray out = run({QStringLiteral("remote")}, &code);
-    QStringList list;
-    if (code != 0)
-        return list;
-    for (const QByteArray &line : out.split('\n')) {
-        const QString name = QString::fromUtf8(line).trimmed();
-        if (!name.isEmpty())
-            list << name;
-    }
-    return list;
+    const GitResult r = exec({QStringLiteral("remote")});
+    return r.ok() ? trimmedLines(r.out) : QStringList();
 }
 
 UpstreamState GitRepo::upstreamState() const
@@ -215,12 +330,12 @@ UpstreamState GitRepo::upstreamState() const
     UpstreamState s;
     s.remotes = remotes();
     int code = 0;
-    const QByteArray head = run({QStringLiteral("symbolic-ref"), QStringLiteral("--short"), QStringLiteral("HEAD")}, &code);
+    const QString head = symbolicHead(&code);
     if (code != 0) {
         s.detached = hasHead();
         return s;
     }
-    s.branch = QString::fromUtf8(head).trimmed();
+    s.branch = head;
     const QByteArray track = run({QStringLiteral("for-each-ref"),
                                   QStringLiteral("--format=%(upstream:short)%00%(upstream:remotename)"),
                                   QStringLiteral("refs/heads/") + s.branch},
@@ -302,15 +417,7 @@ bool GitRepo::checkout(const QString &name, QString *error) const
         else
             args << QStringLiteral("--track") << name;
     }
-    int code = 0;
-    QByteArray err;
-    run(args, &code, &err, 60000);
-    if (code != 0 && error) {
-        *error = QString::fromUtf8(err).trimmed();
-        if (error->isEmpty())
-            *error = QStringLiteral("git %1 failed").arg(args.join(QLatin1Char(' ')));
-    }
-    return code == 0;
+    return report(exec(args, kWorkTimeoutMs), error, tr("git %1 failed").arg(args.join(QLatin1Char(' '))));
 }
 
 QString GitRepo::defaultBranch() const
@@ -343,19 +450,9 @@ QString GitRepo::defaultBranch() const
 
 QStringList GitRepo::branchesByActivity() const
 {
-    int code = 0;
-    const QByteArray out = run({QStringLiteral("for-each-ref"), QStringLiteral("--sort=-committerdate"),
-                                QStringLiteral("--format=%(refname:short)"), QStringLiteral("refs/heads")},
-                               &code);
-    QStringList list;
-    if (code != 0)
-        return list;
-    for (const QByteArray &line : out.split('\n')) {
-        const QString name = QString::fromUtf8(line).trimmed();
-        if (!name.isEmpty())
-            list << name;
-    }
-    return list;
+    const GitResult r = exec({QStringLiteral("for-each-ref"), QStringLiteral("--sort=-committerdate"),
+                              QStringLiteral("--format=%(refname:short)"), QStringLiteral("refs/heads")});
+    return r.ok() ? trimmedLines(r.out) : QStringList();
 }
 
 // ---------------------------------------------------------------------------
@@ -363,27 +460,107 @@ QStringList GitRepo::branchesByActivity() const
 
 QStringList GitRepo::changedPaths() const
 {
-    int code = 0;
-    const QByteArray out = run({QStringLiteral("status"), QStringLiteral("--porcelain=v1"), QStringLiteral("-z"),
-                                QStringLiteral("--untracked-files=all"), QStringLiteral("--no-renames")},
-                               &code);
     QStringList paths;
-    if (code != 0)
-        return paths;
-    for (const QByteArray &entry : out.split('\0'))
-        if (entry.size() >= 4)
-            paths << QString::fromUtf8(entry.mid(3));
+    for (const FileChange &c : porcelainStatus())
+        paths << c.path;
     return paths;
 }
 
-// `git diff --name-only -z a b`, both sides of a rename included.
-static QStringList nulSeparated(const QByteArray &out)
+// Every ref has to name a commit; the first one that does not gives the error.
+bool GitRepo::verifyCommits(const QStringList &refs, QString *error) const
 {
-    QStringList list;
-    for (const QByteArray &entry : out.split('\0'))
-        if (!entry.isEmpty())
-            list << QString::fromUtf8(entry);
-    return list;
+    for (const QString &ref : refs) {
+        if (exec({QStringLiteral("rev-parse"), QStringLiteral("--verify"), QStringLiteral("-q"),
+                  ref + QStringLiteral("^{commit}")})
+                .ok())
+            continue;
+        if (error)
+            *error = tr("%1 is not a branch or commit.").arg(ref);
+        return false;
+    }
+    return true;
+}
+
+// How far the two sides have walked apart, in commits.
+bool GitRepo::countMergeCommits(MergePreview &p) const
+{
+    const GitResult r = exec({QStringLiteral("rev-list"), QStringLiteral("--left-right"), QStringLiteral("--count"),
+                              p.destination + QStringLiteral("...") + p.source},
+                             kWorkTimeoutMs);
+    if (!r.ok()) {
+        p.error = r.stderrText();
+        return false;
+    }
+    const QList<QByteArray> cols = r.out.trimmed().split('\t');
+    if (cols.size() == 2) {
+        p.diverged = cols[0].toInt();
+        p.commits = cols[1].toInt();
+    }
+    return true;
+}
+
+// What the merge writes: the changes on source since the two parted. Fills in
+// the file and line counts and returns the paths it touches, renames included.
+QStringList GitRepo::collectMergeStats(MergePreview &p) const
+{
+    QStringList touched;
+    const GitResult r = exec({QStringLiteral("diff"), QStringLiteral("--numstat"), QStringLiteral("-z"),
+                              p.destination + QStringLiteral("...") + p.source},
+                             kWorkTimeoutMs);
+    if (!r.ok())
+        return touched;
+    for (const NumstatEntry &e : parseNumstat(r.out)) {
+        if (!e.oldPath.isEmpty())
+            touched << e.oldPath;
+        touched << e.path;
+        ++p.files;
+        if (!e.binary) {
+            p.added += e.added;
+            p.removed += e.removed;
+        }
+    }
+    return touched;
+}
+
+// git refuses to overwrite local changes: those in files the merge writes,
+// and — when destination has to be checked out first — those in files that
+// differ between HEAD and destination.
+void GitRepo::findBlockedPaths(QStringList touched, MergePreview &p) const
+{
+    const QStringList dirty = changedPaths();
+    if (dirty.isEmpty())
+        return;
+    if (branch() != p.destination) {
+        const GitResult r = exec({QStringLiteral("diff"), QStringLiteral("--name-only"), QStringLiteral("-z"),
+                                  QStringLiteral("HEAD"), p.destination},
+                                 kWorkTimeoutMs);
+        if (r.ok())
+            touched += nulSeparated(r.out);
+    }
+    for (const QString &path : dirty)
+        if (touched.contains(path) && !p.blocked.contains(path))
+            p.blocked << path;
+    p.blocked.sort();
+}
+
+// The verdict on the trees alone: "<tree>\0<conflicted path>\0...", exit 0
+// clean, 1 conflicts, else an error.
+void GitRepo::mergeTreeVerdict(MergePreview &p) const
+{
+    const GitResult r = exec({QStringLiteral("merge-tree"), QStringLiteral("--write-tree"), QStringLiteral("--name-only"),
+                              QStringLiteral("--no-messages"), QStringLiteral("-z"), p.destination, p.source},
+                             kHistoryTimeoutMs);
+    if (r.code == 0) {
+        p.outcome = MergePreview::Clean;
+    } else if (r.code == 1) {
+        p.outcome = MergePreview::Conflicts;
+        p.conflicts = nulSeparated(r.out).mid(1);
+        p.conflicts.sort();
+    } else {
+        p.error = r.stderrText();
+        if (p.error.contains(QLatin1String("--write-tree")))
+            p.error = tr("git 2.38 or newer is needed to check a merge ahead of time.");
+    }
 }
 
 MergePreview GitRepo::mergePreview(const QString &source, const QString &destination) const
@@ -392,101 +569,27 @@ MergePreview GitRepo::mergePreview(const QString &source, const QString &destina
     p.source = source;
     p.destination = destination;
     if (source.isEmpty() || destination.isEmpty()) {
-        p.error = QStringLiteral("Pick a branch on both sides.");
+        p.error = tr("Pick a branch on both sides.");
         return p;
     }
     if (source == destination) {
         p.outcome = MergePreview::Same;
         return p;
     }
-    int code = 0;
-    QByteArray err;
-    for (const QString &ref : {source, destination}) {
-        run({QStringLiteral("rev-parse"), QStringLiteral("--verify"), QStringLiteral("-q"), ref + QStringLiteral("^{commit}")},
-            &code, &err);
-        if (code != 0) {
-            p.error = QStringLiteral("%1 is not a branch or commit.").arg(ref);
-            return p;
-        }
-    }
-    const QByteArray counts = run({QStringLiteral("rev-list"), QStringLiteral("--left-right"), QStringLiteral("--count"),
-                                   destination + QStringLiteral("...") + source},
-                                  &code, &err, 60000);
-    if (code != 0) {
-        p.error = QString::fromUtf8(err).trimmed();
+    if (!verifyCommits({source, destination}, &p.error))
         return p;
-    }
-    const QList<QByteArray> cols = counts.trimmed().split('\t');
-    if (cols.size() == 2) {
-        p.diverged = cols[0].toInt();
-        p.commits = cols[1].toInt();
-    }
+    if (!countMergeCommits(p))
+        return p;
     if (p.commits == 0) {
         p.outcome = MergePreview::UpToDate;
         return p;
     }
-
-    // What the merge writes: the changes on source since the two parted.
-    QStringList touched;
-    const QByteArray numstat = run({QStringLiteral("diff"), QStringLiteral("--numstat"), QStringLiteral("-z"),
-                                    destination + QStringLiteral("...") + source},
-                                   &code, &err, 60000);
-    if (code == 0) {
-        const QList<QByteArray> np = numstat.split('\0');
-        for (int i = 0; i < np.size(); ++i) {
-            const QList<QByteArray> cols = np[i].split('\t');
-            if (cols.size() < 3)
-                continue;
-            QString path = QString::fromUtf8(cols[2]);
-            if (path.isEmpty() && i + 2 < np.size()) { // "add\tdel\t\0old\0new\0": a rename
-                touched << QString::fromUtf8(np[i + 1]);
-                path = QString::fromUtf8(np[i + 2]);
-                i += 2;
-            }
-            touched << path;
-            ++p.files;
-            if (cols[0] != "-") {
-                p.added += cols[0].toInt();
-                p.removed += cols[1].toInt();
-            }
-        }
-    }
-    // git refuses to overwrite local changes: those in files the merge
-    // writes, and — when destination has to be checked out first — those
-    // in files that differ between HEAD and destination.
-    const QStringList dirty = changedPaths();
-    if (!dirty.isEmpty()) {
-        if (branch() != destination) {
-            const QByteArray names = run({QStringLiteral("diff"), QStringLiteral("--name-only"), QStringLiteral("-z"),
-                                          QStringLiteral("HEAD"), destination},
-                                         &code, nullptr, 60000);
-            if (code == 0)
-                touched += nulSeparated(names);
-        }
-        for (const QString &path : dirty)
-            if (touched.contains(path) && !p.blocked.contains(path))
-                p.blocked << path;
-        p.blocked.sort();
-    }
+    findBlockedPaths(collectMergeStats(p), p);
     if (p.diverged == 0) {
         p.outcome = MergePreview::FastForward;
         return p;
     }
-    // "<tree>\0<conflicted path>\0...": exit 0 clean, 1 conflicts, else an error.
-    const QByteArray tree = run({QStringLiteral("merge-tree"), QStringLiteral("--write-tree"), QStringLiteral("--name-only"),
-                                 QStringLiteral("--no-messages"), QStringLiteral("-z"), destination, source},
-                                &code, &err, 120000);
-    if (code == 0) {
-        p.outcome = MergePreview::Clean;
-    } else if (code == 1) {
-        p.outcome = MergePreview::Conflicts;
-        p.conflicts = nulSeparated(tree).mid(1);
-        p.conflicts.sort();
-    } else {
-        p.error = QString::fromUtf8(err).trimmed();
-        if (p.error.contains(QLatin1String("--write-tree")))
-            p.error = QStringLiteral("git 2.38 or newer is needed to check a merge ahead of time.");
-    }
+    mergeTreeVerdict(p);
     return p;
 }
 
@@ -496,19 +599,36 @@ QStringList GitRepo::mergeArgs(const QString &source, bool noFastForward)
             noFastForward ? QStringLiteral("--no-ff") : QStringLiteral("--ff"), source};
 }
 
-GitRepo::MergeResult GitRepo::merge(const QString &source, bool noFastForward, QString *error) const
+// What `git merge` made of it. A non-zero exit with MERGE_HEAD still around is
+// a merge left to resolve, not a failure; git explains itself on stdout as
+// often as on stderr.
+GitRepo::MergeResult GitRepo::interpretMerge(int code, const QByteArray &out, const QByteArray &err,
+                                             QString *error) const
 {
-    int code = 0;
-    QByteArray err;
-    const QByteArray out = run(mergeArgs(source, noFastForward), &code, &err, 300000, {QStringLiteral("GIT_EDITOR=true")});
     if (code == 0)
         return Merged;
-    if (error) {
-        *error = QString::fromUtf8(err).trimmed();
-        if (error->isEmpty())
-            *error = QString::fromUtf8(out).trimmed();
-    }
+    if (error)
+        *error = GitResult{code, out, err}.message();
     return mergeInProgress() ? MergeConflicts : MergeFailed;
+}
+
+GitRepo::MergeResult GitRepo::merge(const QString &source, bool noFastForward, QString *error) const
+{
+    const GitResult r = exec(mergeArgs(source, noFastForward), kMergeTimeoutMs, {QStringLiteral("GIT_EDITOR=true")});
+    return interpretMerge(r.code, r.out, r.err, error);
+}
+
+void GitRepo::mergeAsync(const QString &source, bool noFastForward, QObject *context,
+                         std::function<void(MergeResult result, const QString &error)> done)
+{
+    runAsync(
+        mergeArgs(source, noFastForward), context,
+        [this, done](int code, const QByteArray &out, const QByteArray &err) {
+            QString error;
+            const MergeResult result = interpretMerge(code, out, err, &error);
+            done(result, error);
+        },
+        kMergeTimeoutMs, {QStringLiteral("GIT_EDITOR=true")});
 }
 
 bool GitRepo::mergeInProgress() const
@@ -550,12 +670,7 @@ MergeState GitRepo::mergeState() const
 
 bool GitRepo::abortMerge(QString *error) const
 {
-    int code = 0;
-    QByteArray err;
-    run({QStringLiteral("merge"), QStringLiteral("--abort")}, &code, &err, 60000);
-    if (code != 0 && error)
-        *error = QString::fromUtf8(err).trimmed();
-    return code == 0;
+    return report(exec({QStringLiteral("merge"), QStringLiteral("--abort")}, kWorkTimeoutMs), error);
 }
 
 QString GitRepo::baseRef() const
@@ -639,27 +754,20 @@ static QList<NameStatus> parseNameStatus(const QByteArray &out)
     return list;
 }
 
-// Output of `git diff --numstat -z`: "add\tdel\tpath\0", or "add\tdel\t\0old\0new\0"
-// for renames. Binary files report "-" for both counts.
+// Line counts onto the matching changes; paths the list does not know are skipped.
 void GitRepo::applyNumstat(const QByteArray &numstat, QList<FileChange> &changes) const
 {
-    const QList<QByteArray> np = numstat.split('\0');
-    for (int i = 0; i < np.size(); ++i) {
-        const QList<QByteArray> cols = np[i].split('\t');
-        if (cols.size() < 3)
+    QHash<QString, int> rowOf;
+    for (int i = 0; i < changes.size(); ++i)
+        rowOf.insert(changes[i].path, i);
+    for (const NumstatEntry &e : parseNumstat(numstat)) {
+        const auto it = rowOf.constFind(e.path);
+        if (it == rowOf.constEnd())
             continue;
-        QString path = QString::fromUtf8(cols[2]);
-        if (path.isEmpty() && i + 2 < np.size()) {
-            path = QString::fromUtf8(np[i + 2]);
-            i += 2;
-        }
-        for (FileChange &c : changes) {
-            if (c.path == path) {
-                c.binary = cols[0] == "-";
-                c.linesAdded = c.binary ? 0 : cols[0].toInt();
-                c.linesRemoved = c.binary ? 0 : cols[1].toInt();
-            }
-        }
+        FileChange &c = changes[it.value()];
+        c.binary = e.binary;
+        c.linesAdded = e.added;
+        c.linesRemoved = e.removed;
     }
 }
 
@@ -676,11 +784,10 @@ void GitRepo::applyTreeSizes(const QString &commit, QList<FileChange> &changes) 
     for (int start = 0; start < paths.size(); start += kChunk) {
         QStringList args{QStringLiteral("ls-tree"), QStringLiteral("-l"), QStringLiteral("-z"), commit, QStringLiteral("--")};
         args += paths.mid(start, kChunk);
-        int code = 0;
-        const QByteArray out = run(args, &code, nullptr, 60000);
-        if (code != 0)
+        const GitResult r = exec(args, kWorkTimeoutMs);
+        if (!r.ok())
             continue;
-        for (const QByteArray &entry : out.split('\0')) {
+        for (const QByteArray &entry : r.out.split('\0')) {
             const int tab = entry.indexOf('\t');
             if (tab < 0)
                 continue;
@@ -717,21 +824,18 @@ static void sortByPath(QList<FileChange> &changes)
 // ---------------------------------------------------------------------------
 // Working tree
 
-QList<FileChange> GitRepo::status() const
+// Renames are detected by the callers' own diff; --no-renames keeps the parse
+// simple and makes staged renames show up as delete+add unless git can pair them.
+QList<FileChange> GitRepo::porcelainStatus(bool *ok) const
 {
-    QList<FileChange> result;
-    int code = 0;
-    const QByteArray out = run({QStringLiteral("status"), QStringLiteral("--porcelain=v1"), QStringLiteral("-z"),
-                                QStringLiteral("--untracked-files=all"), QStringLiteral("--no-renames")},
-                               &code);
-    // Renames are detected separately below; --no-renames keeps the parse simple
-    // and makes staged renames show up as delete+add unless git can pair them.
-    if (code != 0)
-        return result;
-
-    QHash<QString, QPair<char, char>> stateOf; // path -> (index, worktree)
-    const QList<QByteArray> parts = out.split('\0');
-    for (const QByteArray &entry : parts) {
+    const GitResult r = exec({QStringLiteral("status"), QStringLiteral("--porcelain=v1"), QStringLiteral("-z"),
+                              QStringLiteral("--untracked-files=all"), QStringLiteral("--no-renames")});
+    if (ok)
+        *ok = r.ok();
+    QList<FileChange> entries;
+    if (!r.ok())
+        return entries;
+    for (const QByteArray &entry : r.out.split('\0')) {
         if (entry.size() < 4)
             continue;
         FileChange c;
@@ -739,24 +843,42 @@ QList<FileChange> GitRepo::status() const
         c.worktree = entry[1];
         c.path = QString::fromUtf8(entry.mid(3));
         c.kind = kindFor(c.index, c.worktree);
+        entries.append(c);
+    }
+    return entries;
+}
+
+QList<FileChange> GitRepo::status() const
+{
+    QList<FileChange> result;
+    bool ok = false;
+    const QList<FileChange> entries = porcelainStatus(&ok);
+    if (!ok)
+        return result;
+
+    QHash<QString, QPair<char, char>> stateOf; // path -> (index, worktree)
+    QHash<QString, int> rowOf;                 // path -> row in result
+    for (const FileChange &c : entries) {
         stateOf.insert(c.path, {c.index, c.worktree});
         // When amending, tracked changes are taken from the diff against the
         // parent commit below so the last commit's files are included.
         if (m_amend && c.kind != FileChange::Untracked && c.kind != FileChange::Unmerged)
             continue;
+        rowOf.insert(c.path, result.size());
         result.append(c);
     }
 
     const QString base = baseRef();
+    int code = 0;
     const QByteArray nameStatus = run({QStringLiteral("diff"), base, QStringLiteral("-M"),
                                        QStringLiteral("--name-status"), QStringLiteral("-z")},
                                       &code);
+    // The old sides of renames drop out of the list; taking them out right away
+    // would shift every row after them, so they are collected and cut at the end.
+    QSet<int> dropped;
     if (code == 0) {
         for (const NameStatus &e : parseNameStatus(nameStatus)) {
-            int idx = -1;
-            for (int k = 0; k < result.size() && idx < 0; ++k)
-                if (result[k].path == e.path)
-                    idx = k;
+            int idx = rowOf.value(e.path, -1);
             const bool rename = e.status == 'R' || e.status == 'C';
             if (idx < 0) {
                 if (!m_amend)
@@ -767,8 +889,9 @@ QList<FileChange> GitRepo::status() const
                 const auto it = stateOf.constFind(e.path);
                 c.index = it != stateOf.constEnd() ? it->first : e.status;
                 c.worktree = it != stateOf.constEnd() ? it->second : ' ';
+                idx = result.size();
+                rowOf.insert(c.path, idx);
                 result.append(c);
-                idx = result.size() - 1;
             } else if (!rename || result[idx].kind == FileChange::Unmerged) {
                 continue;
             }
@@ -776,15 +899,22 @@ QList<FileChange> GitRepo::status() const
                 result[idx].kind = e.status == 'R' ? FileChange::Renamed : FileChange::Copied;
                 result[idx].oldPath = e.oldPath;
                 if (e.status == 'R') {
-                    for (int k = 0; k < result.size(); ++k) {
-                        if (result[k].path == e.oldPath && result[k].kind == FileChange::Deleted) {
-                            result.removeAt(k);
-                            break;
-                        }
+                    const auto it = rowOf.constFind(e.oldPath);
+                    if (it != rowOf.constEnd() && result[it.value()].kind == FileChange::Deleted) {
+                        dropped.insert(it.value());
+                        rowOf.remove(e.oldPath);
                     }
                 }
             }
         }
+    }
+    if (!dropped.isEmpty()) {
+        QList<FileChange> kept;
+        kept.reserve(result.size() - dropped.size());
+        for (int i = 0; i < result.size(); ++i)
+            if (!dropped.contains(i))
+                kept.append(result[i]);
+        result = kept;
     }
 
     const QByteArray numstat = run({QStringLiteral("diff"), base, QStringLiteral("-M"),
@@ -798,7 +928,7 @@ QList<FileChange> GitRepo::status() const
         if (c.kind == FileChange::Untracked) {
             QFile f(QDir(m_root).filePath(c.path));
             if (f.open(QIODevice::ReadOnly)) {
-                const QByteArray data = f.read(8 * 1024 * 1024);
+                const QByteArray data = f.read(kUntrackedProbeBytes);
                 if (data.contains('\0')) {
                     c.binary = true;
                     c.linesAdded = c.linesRemoved = 0;
@@ -830,7 +960,7 @@ QString GitRepo::diff(const FileChange &change, bool *binary) const
         *binary = change.binary;
     int code = 0;
     QByteArray out;
-    const QString ctx = QStringLiteral("-U1000000");
+    const QString &ctx = kWholeFileContext;
     if (change.kind == FileChange::Untracked) {
         out = run({QStringLiteral("diff"), QStringLiteral("--no-index"), ctx, QStringLiteral("--"),
                    QStringLiteral("/dev/null"), change.path},
@@ -865,13 +995,64 @@ QStringList GitRepo::stageablePaths(const QStringList &paths, const QStringList 
             out << p;
             continue;
         }
-        int code = 0;
-        const QByteArray tracked = run({QStringLiteral("ls-files"), QStringLiteral("--"), p}, &code, nullptr, 15000, env);
-        if (code == 0 && !tracked.trimmed().isEmpty())
+        const GitResult r = exec({QStringLiteral("ls-files"), QStringLiteral("--"), p}, kQueryTimeoutMs, env);
+        if (r.ok() && !r.out.trimmed().isEmpty())
             out << p;
     }
     return out;
 }
+
+// Stages the working-tree state of `paths` (deletions included); paths git
+// would refuse are left out, and staging nothing counts as success.
+//
+// A file git ignores and the real index does not track (`git rm --cached` after
+// a new .gitignore rule) counts as absent even though it is still on disk: it
+// is dropped from `env`'s index, where `git add` would refuse it. Everything
+// else is added with -f, so a deliberately tracked ignored file still stages
+// into a scratch index that does not know it yet.
+GitRepo::GitResult GitRepo::stageAll(const QStringList &paths, const QStringList &env, int timeoutMs) const
+{
+    GitResult r;
+    r.code = 0;
+    const QStringList stageable = stageablePaths(paths, env);
+    if (stageable.isEmpty())
+        return r;
+
+    // No GIT_INDEX_FILE here: "untracked" means untracked in the real index.
+    r = exec(QStringList{QStringLiteral("ls-files"), QStringLiteral("-z"), QStringLiteral("--others"),
+                         QStringLiteral("--ignored"), QStringLiteral("--exclude-standard"), QStringLiteral("--")}
+                 + stageable,
+             kQueryTimeoutMs, {QStringLiteral("GIT_LITERAL_PATHSPECS=1")});
+    if (!r.ok())
+        return r;
+    const QStringList ignoredList = nulSeparated(r.out);
+    const QSet<QString> ignored(ignoredList.cbegin(), ignoredList.cend());
+
+    QStringList toRemove, toAdd;
+    for (const QString &p : stageable)
+        (ignored.contains(p) ? toRemove : toAdd) << p;
+    if (!toRemove.isEmpty()) {
+        r = exec(QStringList{QStringLiteral("update-index"), QStringLiteral("--force-remove"), QStringLiteral("--")}
+                     + toRemove,
+                 timeoutMs, env);
+        if (!r.ok())
+            return r;
+    }
+    if (!toAdd.isEmpty())
+        r = exec(QStringList{QStringLiteral("add"), QStringLiteral("-A"), QStringLiteral("-f"), QStringLiteral("--")} + toAdd,
+                 timeoutMs, env);
+    return r;
+}
+
+namespace {
+// A throw-away index file, gone again when this goes out of scope.
+struct ScratchIndex {
+    explicit ScratchIndex(const QString &path) : path(path) { QFile::remove(path); }
+    ~ScratchIndex() { QFile::remove(path); }
+    QStringList env() const { return {QStringLiteral("GIT_INDEX_FILE=") + path}; }
+    QString path;
+};
+} // namespace
 
 QString GitRepo::patch(const QList<FileChange> &changes, int maxBytes) const
 {
@@ -926,33 +1107,26 @@ bool GitRepo::discardChanges(const FileChange &change, QString *error) const
 {
     if (error)
         error->clear();
-    const auto fail = [error](const QString &message) {
-        if (error)
-            *error = message;
-        return false;
-    };
     QStringList paths{change.path};
     if (change.kind == FileChange::Renamed && !change.oldPath.isEmpty())
         paths << change.oldPath;
     for (const QString &path : paths) {
         if (path.isEmpty() || QDir::isAbsolutePath(path) || QDir::cleanPath(path) != path
             || path == QStringLiteral("..") || path.startsWith(QStringLiteral("../")))
-            return fail(QStringLiteral("Invalid repository file path."));
+            return fail(error, tr("Invalid repository file path."));
     }
 
-    int code = 0;
-    QByteArray err;
     const QStringList env{QStringLiteral("GIT_LITERAL_PATHSPECS=1")};
     if (change.isUntracked()) {
         // Recheck the index in case the file was staged while the menu was open.
-        const QByteArray tracked = run({QStringLiteral("ls-files"), QStringLiteral("-z"),
-                                       QStringLiteral("--"), change.path}, &code, &err, 15000, env);
-        if (code != 0)
-            return fail(QString::fromUtf8(err).trimmed());
-        if (tracked.isEmpty()) {
+        const GitResult r = exec({QStringLiteral("ls-files"), QStringLiteral("-z"), QStringLiteral("--"), change.path},
+                                 kQueryTimeoutMs, env);
+        if (!r.ok())
+            return fail(error, r.stderrText());
+        if (r.out.isEmpty()) {
             QFile file(QDir(m_root).filePath(change.path));
             if (!file.remove())
-                return fail(file.errorString());
+                return fail(error, file.errorString());
             return true;
         }
     }
@@ -961,94 +1135,77 @@ bool GitRepo::discardChanges(const FileChange &change, QString *error) const
                         + (hasHead() ? QStringLiteral("HEAD") : emptyTree()),
                      QStringLiteral("--staged"), QStringLiteral("--worktree"), QStringLiteral("--")};
     args += paths;
-    run(args, &code, &err, 15000, env);
-    return code == 0 || fail(QString::fromUtf8(err).trimmed());
+    return report(exec(args, kQueryTimeoutMs, env), error);
 }
 
 bool GitRepo::commit(const QString &message, const QStringList &paths, QString *error) const
 {
     if (paths.isEmpty()) {
         if (error)
-            *error = QStringLiteral("No files selected.");
+            *error = tr("No files selected.");
         return false;
     }
-    int code = 0;
-    QByteArray err;
-    const QStringList toAdd = stageablePaths(paths, {});
-    if (!toAdd.isEmpty()) {
-        QStringList add{QStringLiteral("add"), QStringLiteral("-A"), QStringLiteral("--")};
-        add += toAdd;
-        run(add, &code, &err);
-        if (code != 0) {
-            if (error)
-                *error = QString::fromUtf8(err).trimmed();
-            return false;
-        }
-    }
-    QStringList commit{QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), message};
+    const QStringList commit{QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), message};
     // A partial commit is impossible during a merge: what is staged — the
     // checked files just added plus git's own merge result — is committed.
-    if (!mergeInProgress()) {
-        commit << QStringLiteral("--");
-        commit += paths;
+    if (mergeInProgress()) {
+        if (!report(stageAll(paths, {}, kQueryTimeoutMs), error))
+            return false;
+        return report(exec(commit, kWorkTimeoutMs), error);
     }
-    run(commit, &code, &err, 60000);
-    if (code != 0) {
-        if (error)
-            *error = QString::fromUtf8(err).trimmed();
+
+    // What `git commit -- paths` does, with the staging done by stageAll():
+    // git's own version re-adds a file that is still on disk, so the removal
+    // of a newly ignored file would silently drop out of the commit.
+    ScratchIndex scratch(gitDir() + QStringLiteral("/omagit-commit-index"));
+    const QStringList env = scratch.env();
+    QStringList readTree{QStringLiteral("read-tree")};
+    readTree << (hasHead() ? QStringLiteral("HEAD") : QStringLiteral("--empty"));
+    GitResult r = exec(readTree, kWorkTimeoutMs, env);
+    if (!r.ok())
+        return fail(error, tr("Could not read the HEAD tree."), r.err);
+    r = stageAll(paths, env, kWorkTimeoutMs);
+    if (!r.ok())
+        return fail(error, tr("Could not stage the selected files."), r.err);
+    // Hooks run as usual, against the scratch index (as with `git commit -- paths`).
+    if (!report(exec(commit, kWorkTimeoutMs, env), error))
         return false;
-    }
+
+    // Stage the committed state in the real index so the paths no longer show
+    // up as pending changes.
+    stageAll(paths, {}, kWorkTimeoutMs);
     return true;
 }
 
 bool GitRepo::amendCommit(const QString &message, const QStringList &paths, QString *error) const
 {
-    auto fail = [error](const QString &msg, const QByteArray &detail = QByteArray()) {
-        if (error) {
-            *error = msg;
-            if (!detail.trimmed().isEmpty())
-                *error += QStringLiteral("\n") + QString::fromUtf8(detail).trimmed();
-        }
-        return false;
-    };
-
     const Commit head = headCommit();
     if (!head.isValid())
-        return fail(QStringLiteral("There is no commit to amend."));
+        return fail(error, tr("There is no commit to amend."));
     const QString base = head.parents.isEmpty() ? emptyTree() : head.parents.first();
 
     // Build the new tree in a scratch index: parent tree + working-tree state
     // of the chosen paths. The real index is untouched until the commit exists.
-    const QString tmpIndex = gitDir() + QStringLiteral("/omagit-amend-index");
-    QFile::remove(tmpIndex);
-    const QStringList env{QStringLiteral("GIT_INDEX_FILE=") + tmpIndex};
-    struct Cleanup {
-        QString path;
-        ~Cleanup() { QFile::remove(path); }
-    } cleanup{tmpIndex};
+    ScratchIndex scratch(gitDir() + QStringLiteral("/omagit-amend-index"));
+    const QStringList env = scratch.env();
 
-    int code = 0;
-    QByteArray err;
     QStringList readTree{QStringLiteral("read-tree")};
     if (head.parents.isEmpty())
         readTree << QStringLiteral("--empty");
     else
         readTree << base;
-    run(readTree, &code, &err, 60000, env);
-    if (code != 0)
-        return fail(QStringLiteral("Could not read the parent tree."), err);
+    GitResult r = exec(readTree, kWorkTimeoutMs, env);
+    if (!r.ok())
+        return fail(error, tr("Could not read the parent tree."), r.err);
 
-    const QStringList toAdd = stageablePaths(paths, env);
-    if (!toAdd.isEmpty()) {
-        QStringList add{QStringLiteral("add"), QStringLiteral("-A"), QStringLiteral("--")};
-        add += toAdd;
-        run(add, &code, &err, 60000, env);
-        if (code != 0)
-            return fail(QStringLiteral("Could not stage the selected files."), err);
-    }
-    const QString tree = QString::fromUtf8(run({QStringLiteral("write-tree")}, &code, &err, 60000, env)).trimmed();
-    if (code != 0 || tree.isEmpty())
-        return fail(QStringLiteral("Could not write the tree."), err);
+    r = stageAll(paths, env, kWorkTimeoutMs);
+    if (!r.ok())
+        return fail(error, tr("Could not stage the selected files."), r.err);
+
+    r = exec({QStringLiteral("write-tree")}, kWorkTimeoutMs, env);
+    const QString tree = QString::fromUtf8(r.out).trimmed();
+    if (!r.ok() || tree.isEmpty())
+        return fail(error, tr("Could not write the tree."), r.err);
 
     // Same parents and author as the old commit; the committer is you, now.
     QStringList commitTree{QStringLiteral("commit-tree")};
@@ -1058,25 +1215,21 @@ bool GitRepo::amendCommit(const QString &message, const QStringList &paths, QStr
     const QStringList authorEnv{QStringLiteral("GIT_AUTHOR_NAME=") + head.author,
                                 QStringLiteral("GIT_AUTHOR_EMAIL=") + head.email,
                                 QStringLiteral("GIT_AUTHOR_DATE=") + head.date.toString(Qt::ISODate)};
-    const QString newHash = QString::fromUtf8(run(commitTree, &code, &err, 60000, authorEnv)).trimmed();
-    if (code != 0 || newHash.isEmpty())
-        return fail(QStringLiteral("Could not create the commit."), err);
+    r = exec(commitTree, kWorkTimeoutMs, authorEnv);
+    const QString newHash = QString::fromUtf8(r.out).trimmed();
+    if (!r.ok() || newHash.isEmpty())
+        return fail(error, tr("Could not create the commit."), r.err);
 
     // Move HEAD only if it still is the commit we amended.
-    run({QStringLiteral("update-ref"), QStringLiteral("-m"), QStringLiteral("commit (amend): ") + message.section(QLatin1Char('\n'), 0, 0),
-         QStringLiteral("HEAD"), newHash, head.hash},
-        &code, &err);
-    if (code != 0)
-        return fail(QStringLiteral("Could not update HEAD."), err);
+    r = exec({QStringLiteral("update-ref"), QStringLiteral("-m"),
+              QStringLiteral("commit (amend): ") + message.section(QLatin1Char('\n'), 0, 0),
+              QStringLiteral("HEAD"), newHash, head.hash});
+    if (!r.ok())
+        return fail(error, tr("Could not update HEAD."), r.err);
 
     // Stage the committed state of the chosen paths in the real index so they
     // no longer show up as pending changes.
-    const QStringList realAdd = stageablePaths(paths, {});
-    if (!realAdd.isEmpty()) {
-        QStringList add{QStringLiteral("add"), QStringLiteral("-A"), QStringLiteral("--")};
-        add += realAdd;
-        run(add, &code, &err, 60000);
-    }
+    stageAll(paths, {}, kWorkTimeoutMs);
     return true;
 }
 
@@ -1110,18 +1263,12 @@ QStringList GitRepo::headPaths() const
 
 QStringList GitRepo::remoteBranchesContainingHead() const
 {
-    int code = 0;
-    const QByteArray out = run({QStringLiteral("branch"), QStringLiteral("-r"), QStringLiteral("--format=%(refname:short)"),
-                                QStringLiteral("--contains"), QStringLiteral("HEAD")},
-                               &code);
-    if (code != 0)
+    const GitResult r = exec({QStringLiteral("branch"), QStringLiteral("-r"), QStringLiteral("--format=%(refname:short)"),
+                              QStringLiteral("--contains"), QStringLiteral("HEAD")});
+    if (!r.ok())
         return {};
-    QStringList list;
-    for (const QByteArray &line : out.split('\n')) {
-        const QString name = QString::fromUtf8(line).trimmed();
-        if (!name.isEmpty() && !name.endsWith(QLatin1String("/HEAD")))
-            list << name;
-    }
+    QStringList list = trimmedLines(r.out);
+    list.removeIf([](const QString &name) { return name.endsWith(QLatin1String("/HEAD")); });
     return list;
 }
 
@@ -1135,14 +1282,13 @@ QList<Commit> GitRepo::log(int skip, int count, bool allRefs, bool *ok) const
                      QStringLiteral("--max-count=%1").arg(count), QStringLiteral("--skip=%1").arg(skip)};
     if (allRefs)
         args << QStringLiteral("--all");
-    int code = 0;
-    const QByteArray out = run(args, &code, nullptr, 120000);
+    const GitResult r = exec(args, kHistoryTimeoutMs);
     if (ok)
-        *ok = code == 0;
+        *ok = r.ok();
     QList<Commit> commits;
-    if (code != 0)
+    if (!r.ok())
         return commits;
-    for (const QByteArray &record : out.split('\0')) {
+    for (const QByteArray &record : r.out.split('\0')) {
         if (record.isEmpty())
             continue;
         const QList<QByteArray> f = record.split('\x1f');
@@ -1172,8 +1318,7 @@ QHash<QString, QList<RefLabel>> GitRepo::refs() const
                                &code);
     if (code != 0)
         return map;
-    const QString headBranch = QString::fromUtf8(
-        run({QStringLiteral("symbolic-ref"), QStringLiteral("--short"), QStringLiteral("HEAD")}, &code)).trimmed();
+    const QString headBranch = symbolicHead(&code);
     const bool detached = code != 0;
 
     for (const QByteArray &line : out.split('\n')) {
@@ -1237,7 +1382,7 @@ QList<FileChange> GitRepo::commitChanges(const Commit &commit) const
     int code = 0;
     const QByteArray nameStatus = run({QStringLiteral("diff"), QStringLiteral("-M"), QStringLiteral("--name-status"),
                                        QStringLiteral("-z"), base, commit.hash},
-                                      &code, nullptr, 60000);
+                                      &code, nullptr, kWorkTimeoutMs);
     if (code != 0)
         return result;
     for (const NameStatus &e : parseNameStatus(nameStatus)) {
@@ -1250,7 +1395,7 @@ QList<FileChange> GitRepo::commitChanges(const Commit &commit) const
     }
     const QByteArray numstat = run({QStringLiteral("diff"), QStringLiteral("-M"), QStringLiteral("--numstat"),
                                     QStringLiteral("-z"), base, commit.hash},
-                                   &code, nullptr, 60000);
+                                   &code, nullptr, kWorkTimeoutMs);
     if (code == 0)
         applyNumstat(numstat, result);
     applyTreeSizes(commit.hash, result);
@@ -1262,13 +1407,12 @@ QString GitRepo::commitDiff(const Commit &commit, const FileChange &change, bool
 {
     if (binary)
         *binary = change.binary;
-    QStringList args{QStringLiteral("diff"), QStringLiteral("-M"), QStringLiteral("-U1000000"), parentOf(commit),
+    QStringList args{QStringLiteral("diff"), QStringLiteral("-M"), kWholeFileContext, parentOf(commit),
                      commit.hash, QStringLiteral("--")};
     if (!change.oldPath.isEmpty())
         args << change.oldPath;
     args << change.path;
-    int code = 0;
-    const QByteArray out = run(args, &code, nullptr, 60000);
+    const QByteArray out = run(args, nullptr, nullptr, kWorkTimeoutMs);
     if (binary && out.contains("Binary files"))
         *binary = true;
     return QString::fromUtf8(out);

@@ -2,6 +2,7 @@
 #include "BadgeButton.h"
 #include "ChangesModel.h"
 #include "OmarchyTheme.h"
+#include "UiHelpers.h"
 
 #include <QButtonGroup>
 #include <QEvent>
@@ -16,15 +17,12 @@
 #include <QVBoxLayout>
 
 namespace {
-constexpr int kRowHeight = 46, kTile = 32;
-constexpr uint kCommitGlyph = 0xF0718, kHistoryGlyph = 0xF02DA, kRefreshGlyph = 0xF0450;
-constexpr uint kFetchGlyph = 0xF0162, kPullGlyph = 0xF0120, kPushGlyph = 0xF011D, kMergeGlyph = 0xF062D;
-
-QString glyphOr(uint cp, const QString &fallback)
-{
-    const QString g = OmarchyTheme::instance()->glyph(cp);
-    return g.isEmpty() ? fallback : g;
-}
+constexpr int kRowHeight = 46, kTile = 32, kTileRadius = 5;
+// The status badge and the row number sit on the tile's corners, each
+// overhanging it a little so the extension inside stays readable.
+constexpr int kBadgeSize = 13, kBadgeInsetX = 8, kBadgeRise = 5;
+constexpr int kNumberHeight = 12, kNumberPadding = 6, kNumberRadius = 3;
+constexpr int kNumberInsetX = 4, kNumberRise = 7;
 
 QChar kindLetter(int kind)
 {
@@ -99,7 +97,7 @@ public:
         edge.setAlphaF(0.6);
         p->setPen(QPen(edge, 1));
         p->setBrush(fill);
-        p->drawRoundedRect(QRectF(tile).adjusted(0.5, 0.5, -0.5, -0.5), 5, 5);
+        p->drawRoundedRect(QRectF(tile).adjusted(0.5, 0.5, -0.5, -0.5), kTileRadius, kTileRadius);
 
         QFont f = t->captionFont();
         f.setBold(true);
@@ -107,7 +105,7 @@ public:
         p->setPen(selected ? t->accent() : status);
         p->drawText(tile, Qt::AlignCenter, tileLabel(index));
 
-        const QRect badge(tile.right() - 8, tile.top() - 5, 13, 13);
+        const QRect badge(tile.right() - kBadgeInsetX, tile.top() - kBadgeRise, kBadgeSize, kBadgeSize);
         p->setPen(Qt::NoPen);
         p->setBrush(status);
         p->drawEllipse(badge);
@@ -119,13 +117,13 @@ public:
 
         // Row number, bottom-left, mirroring the status badge
         const QString number = QString::number(index.row() + 1);
-        const int w = QFontMetrics(bf).horizontalAdvance(number) + 6;
-        const QRect numberRect(tile.left() - 4, tile.bottom() - 7, w, 12);
+        const int w = QFontMetrics(bf).horizontalAdvance(number) + kNumberPadding;
+        const QRect numberRect(tile.left() - kNumberInsetX, tile.bottom() - kNumberRise, w, kNumberHeight);
         QColor numberEdge = t->text();
         numberEdge.setAlphaF(0.4);
         p->setPen(QPen(numberEdge, 1));
         p->setBrush(t->window());
-        p->drawRoundedRect(QRectF(numberRect).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+        p->drawRoundedRect(QRectF(numberRect).adjusted(0.5, 0.5, -0.5, -0.5), kNumberRadius, kNumberRadius);
         p->setPen(selected ? t->accent() : t->mutedText());
         p->drawText(numberRect, Qt::AlignCenter, number);
         p->restore();
@@ -135,26 +133,6 @@ private:
     QListView *m_view;
 };
 
-template <typename Button = QToolButton>
-Button *railButton(uint glyph, const QString &fallback, const QString &tip = QString())
-{
-    auto *b = new Button;
-    b->setText(glyphOr(glyph, fallback));
-    b->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    b->setToolTip(tip);
-    b->setCursor(Qt::PointingHandCursor);
-    b->setFocusPolicy(Qt::NoFocus);
-    b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    return b;
-}
-
-QWidget *hairline()
-{
-    auto *w = new QWidget;
-    w->setFixedHeight(1);
-    w->setAutoFillBackground(true);
-    return w;
-}
 } // namespace
 
 // ---------------------------------------------------------------- list
@@ -248,9 +226,8 @@ void MiniRailList::showTip(const QModelIndex &index)
         m_tip->setTextFormat(Qt::RichText);
         m_tip->setAttribute(Qt::WA_TransparentForMouseEvents);
     }
-    const OmarchyTheme *t = OmarchyTheme::instance();
-    m_tip->setStyleSheet(QStringLiteral("QLabel#railTip { background: %1; color: %2; border: 1px solid %2; padding: 4px 8px; }")
-                             .arg(t->window().name(), t->text().name()));
+    // The frame and padding come from the QLabel#railTip rule of the
+    // application stylesheet, which follows the theme on its own.
     m_tip->setText(tipText(index));
 
     const QRect rect = visualRect(index);
@@ -292,6 +269,16 @@ QString MiniRailList::tipText(const QModelIndex &index) const
 
 // ---------------------------------------------------------------- rail
 
+// Every rail button spans the rail and wears a glyph for its whole label.
+template <typename Button>
+Button *MiniRail::addButton(uint glyph, const QString &fallback, const QString &tip)
+{
+    auto *b = ui::toolButton<Button>(ui::icon(glyph, fallback).trimmed(), tip);
+    b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_glyphs.append({b, glyph, fallback});
+    return b;
+}
+
 MiniRail::MiniRail(QWidget *parent)
     : QWidget(parent)
 {
@@ -300,8 +287,8 @@ MiniRail::MiniRail(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
 
-    m_commitButton = railButton(kCommitGlyph, QStringLiteral("C"), tr("Commit — pending changes (Ctrl+1)"));
-    m_historyButton = railButton(kHistoryGlyph, QStringLiteral("H"), tr("History — commits of the repository (Ctrl+2)"));
+    m_commitButton = addButton(ui::kCommit, QStringLiteral("C"), tr("Commit — pending changes (Ctrl+1)"));
+    m_historyButton = addButton(ui::kHistory, QStringLiteral("H"), tr("History — commits of the repository (Ctrl+2)"));
     auto *modes = new QButtonGroup(this);
     modes->setExclusive(true);
     for (QToolButton *b : {m_commitButton, m_historyButton}) {
@@ -319,27 +306,24 @@ MiniRail::MiniRail(QWidget *parent)
     m_hashLabel->hide();
     layout->addWidget(m_hashLabel);
 
-    m_hairlines << hairline();
-    layout->addWidget(m_hairlines.last());
+    layout->addWidget(ui::hairline());
 
     m_list = new MiniRailList;
     connect(m_list, &QListView::doubleClicked, this, &MiniRail::activated);
     layout->addWidget(m_list, 1);
 
-    m_hairlines << hairline();
-    layout->addWidget(m_hairlines.last());
+    layout->addWidget(ui::hairline());
 
-    m_fetchButton = railButton<BadgeButton>(kFetchGlyph, QStringLiteral("F"));
-    m_pullButton = railButton<BadgeButton>(kPullGlyph, QStringLiteral("↓"));
-    m_pushButton = railButton<BadgeButton>(kPushGlyph, QStringLiteral("↑"));
-    m_mergeButton = railButton<BadgeButton>(kMergeGlyph, QStringLiteral("M"));
+    m_fetchButton = addButton<BadgeButton>(ui::kFetch, QStringLiteral("F"));
+    m_pullButton = addButton<BadgeButton>(ui::kPull, QStringLiteral("↓"));
+    m_pushButton = addButton<BadgeButton>(ui::kPush, QStringLiteral("↑"));
+    m_mergeButton = addButton<BadgeButton>(ui::kMerge, QStringLiteral("M"));
     for (BadgeButton *b : {m_pullButton, m_pushButton, m_fetchButton, m_mergeButton}) // same order as the toolbar
         layout->addWidget(b);
 
-    m_hairlines << hairline();
-    layout->addWidget(m_hairlines.last());
+    layout->addWidget(ui::hairline());
 
-    m_refreshButton = railButton(kRefreshGlyph, QStringLiteral("R"), tr("Re-read the repository (F5)"));
+    m_refreshButton = addButton(ui::kRefresh, QStringLiteral("R"), tr("Re-read the repository (F5)"));
     connect(m_refreshButton, &QToolButton::clicked, this, &MiniRail::refreshRequested);
     layout->addSpacing(4);
     layout->addWidget(m_refreshButton);
@@ -387,20 +371,9 @@ void MiniRail::updateHashLabel()
 
 void MiniRail::applyTheme()
 {
-    const OmarchyTheme *t = OmarchyTheme::instance();
-    m_hashLabel->setFont(t->captionFont());
+    m_hashLabel->setFont(OmarchyTheme::instance()->captionFont());
     updateHashLabel();
-    for (QWidget *w : std::as_const(m_hairlines)) {
-        QPalette pal = w->palette();
-        pal.setColor(QPalette::Window, t->border());
-        w->setPalette(pal);
-    }
-    m_commitButton->setText(glyphOr(kCommitGlyph, QStringLiteral("C")));
-    m_historyButton->setText(glyphOr(kHistoryGlyph, QStringLiteral("H")));
-    m_refreshButton->setText(glyphOr(kRefreshGlyph, QStringLiteral("R")));
-    m_fetchButton->setText(glyphOr(kFetchGlyph, QStringLiteral("F")));
-    m_pullButton->setText(glyphOr(kPullGlyph, QStringLiteral("↓")));
-    m_pushButton->setText(glyphOr(kPushGlyph, QStringLiteral("↑")));
-    m_mergeButton->setText(glyphOr(kMergeGlyph, QStringLiteral("M")));
+    for (const RailGlyph &g : std::as_const(m_glyphs))
+        g.button->setText(ui::icon(g.code, g.fallback).trimmed());
     m_list->viewport()->update();
 }

@@ -1,8 +1,10 @@
 #pragma once
 
 
+#include <QList>
 #include <QListView>
 #include <QPersistentModelIndex>
+#include <QString>
 #include <QWidget>
 
 class BadgeButton;
@@ -38,9 +40,9 @@ private:
     QLabel *m_tip = nullptr; // floating name/path popup, created on first use
 };
 
-// The narrow strip shown instead of the left section in the Mini layout:
-// mode buttons on top, the file miniatures in the middle, then Pull, Push
-// and Fetch (with their count badges), the way back to Docked, and Refresh.
+// The narrow strip shown instead of the left section in the Mini layout: the
+// Commit and History buttons on top, the file miniatures in the middle, then
+// Pull, Push, Fetch and Merge (with their count badges), and Refresh.
 class MiniRail : public QWidget
 {
     Q_OBJECT
@@ -70,6 +72,16 @@ signals:
     void activated(const QModelIndex &index);
 
 private:
+    // Every button with the glyph it wears, so a theme change re-fetches them
+    // from one table instead of restating each pair a second time.
+    struct RailGlyph {
+        QToolButton *button;
+        uint code;
+        QString fallback;
+    };
+    template <typename Button = QToolButton>
+    Button *addButton(uint glyph, const QString &fallback, const QString &tip = QString());
+
     QToolButton *m_commitButton;
     QToolButton *m_historyButton;
     QToolButton *m_refreshButton;
@@ -80,6 +92,6 @@ private:
     void updateHashLabel();
     QLabel *m_hashLabel;
     QString m_hash, m_hashTip;
-    QList<QWidget *> m_hairlines;
+    QList<RailGlyph> m_glyphs;
     MiniRailList *m_list;
 };

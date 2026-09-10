@@ -1,32 +1,14 @@
 #include "BranchMenu.h"
-#include "OmarchyTheme.h"
+#include "UiHelpers.h"
 
 #include <QAction>
 #include <QHBoxLayout>
 #include <QKeyEvent>
-#include <QLabel>
 #include <QLineEdit>
 #include <QTimer>
 #include <QWidgetAction>
 
 #include <algorithm>
-
-namespace {
-constexpr uint kMagnify = 0xF0349; // md-magnify
-
-// A dim caption inside the menu, like the section labels of the window.
-QAction *addHeader(QMenu *menu, const QString &text)
-{
-    auto *action = new QWidgetAction(menu);
-    auto *label = new QLabel(text.toUpper());
-    label->setObjectName(QStringLiteral("sectionLabel"));
-    label->setFont(OmarchyTheme::instance()->captionFont());
-    label->setContentsMargins(14, 6, 14, 3);
-    action->setDefaultWidget(label);
-    menu->addAction(action);
-    return action;
-}
-} // namespace
 
 // The entries plus the search field above them.
 class BranchMenu::Filter : public QObject
@@ -140,8 +122,7 @@ BranchMenu::BranchMenu(QWidget *parent)
 {
     setToolTipsVisible(true);
     m_search = new QLineEdit;
-    const QString glyph = OmarchyTheme::instance()->glyph(kMagnify);
-    m_search->setPlaceholderText((glyph.isEmpty() ? QString() : glyph + QStringLiteral("  ")) + tr("Search branches"));
+    m_search->setPlaceholderText(ui::icon(ui::kMagnify) + tr("Search branches"));
     m_search->setToolTip(tr("Type to narrow the list; Up/Down and Return pick a branch"));
     auto *box = new QWidget;
     auto *boxLayout = new QHBoxLayout(box);
@@ -156,6 +137,7 @@ BranchMenu::BranchMenu(QWidget *parent)
 void BranchMenu::setBranches(const BranchList &branches, const QString &checked, bool remote, const TipFunction &tip,
                              const QString &disabled)
 {
+    m_filter->clear(); // filling the menu again starts from an empty list
     // Every entry is checkable so the tick can mark the current branch.
     auto add = [this, &checked, &disabled, &tip](const QString &name, bool isRemote) {
         QAction *a = addAction(name);
@@ -168,14 +150,14 @@ void BranchMenu::setBranches(const BranchList &branches, const QString &checked,
         m_filter->addEntry(a, name);
         return a;
     };
-    m_filter->addHeader(addHeader(this, tr("Local")));
+    m_filter->addHeader(ui::addMenuHeader(this, tr("Local")));
     if (branches.local.isEmpty())
         addAction(tr("No branches yet"))->setEnabled(false);
     for (const QString &name : branches.local)
         add(name, false);
     if (remote && !branches.remote.isEmpty()) {
         addSeparator();
-        m_filter->addHeader(addHeader(this, tr("Remote")));
+        m_filter->addHeader(ui::addMenuHeader(this, tr("Remote")));
         for (const QString &name : branches.remote)
             add(name, true);
     }
@@ -188,7 +170,7 @@ void BranchMenu::setBranches(const BranchList &branches, const QString &checked,
 void BranchMenu::popupAt(QWidget *anchor, bool above)
 {
     // The field has the keyboard from the start, so typing filters right away.
-    m_search->setFocus();
+    // Only once the menu is up: QMenu takes the focus for itself when it opens.
     QTimer::singleShot(0, m_search, [this] { m_search->setFocus(); });
     // At least as wide as the button it hangs from, so the two line up.
     setMinimumWidth(qMax(minimumWidth(), anchor->width()));

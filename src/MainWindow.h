@@ -1,10 +1,15 @@
 #pragma once
 
+#include "DiffView.h"
 #include "GitRepo.h"
 #include "PaneLayout.h"
 #include "RemoteSync.h"
 
+#include <QKeySequence>
 #include <QMainWindow>
+#include <QPoint>
+
+#include <functional>
 
 class BadgeButton;
 class CommitPage;
@@ -55,7 +60,6 @@ private slots:
     void showKeybindings();
     void onCurrentRowChanged(const QModelIndex &current);
     void onAmendToggled(bool on);
-    void commit();
     void openInEditor();
     void applyTheme();
     void showHistoryDiff();
@@ -87,9 +91,69 @@ private:
     struct SyncButtons {
         BadgeButton *fetch, *pull, *push;
     };
+    // One keybinding, declared once: the row the panel lists and, when `keys`
+    // is not empty, the QShortcut(s) installShortcuts() makes for it.
+    struct Binding {
+        Binding(QList<QKeySequence> keys, QString display, QString action, QString context = {},
+                std::function<void()> run = {}, QList<QWidget *> hosts = {}, QObject *receiver = nullptr,
+                bool panelRuns = true)
+            : keys(std::move(keys)), display(std::move(display)), action(std::move(action)),
+              context(std::move(context)), run(std::move(run)), hosts(std::move(hosts)), receiver(receiver),
+              panelRuns(panelRuns)
+        {
+        }
+
+        QList<QKeySequence> keys;    // empty: a widget or a button already owns the keys
+        QString display;             // the panel's spelling, when the keys do not give it
+        QString action;
+        QString context;             // where the keys work, when that is not everywhere
+        std::function<void()> run;   // what the keys — and the panel row — do
+        QList<QWidget *> hosts;      // widgets the shortcut belongs to; the window when empty
+        QObject *receiver;           // context object of `run`; the window when null
+        bool panelRuns;              // false: the panel lists the row but does not run it
+    };
+    // Where the user was before a refresh: the scroll offsets of the two file
+    // lists and the place in the diff.
+    struct ViewState {
+        QPoint changes;  // x horizontal, y vertical
+        int rail = 0;
+        DiffView::ViewState diff;
+    };
+    // The sync buttons' tooltips and the branch button's upstream line.
+    struct SyncTips {
+        QString fetch, pull, push, upstream;
+    };
+    // What the fetch tooltip knows about fetching.
+    struct FetchHistory {
+        QDateTime last;
+        bool ok = true;
+        QString error;
+        int interval = 0; // seconds between automatic fetches, 0 when they are off
+    };
+    // The captions above the two sides of a diff and its "nothing to show" line.
+    struct DiffLabels {
+        QString left, right, empty;
+    };
+
     void buildUi();
+    QList<Binding> bindings();
+    void installShortcuts();
     void applyPanes();
+    // "full" (pre-0.4) and window/leftFull (pre-0.3) become Docked + hidden diff.
+    void migrateLayoutSettings();
+    static int autoFetchSecondsSetting();
+    // The steps of refresh(), in the order it runs them.
+    void updateHeader();
+    void reloadChanges();
+    ViewState viewState() const;
+    void restoreSelection(const QString &path, bool sameFile, const ViewState &state);
+    void reloadHistory(const ViewState &state);
+    void showCurrentDiff();
     void showDiffFor(const FileChange &change);
+    static DiffLabels diffLabels(const FileChange &change, const QString &base, const QString &baseLabel,
+                                 const QString &right, const QString &unchanged);
+    static SyncTips syncTips(const UpstreamState &s, RemoteSync::Op op, const FetchHistory &fetches,
+                             bool pushPublishes, const QStringList &pushArgs);
     void presentDiff(const QString &unified, const FileChange &change, bool binary, const QString &leftLabel,
                      const QString &rightLabel, const QString &emptyMessage);
     void discardChange(const FileChange &change); // asks first
@@ -97,7 +161,6 @@ private:
     void watchWorkingTree();
     void watchChangedFiles(); // the files in the changes list, for edits made in place
     void updateRepoLabels();
-    void updateCommitButton();
     void updateMergeButtons(const MergeState &merge);
     static void rememberRepository(const QString &root);
     // The footer's message; `ms` > 0 brings the repository path back after that long.
@@ -124,8 +187,6 @@ private:
     bool m_diffVisible = true;
     QList<SyncButtons> m_syncButtons; // the toolbar's and the Mini rail's
     QList<BadgeButton *> m_mergeButtons; // the toolbar's and the Mini rail's, marked while a merge waits
-    bool m_merging = false;   // a merge is in progress (MERGE_HEAD exists)
-    QString m_mergeMessage;   // git's proposed message, put in the box while it is empty
     QString m_initialSelection;
     QString m_shownDiffKey;    // what the diff pane shows, to skip re-setting an identical document
     bool m_refreshing = false; // the model reset momentarily leaves no row current

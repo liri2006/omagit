@@ -2,6 +2,7 @@
 #include "DesktopExec.h"
 #include "MessageEdit.h"
 #include "OmarchyTheme.h"
+#include "Settings.h"
 #include "TickMenu.h"
 #include "UiHelpers.h"
 
@@ -13,7 +14,9 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -48,6 +51,36 @@ protected:
 CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     : QWidget(parent), m_repo(repo)
 {
+    setupAgent();
+
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    layout->addLayout(buildMessageSection());
+
+    // The message box and the changes list share the height; where the user
+    // last put the handle between them is remembered.
+    auto *messageSplitter = new QSplitter(Qt::Vertical);
+    messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
+    messageSplitter->setHandleWidth(8);
+    messageSplitter->setChildrenCollapsible(false);
+    messageSplitter->addWidget(m_message);
+    QWidget *const changes = buildChangesSection();
+    messageSplitter->addWidget(changes);
+    messageSplitter->setStretchFactor(0, 0);
+    messageSplitter->setStretchFactor(1, 1); // the changes list takes window resizes
+    connect(messageSplitter, &QSplitter::splitterMoved, this, [messageSplitter] {
+        QSettings().setValue(settings::kWindowCommitMessageSplitter, messageSplitter->saveState());
+    });
+    layout->addWidget(messageSplitter, 1);
+    layout->addLayout(buildButtonRow());
+    messageSplitter->setSizes({theme->fontBase() * 7, changes->sizeHint().height()});
+    messageSplitter->restoreState(QSettings().value(settings::kWindowCommitMessageSplitter).toByteArray());
+}
+
+void CommitPage::setupAgent()
+{
     m_agent = new CommitMessageAgent(this);
     connect(m_agent, &CommitMessageAgent::partial, this, [this](const QString &text) {
         m_message->replaceText(text, m_streaming);
@@ -64,46 +97,38 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
         m_spinnerFrame = (m_spinnerFrame + 1) % frames.size();
         m_message->cornerButton()->setText(frames.at(m_spinnerFrame));
     });
+}
 
-    const OmarchyTheme *theme = OmarchyTheme::instance();
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
-
-    // MESSAGE, with the agent settings at the far right; the message box has
-    // the generate button in its top right corner.
+// MESSAGE, with the agent settings at the far right; the message box (which
+// the caller puts in the splitter) has the generate button in its top right
+// corner.
+QLayout *CommitPage::buildMessageSection()
+{
     auto *messageRow = new QHBoxLayout;
     messageRow->addWidget(sectionLabel(tr("Message")));
     messageRow->addStretch();
     m_agentButton = smallButton(kCog, tr("⚙"), tr("Which coding agent writes the commit message, with which model and reasoning level"));
     connect(m_agentButton, &QToolButton::clicked, this, &CommitPage::showAgentMenu);
     messageRow->addWidget(m_agentButton);
-    layout->addLayout(messageRow);
 
     m_message = new MessageEdit;
     m_message->setPlaceholderText(tr("Commit message"));
-    m_message->setMinimumHeight(theme->fontBase() * 3);
+    m_message->setMinimumHeight(OmarchyTheme::instance()->fontBase() * 3);
+    QToolButton *const generate = m_message->cornerButton();
+    generate->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
+    connect(generate, &QToolButton::clicked, this, &CommitPage::generateMessage);
+    setGenerating(false);
+    return messageRow;
+}
 
-    auto *messageSplitter = new QSplitter(Qt::Vertical);
-    messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
-    messageSplitter->setHandleWidth(8);
-    messageSplitter->setChildrenCollapsible(false);
-    messageSplitter->addWidget(m_message);
+// CHANGES, the "n / m selected" count and Refresh, then the options and the
+// file list itself.
+QWidget *CommitPage::buildChangesSection()
+{
     auto *changes = new QWidget;
     auto *changesLayout = new QVBoxLayout(changes);
     changesLayout->setContentsMargins(0, 0, 0, 0);
     changesLayout->setSpacing(8);
-    messageSplitter->addWidget(changes);
-    messageSplitter->setStretchFactor(0, 0);
-    messageSplitter->setStretchFactor(1, 1); // the changes list takes window resizes
-    connect(messageSplitter, &QSplitter::splitterMoved, this, [messageSplitter] {
-        QSettings().setValue(QStringLiteral("window/commitMessageSplitter"), messageSplitter->saveState());
-    });
-    layout->addWidget(messageSplitter, 1);
-    QToolButton *generate = m_message->cornerButton();
-    generate->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
-    connect(generate, &QToolButton::clicked, this, &CommitPage::generateMessage);
-    setGenerating(false);
 
     auto *changesRow = new QHBoxLayout;
     changesRow->addWidget(sectionLabel(tr("Changes")));
@@ -139,39 +164,25 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     connect(m_model, &ChangesModel::checkedChanged, this, &CommitPage::onCheckedChanged);
     // File actions apply to the clicked row, independent of checked files.
     m_table->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(m_table, &QTableView::customContextMenuRequested, this, [this](const QPoint &pos) {
-        const QModelIndex index = m_table->indexAt(pos);
-        if (!index.isValid())
-            return;
-        m_table->setCurrentIndex(index);
-        const FileChange &c = m_model->change(m_proxy->mapToSource(index).row());
-        const QString path = QDir(m_repo->root()).filePath(c.path);
-        const DefaultApp app = c.kind == FileChange::Deleted ? DefaultApp() : defaultAppFor(path);
-        QMenu menu(m_table);
-        QAction *open = menu.addAction(app.name.isEmpty() ? tr("Open") : tr("Open with %1").arg(app.name));
-        if (!app.icon.isEmpty())
-            open->setIcon(QIcon::fromTheme(app.icon));
-        open->setEnabled(c.kind != FileChange::Deleted);
-        open->setToolTip(c.kind == FileChange::Deleted ? tr("The file no longer exists") : path);
-        connect(open, &QAction::triggered, this, &CommitPage::openRequested);
-        menu.addSeparator();
-        QAction *discard = menu.addAction(tr("Discard changes"));
-        discard->setToolTip(c.isUntracked() ? tr("Delete this untracked file")
-                                          : tr("Restore this file to the latest commit, including staged changes"));
-        connect(discard, &QAction::triggered, this, [this, change = c] { emit discardRequested(change); });
-        menu.setToolTipsVisible(true);
-        menu.exec(m_table->viewport()->mapToGlobal(pos));
-    });
+    connect(m_table, &QTableView::customContextMenuRequested, this, &CommitPage::showFileMenu);
 
-    // Options above the list (above keeps them
-    // next to the "n / m selected" count they act on).
+    changesLayout->addLayout(buildOptionsRow());
+    changesLayout->addWidget(m_table, 1);
+    return changes;
+}
+
+// Options above the list (above keeps them
+// next to the "n / m selected" count they act on).
+QLayout *CommitPage::buildOptionsRow()
+{
     auto *optionsRow = new QHBoxLayout;
     optionsRow->setSpacing(16);
     m_showUnversioned = new QCheckBox(tr("Show unversioned files"));
     m_showUnversioned->setChecked(true);
-    connect(m_showUnversioned, &QCheckBox::toggled, this, [this, proxy](bool on) {
-        proxy->showUnversioned = on;
-        proxy->invalidate();
+    connect(m_showUnversioned, &QCheckBox::toggled, this, [this](bool on) {
+        auto *filter = static_cast<UnversionedFilter *>(m_proxy);
+        filter->showUnversioned = on;
+        filter->invalidate();
         onCheckedChanged();
     });
     m_selectAll = new QCheckBox(tr("Select all"));
@@ -186,9 +197,11 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     optionsRow->addWidget(m_showUnversioned);
     optionsRow->addWidget(m_amend);
     optionsRow->addStretch();
-    changesLayout->addLayout(optionsRow);
-    changesLayout->addWidget(m_table, 1);
+    return optionsRow;
+}
 
+QLayout *CommitPage::buildButtonRow()
+{
     auto *buttonRow = new QHBoxLayout;
     buttonRow->setSpacing(10);
     buttonRow->addStretch();
@@ -197,11 +210,34 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     m_commitButton->setCursor(Qt::PointingHandCursor);
     m_commitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
     m_commitButton->setToolTip(tr("Commit the checked files (Ctrl+Enter)"));
-    connect(m_commitButton, &QPushButton::clicked, this, &CommitPage::commitRequested);
+    connect(m_commitButton, &QPushButton::clicked, this, &CommitPage::commit);
     buttonRow->addWidget(m_commitButton);
-    layout->addLayout(buttonRow);
-    messageSplitter->setSizes({theme->fontBase() * 7, changes->sizeHint().height()});
-    messageSplitter->restoreState(QSettings().value(QStringLiteral("window/commitMessageSplitter")).toByteArray());
+    return buttonRow;
+}
+
+void CommitPage::showFileMenu(const QPoint &pos)
+{
+    const QModelIndex index = m_table->indexAt(pos);
+    if (!index.isValid())
+        return;
+    m_table->setCurrentIndex(index);
+    const FileChange &c = m_model->change(m_proxy->mapToSource(index).row());
+    const QString path = QDir(m_repo->root()).filePath(c.path);
+    const DefaultApp app = c.kind == FileChange::Deleted ? DefaultApp() : defaultAppFor(path);
+    QMenu menu(m_table);
+    QAction *open = menu.addAction(app.name.isEmpty() ? tr("Open") : tr("Open with %1").arg(app.name));
+    if (!app.icon.isEmpty())
+        open->setIcon(QIcon::fromTheme(app.icon));
+    open->setEnabled(c.kind != FileChange::Deleted);
+    open->setToolTip(c.kind == FileChange::Deleted ? tr("The file no longer exists") : path);
+    connect(open, &QAction::triggered, this, &CommitPage::openRequested);
+    menu.addSeparator();
+    QAction *discard = menu.addAction(tr("Discard changes"));
+    discard->setToolTip(c.isUntracked() ? tr("Delete this untracked file")
+                                      : tr("Restore this file to the latest commit, including staged changes"));
+    connect(discard, &QAction::triggered, this, [this, change = c] { emit discardRequested(change); });
+    menu.setToolTipsVisible(true);
+    menu.exec(m_table->viewport()->mapToGlobal(pos));
 }
 
 void CommitPage::applyTheme()
@@ -224,6 +260,62 @@ FileChange CommitPage::currentChange(bool *ok) const
     return m_model->change(m_proxy->mapToSource(idx).row());
 }
 
+void CommitPage::reload()
+{
+    m_model->setChanges(m_repo->status());
+}
+
+QStringList CommitPage::paths() const
+{
+    QStringList paths;
+    paths.reserve(m_model->count());
+    for (int i = 0; i < m_model->count(); ++i)
+        paths << m_model->change(i).path;
+    return paths;
+}
+
+bool CommitPage::selectPath(const QString &path)
+{
+    for (int r = 0; r < m_proxy->rowCount(); ++r) {
+        const int src = m_proxy->mapToSource(m_proxy->index(r, 0)).row();
+        if (m_model->change(src).path != path)
+            continue;
+        if (m_table->currentIndex().row() != r) // unchanged rows keep their current cell
+            m_table->selectRow(r);
+        return true;
+    }
+    return false;
+}
+
+bool CommitPage::selectFirstRow()
+{
+    if (m_proxy->rowCount() == 0)
+        return false;
+    m_table->selectRow(0);
+    return true;
+}
+
+void CommitPage::selectFirstConflict()
+{
+    for (int r = 0; r < m_proxy->rowCount(); ++r) {
+        if (m_model->change(m_proxy->mapToSource(m_proxy->index(r, 0)).row()).kind == FileChange::Unmerged) {
+            m_table->selectRow(r);
+            break;
+        }
+    }
+}
+
+QPoint CommitPage::scrollOffset() const
+{
+    return QPoint(m_table->horizontalScrollBar()->value(), m_table->verticalScrollBar()->value());
+}
+
+void CommitPage::setScrollOffset(const QPoint &offset)
+{
+    m_table->verticalScrollBar()->setValue(offset.y());
+    m_table->horizontalScrollBar()->setValue(offset.x());
+}
+
 void CommitPage::toggleAllChecked()
 {
     const bool on = m_selectAll->checkState() != Qt::Checked;
@@ -237,9 +329,65 @@ void CommitPage::toggleAmend()
         m_amend->click();
 }
 
+void CommitPage::setAmendChecked(bool on)
+{
+    if (m_amend->isEnabled())
+        m_amend->setChecked(on);
+}
+
+void CommitPage::resetAmend()
+{
+    {
+        // onAmendToggled(false) below also drops its message from the box and
+        // makes the window refresh, so the box itself changes quietly.
+        QSignalBlocker blocker(m_amend);
+        m_amend->setChecked(false);
+    }
+    onAmendToggled(false);
+}
+
 void CommitPage::checkHeadPaths()
 {
     m_model->setPathsChecked(m_repo->headPaths(), true);
+}
+
+void CommitPage::clickCommit()
+{
+    m_commitButton->click();
+}
+
+// A merge in progress rules out amending, renames the Commit button, and
+// offers git's own message for the merge commit.
+void CommitPage::setMergeState(const MergeState &merge, const Commit &head)
+{
+    m_merging = merge.inProgress;
+    m_amend->setEnabled(head.isValid() && !merge.inProgress);
+    m_amend->setToolTip(merge.inProgress ? tr("Not while a merge is in progress")
+                        : head.isValid() ? tr("Rewrite the last commit (%1: %2) with the checked files and the message above")
+                                               .arg(head.shortHash, head.subject)
+                                         : tr("There is no commit to amend yet"));
+    updateCommitButton();
+    // Git's own message goes in the box while it is empty (or still holds the
+    // previous proposal) and leaves with the merge.
+    if (merge.inProgress) {
+        const QString text = m_message->toPlainText();
+        if ((text.trimmed().isEmpty() || text == m_mergeMessage) && text != merge.message)
+            m_message->setPlainText(merge.message);
+        m_mergeMessage = merge.message;
+    } else if (!m_mergeMessage.isEmpty()) {
+        if (m_message->toPlainText() == m_mergeMessage)
+            m_message->clear();
+        m_mergeMessage.clear();
+    }
+}
+
+void CommitPage::updateCommitButton()
+{
+    const bool amend = m_amend->isChecked();
+    m_commitButton->setText(icon(kCommit) + (amend ? tr("Amend") : m_merging ? tr("Commit merge") : tr("Commit")));
+    m_commitButton->setToolTip(amend ? tr("Rewrite the last commit with the checked files (Ctrl+Enter)")
+                               : m_merging ? tr("Finish the merge: commit the checked (resolved) files together with what git merged on its own (Ctrl+Enter)")
+                                           : tr("Commit the checked files (Ctrl+Enter)"));
 }
 
 void CommitPage::onCheckedChanged()
@@ -270,7 +418,53 @@ void CommitPage::onAmendToggled(bool on)
     } else if (m_message->toPlainText() == m_headMessage) {
         m_message->clear();
     }
-    emit amendToggled(on); // the window updates the Commit button, refreshes and ticks the files
+    updateCommitButton();
+    emit amendToggled(on); // the window refreshes and ticks the files of the commit
+}
+
+void CommitPage::commit()
+{
+    const QString message = m_message->toPlainText().trimmed();
+    if (message.isEmpty()) {
+        QMessageBox::warning(this, tr("Commit"), tr("Please enter a commit message."));
+        m_message->setFocus();
+        return;
+    }
+    const QStringList paths = m_model->checkedPaths();
+    const bool amend = m_amend->isChecked();
+    if (amend) {
+        const QStringList published = m_repo->remoteBranchesContainingHead();
+        if (!published.isEmpty()) {
+            const auto answer = QMessageBox::warning(
+                this, tr("Amend last commit"),
+                tr("The last commit is already part of %1.\n\nAmending it rewrites published history; "
+                   "you will have to force-push, and others who have it must rebase.\n\nAmend anyway?")
+                    .arg(published.join(QStringLiteral(", "))),
+                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+            if (answer != QMessageBox::Yes)
+                return;
+        }
+    }
+    QString error;
+    const bool ok = amend ? m_repo->amendCommit(message, paths, &error) : m_repo->commit(message, paths, &error);
+    if (!ok) {
+        QMessageBox::critical(this, amend ? tr("Amend failed") : tr("Commit failed"),
+                              error.isEmpty() ? tr("git commit failed.") : error);
+        return;
+    }
+    const int count = m_model->checkedCount();
+    const bool merged = m_merging;
+    m_message->clear();
+    if (amend) {
+        m_amend->setChecked(false); // also refreshes
+        emit statusMessage(tr("Amended the last commit on %1 with %2 file(s)").arg(m_repo->branch()).arg(count), 5000);
+    } else if (merged) {
+        emit statusMessage(tr("Merge committed on %1").arg(m_repo->branch()), 5000);
+        emit refreshRequested();
+    } else {
+        emit statusMessage(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
+        emit refreshRequested();
+    }
 }
 
 // ---- Commit message from a coding agent -----------------------------------
@@ -360,22 +554,36 @@ void CommitPage::showAgentMenu()
 {
     TickMenu menu(this);
     menu.setToolTipsVisible(true);
-    AgentChoice choice = CommitMessageAgent::savedChoice();
+    const AgentChoice choice = CommitMessageAgent::savedChoice();
     const auto save = [this](const AgentChoice &c) {
         CommitMessageAgent::saveChoice(c);
         setGenerating(m_agent->running());
     };
 
-    addMenuHeader(&menu, tr("Agent"));
+    addAgentSection(&menu, choice, save);
+    const AgentSpec current = CommitMessageAgent::spec(choice.agent);
+    if (current.isValid()) {
+        const AgentCatalog catalog = CommitMessageAgent::catalog(choice.agent);
+        addModelSection(&menu, current, catalog, choice, save);
+        addReasoningSection(&menu, catalog.effortsFor(choice.model), choice, save);
+    }
+    // The cog sits at the right edge, so the menu hangs from its right corner.
+    menu.exec(m_agentButton->mapToGlobal(QPoint(m_agentButton->width() - menu.sizeHint().width(), m_agentButton->height())));
+}
+
+void CommitPage::addAgentSection(QMenu *menu, const AgentChoice &choice,
+                                 const std::function<void(const AgentChoice &)> &save)
+{
+    addMenuHeader(menu, tr("Agent"));
     const QList<AgentSpec> installed = CommitMessageAgent::installedAgents();
     if (installed.isEmpty()) {
-        QAction *none = menu.addAction(tr("None installed"));
+        QAction *none = menu->addAction(tr("None installed"));
         none->setEnabled(false);
         none->setToolTip(tr("`omarchy default agent claude` (or codex) installs one"));
     }
     const QString omarchyDefault = CommitMessageAgent::omarchyDefaultAgent();
     for (const AgentSpec &agent : installed) {
-        QAction *a = menu.addAction(icon(kRobot) + agent.name);
+        QAction *a = menu->addAction(icon(kRobot) + agent.name);
         a->setCheckable(true);
         a->setChecked(agent.id == choice.agent);
         a->setToolTip(agent.id == omarchyDefault ? tr("%1 — Omarchy's default agent").arg(agent.binary) : agent.binary);
@@ -384,66 +592,67 @@ void CommitPage::showAgentMenu()
             save(AgentChoice{agent.id, QString(), QString()});
         });
     }
+}
 
-    const AgentSpec current = CommitMessageAgent::spec(choice.agent);
-    if (current.isValid()) {
-        const AgentCatalog catalog = CommitMessageAgent::catalog(choice.agent);
-        menu.addSeparator();
-        addMenuHeader(&menu, tr("Model"));
-        QAction *def = menu.addAction(tr("Default"));
-        def->setCheckable(true);
-        def->setChecked(choice.model.isEmpty());
-        def->setToolTip(tr("Whatever %1 is set to use").arg(current.name));
-        connect(def, &QAction::triggered, this, [save, choice] { save(AgentChoice{choice.agent, QString(), choice.effort}); });
-        QList<AgentModel> models = catalog.models;
-        const bool known = std::any_of(models.cbegin(), models.cend(), [&](const AgentModel &m) { return m.id == choice.model; });
-        if (!choice.model.isEmpty() && !known)
-            models.prepend(AgentModel{choice.model, choice.model, {}, {}});
-        for (const AgentModel &m : std::as_const(models)) {
-            QAction *a = menu.addAction(m.name);
-            a->setCheckable(true);
-            a->setChecked(m.id == choice.model);
-            a->setToolTip(m.id);
-            connect(a, &QAction::triggered, this, [save, choice, m] {
-                // A level the new model does not have goes back to its default.
-                const QString effort = m.efforts.isEmpty() || m.efforts.contains(choice.effort) ? choice.effort : QString();
-                save(AgentChoice{choice.agent, m.id, effort});
-            });
-        }
-        if (models.isEmpty() && !catalog.error.isEmpty()) {
-            QAction *err = menu.addAction(tr("Could not read the models"));
-            err->setEnabled(false);
-            err->setToolTip(catalog.error);
-        }
-        QAction *other = menu.addAction(tr("Other…"));
-        other->setToolTip(tr("A model by name, as %1 --model takes it").arg(current.binary));
-        connect(other, &QAction::triggered, this, [this, save, choice, current] {
-            bool ok = false;
-            const QString id = QInputDialog::getText(this, tr("Model"), tr("Model name for %1:").arg(current.name),
-                                                     QLineEdit::Normal, choice.model, &ok)
-                                   .trimmed();
-            if (ok)
-                save(AgentChoice{choice.agent, id, choice.effort});
+void CommitPage::addModelSection(QMenu *menu, const AgentSpec &agent, const AgentCatalog &catalog,
+                                 const AgentChoice &choice, const std::function<void(const AgentChoice &)> &save)
+{
+    menu->addSeparator();
+    addMenuHeader(menu, tr("Model"));
+    QAction *def = menu->addAction(tr("Default"));
+    def->setCheckable(true);
+    def->setChecked(choice.model.isEmpty());
+    def->setToolTip(tr("Whatever %1 is set to use").arg(agent.name));
+    connect(def, &QAction::triggered, this, [save, choice] { save(AgentChoice{choice.agent, QString(), choice.effort}); });
+    QList<AgentModel> models = catalog.models;
+    const bool known = std::any_of(models.cbegin(), models.cend(), [&](const AgentModel &m) { return m.id == choice.model; });
+    if (!choice.model.isEmpty() && !known)
+        models.prepend(AgentModel{choice.model, choice.model, {}, {}});
+    for (const AgentModel &m : std::as_const(models)) {
+        QAction *a = menu->addAction(m.name);
+        a->setCheckable(true);
+        a->setChecked(m.id == choice.model);
+        a->setToolTip(m.id);
+        connect(a, &QAction::triggered, this, [save, choice, m] {
+            // A level the new model does not have goes back to its default.
+            const QString effort = m.efforts.isEmpty() || m.efforts.contains(choice.effort) ? choice.effort : QString();
+            save(AgentChoice{choice.agent, m.id, effort});
         });
-
-        const QStringList efforts = catalog.effortsFor(choice.model);
-        if (!efforts.isEmpty()) {
-            menu.addSeparator();
-            addMenuHeader(&menu, tr("Reasoning"));
-            QAction *defEffort = menu.addAction(tr("Default"));
-            defEffort->setCheckable(true);
-            defEffort->setChecked(choice.effort.isEmpty());
-            connect(defEffort, &QAction::triggered, this,
-                    [save, choice] { save(AgentChoice{choice.agent, choice.model, QString()}); });
-            for (const QString &level : efforts) {
-                QAction *a = menu.addAction(level.at(0).toUpper() + level.mid(1));
-                a->setCheckable(true);
-                a->setChecked(level == choice.effort);
-                connect(a, &QAction::triggered, this,
-                        [save, choice, level] { save(AgentChoice{choice.agent, choice.model, level}); });
-            }
-        }
     }
-    // The cog sits at the right edge, so the menu hangs from its right corner.
-    menu.exec(m_agentButton->mapToGlobal(QPoint(m_agentButton->width() - menu.sizeHint().width(), m_agentButton->height())));
+    if (models.isEmpty() && !catalog.error.isEmpty()) {
+        QAction *err = menu->addAction(tr("Could not read the models"));
+        err->setEnabled(false);
+        err->setToolTip(catalog.error);
+    }
+    QAction *other = menu->addAction(tr("Other…"));
+    other->setToolTip(tr("A model by name, as %1 --model takes it").arg(agent.binary));
+    connect(other, &QAction::triggered, this, [this, save, choice, agent] {
+        bool ok = false;
+        const QString id = QInputDialog::getText(this, tr("Model"), tr("Model name for %1:").arg(agent.name),
+                                                 QLineEdit::Normal, choice.model, &ok)
+                               .trimmed();
+        if (ok)
+            save(AgentChoice{choice.agent, id, choice.effort});
+    });
+}
+
+void CommitPage::addReasoningSection(QMenu *menu, const QStringList &efforts, const AgentChoice &choice,
+                                     const std::function<void(const AgentChoice &)> &save)
+{
+    if (efforts.isEmpty())
+        return;
+    menu->addSeparator();
+    addMenuHeader(menu, tr("Reasoning"));
+    QAction *defEffort = menu->addAction(tr("Default"));
+    defEffort->setCheckable(true);
+    defEffort->setChecked(choice.effort.isEmpty());
+    connect(defEffort, &QAction::triggered, this,
+            [save, choice] { save(AgentChoice{choice.agent, choice.model, QString()}); });
+    for (const QString &level : efforts) {
+        QAction *a = menu->addAction(level.at(0).toUpper() + level.mid(1));
+        a->setCheckable(true);
+        a->setChecked(level == choice.effort);
+        connect(a, &QAction::triggered, this,
+                [save, choice, level] { save(AgentChoice{choice.agent, choice.model, level}); });
+    }
 }

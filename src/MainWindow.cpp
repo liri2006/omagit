@@ -1,7 +1,6 @@
 #include "MainWindow.h"
 #include "BadgeButton.h"
 #include "BranchMenu.h"
-#include "ChangesModel.h"
 #include "CommitPage.h"
 #include "DesktopExec.h"
 #include "DiffPane.h"
@@ -11,16 +10,15 @@
 #include "DiffView.h"
 #include "HistoryView.h"
 #include "KeybindingsPanel.h"
-#include "MessageEdit.h"
 #include "MiniRail.h"
 #include "OmarchyTheme.h"
+#include "Settings.h"
 #include "TickMenu.h"
 #include "Toolbar.h"
 #include "UiHelpers.h"
 
 #include <QAction>
 #include <QButtonGroup>
-#include <QCheckBox>
 #include <QDir>
 #include <QDialog>
 #include <QFileInfo>
@@ -47,6 +45,35 @@
 
 using namespace ui;
 
+namespace {
+constexpr int kRecentMax = 15;
+constexpr int kDefaultWidth = 1400, kDefaultHeight = 850;
+constexpr int kBodySpacing = 8;         // between the rail and the splitter, and everywhere else
+constexpr int kLeftSharePercent = 45;   // of the window, before the user drags the splitter
+constexpr int kWatchDebounceMs = 500;   // a burst of file changes ends in one refresh
+// How long the footer keeps a message: a done deed, something that took a
+// while, a failure, and a job still waiting for the user.
+constexpr int kShortStatusMs = 5000, kMediumStatusMs = 8000, kErrorStatusMs = 15000, kPendingStatusMs = 20000;
+
+// The keybindings panel's spelling of a shortcut: "CTRL SHIFT + M", "SHIFT + F8".
+QString keysText(const QKeySequence &keys)
+{
+    const QKeyCombination combo = keys[0];
+    const Qt::KeyboardModifiers mods = combo.keyboardModifiers();
+    QStringList parts;
+    if (mods & Qt::ControlModifier)
+        parts << QStringLiteral("CTRL");
+    if (mods & Qt::ShiftModifier)
+        parts << QStringLiteral("SHIFT");
+    if (mods & Qt::AltModifier)
+        parts << QStringLiteral("ALT");
+    if (mods & Qt::MetaModifier)
+        parts << QStringLiteral("META");
+    const QString key = QKeySequence(QKeyCombination(Qt::NoModifier, combo.key())).toString(QKeySequence::PortableText).toUpper();
+    return parts.isEmpty() ? key : parts.join(QLatin1Char(' ')) + QStringLiteral(" + ") + key;
+}
+} // namespace
+
 MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     : QMainWindow(parent), m_repo(repo)
 {
@@ -58,20 +85,34 @@ MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     rememberRepository(repo->root());
     connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &MainWindow::applyTheme);
 
-    QSettings settings;
-    restoreGeometry(settings.value(QStringLiteral("window/geometry")).toByteArray());
-    if (!settings.contains(QStringLiteral("window/geometry")))
-        resize(1400, 850);
-    // "full" (pre-0.4) and window/leftFull (pre-0.3) meant the left section
-    // alone; both become Docked with the diff pane hidden (and are re-saved so).
-    const QString layoutKey = settings.value(QStringLiteral("window/layout")).toString();
-    const bool legacyFull = layoutKey == QLatin1String("full")
-        || (layoutKey.isEmpty() && settings.value(QStringLiteral("window/leftFull"), false).toBool());
-    setPaneLayout(paneLayoutFromKey(layoutKey));
-    setDiffPaneVisible(!legacyFull && settings.value(QStringLiteral("window/diffPane"), true).toBool());
-    m_sync->setAutoFetchInterval(settings.value(QStringLiteral("remote/autoFetchSeconds"), 180).toInt());
+    QSettings conf;
+    restoreGeometry(conf.value(settings::kWindowGeometry).toByteArray());
+    if (!conf.contains(settings::kWindowGeometry))
+        resize(kDefaultWidth, kDefaultHeight);
+    migrateLayoutSettings();
+    m_sync->setAutoFetchInterval(autoFetchSecondsSetting());
 
     QTimer::singleShot(0, this, &MainWindow::refresh);
+}
+
+// "full" (pre-0.4) and window/leftFull (pre-0.3) meant the left section
+// alone; both become Docked with the diff pane hidden (and are re-saved so).
+void MainWindow::migrateLayoutSettings()
+{
+    QSettings conf;
+    const QString layoutKey = conf.value(settings::kWindowLayout).toString();
+    const bool legacyFull = layoutKey == QLatin1String("full")
+        || (layoutKey.isEmpty() && conf.value(settings::kWindowLeftFull, false).toBool());
+    setPaneLayout(paneLayoutFromKey(layoutKey));
+    setDiffPaneVisible(!legacyFull && conf.value(settings::kWindowDiffPane, true).toBool());
+}
+
+// Unset, the setting says no more than where RemoteSync would have started anyway.
+static_assert(settings::kAutoFetchSecondsDefault == RemoteSync::kDefaultInterval);
+
+int MainWindow::autoFetchSecondsSetting()
+{
+    return QSettings().value(settings::kAutoFetchSeconds, settings::kAutoFetchSecondsDefault).toInt();
 }
 
 void MainWindow::buildUi()
@@ -79,7 +120,7 @@ void MainWindow::buildUi()
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
     rootLayout->setContentsMargins(14, 12, 14, 8);
-    rootLayout->setSpacing(8);
+    rootLayout->setSpacing(kBodySpacing);
 
     // ---- Left section: toolbar above (commit dialog | history)
     auto *left = new QWidget;
@@ -89,7 +130,7 @@ void MainWindow::buildUi()
     left->setMinimumWidth(1);
     auto *leftLayout = new QVBoxLayout(left);
     leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setSpacing(8);
+    leftLayout->setSpacing(kBodySpacing);
 
     // The toolbar: Commit, History | Pull, Push, Fetch.
     // Labels give way to icons, then to a "more" menu, as the pane narrows.
@@ -107,24 +148,6 @@ void MainWindow::buildUi()
     m_toolbar->addButton(m_historyModeButton, icon(kHistory) + tr("History"), icon(kHistory, tr("H")).trimmed(), tr("History"));
     connect(m_commitModeButton, &QToolButton::clicked, this, [this] { setMode(CommitMode); });
     connect(m_historyModeButton, &QToolButton::clicked, this, [this] { setMode(HistoryMode); });
-    // Shortcuts live on the window, not the buttons: a hidden button's shortcut
-    // is inactive, and the toolbar is hidden in the Mini layout.
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_1), this, this, [this] { setMode(CommitMode); });
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_2), this, this, [this] { setMode(HistoryMode); });
-    // The letters follow lazygit, with Ctrl in front (Ctrl+Shift for its
-    // capitals): R refresh, f fetch, p pull, P push, M merge, a stage all,
-    // A amend, e edit, d discard, Ctrl+R recent repositories, Ctrl+S filter,
-    // Ctrl+W whitespace, Ctrl+L syntax colours, q quit.
-    // F5 by name: the platform's Refresh sequence includes Ctrl+R, which is the repositories.
-    new QShortcut(QKeySequence(Qt::Key_F5), this, this, &MainWindow::refresh);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R), this, this, &MainWindow::refresh);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q), this, this, &QWidget::close);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_B), this, this, [this] {
-        setPaneLayout(m_layout == PaneLayout::Mini ? PaneLayout::Docked : PaneLayout::Mini);
-    });
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B), this, this, [this] {
-        setDiffPaneVisible(!m_diffVisible);
-    });
 
     // Pull / Push / Fetch act on the whole repository, so they are the same
     // in both modes. The Pull badge is the number of commits waiting on the
@@ -137,9 +160,6 @@ void MainWindow::buildUi()
     m_toolbar->addButton(bar.push, icon(kPush) + tr("Push"), icon(kPush, QStringLiteral("↑")).trimmed(), tr("Push"));
     m_toolbar->addButton(bar.fetch, icon(kFetch) + tr("Fetch"), icon(kFetch, tr("F")).trimmed(), tr("Fetch"));
     m_syncButtons << bar;
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this, m_sync, &RemoteSync::fetch);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_P), this, m_sync, &RemoteSync::pull);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P), this, m_sync, &RemoteSync::push);
     connect(m_sync, &RemoteSync::stateChanged, this, &MainWindow::updateSyncButtons);
     connect(m_sync, &RemoteSync::finished, this, &MainWindow::onSyncFinished);
     // Merge opens the merge view; its badge says when a merge waits with conflicts.
@@ -147,9 +167,8 @@ void MainWindow::buildUi()
     auto *mergeButton = toolButton<BadgeButton>(QString());
     m_toolbar->addButton(mergeButton, icon(kMerge) + tr("Merge"), icon(kMerge, tr("M")).trimmed(), tr("Merge"));
     m_mergeButtons << mergeButton;
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M), this, this, &MainWindow::showMergeDialog);
     m_toolbarRow = new QHBoxLayout;
-    m_toolbarRow->setSpacing(8);
+    m_toolbarRow->setSpacing(kBodySpacing);
     m_toolbarRow->addWidget(m_toolbar, 1);
     leftLayout->addLayout(m_toolbarRow);
 
@@ -161,13 +180,8 @@ void MainWindow::buildUi()
     });
     // Repository and branch selectors stay available in both modes.
     connect(m_footer->repoButton(), &QToolButton::clicked, this, &MainWindow::showRepoMenu);
-    new QShortcut(QKeySequence::Open, this, this, &MainWindow::openRepositoryDialog);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_R), this, this, &MainWindow::showRepoMenu);
     connect(m_footer->branchButton(), &QToolButton::clicked, this, &MainWindow::showBranchMenu);
-    // Ctrl+1 and Ctrl+2 are the views; the branches are the third "panel".
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_3), this, this, &MainWindow::showBranchMenu);
     connect(m_footer->keybindingsButton(), &QToolButton::clicked, this, &MainWindow::showKeybindings);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this, this, &MainWindow::showKeybindings);
 
     m_stack = new QStackedWidget;
     m_commitPage = new CommitPage(m_repo);
@@ -176,14 +190,12 @@ void MainWindow::buildUi()
     connect(m_commitPage, &CommitPage::showDiffPaneRequested, this, [this] { setDiffPaneVisible(true); });
     connect(m_commitPage, &CommitPage::discardRequested, this, &MainWindow::discardChange);
     connect(m_commitPage, &CommitPage::refreshRequested, this, &MainWindow::refresh);
-    connect(m_commitPage, &CommitPage::commitRequested, this, &MainWindow::commit);
     connect(m_commitPage, &CommitPage::amendToggled, this, &MainWindow::onAmendToggled);
     connect(m_commitPage, &CommitPage::modeRequested, this, [this] {
         if (m_mode != CommitMode)
             setMode(CommitMode);
     });
     connect(m_commitPage, &CommitPage::statusMessage, this, &MainWindow::showStatus);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_G), this, this, &MainWindow::generateMessage);
     m_stack->addWidget(m_commitPage);
     m_history = new HistoryView(m_repo);
     connect(m_history, &HistoryView::currentFileChanged, this, &MainWindow::showHistoryDiff);
@@ -194,21 +206,10 @@ void MainWindow::buildUi()
     });
     m_stack->addWidget(m_history);
     leftLayout->addWidget(m_stack, 1);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_S), this, this, &MainWindow::focusHistoryFilter);
 
     // ---- Right pane: diff view with navigation toolbar
     m_diffPane = new DiffPane;
     connect(m_diffPane->diffToggle(), &QToolButton::clicked, this, [this](bool on) { setDiffPaneVisible(on); });
-    // On the window, not the pane's buttons: they may be hidden with it.
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_T), this, m_diffPane, &DiffPane::togglePaneMode);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_W), this, m_diffPane, &DiffPane::toggleWhitespace);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_L), this, m_diffPane, &DiffPane::toggleSyntax);
-    new QShortcut(QKeySequence(Qt::Key_F8), this, m_diffPane, &DiffPane::nextChange);
-    new QShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F8), this, m_diffPane, &DiffPane::previousChange);
-    for (const Qt::Key key : {Qt::Key_Plus, Qt::Key_Equal})
-        new QShortcut(QKeySequence(Qt::CTRL | key), this, m_diffPane, [this] { m_diffPane->zoomBy(1); });
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus), this, m_diffPane, [this] { m_diffPane->zoomBy(-1); });
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_0), this, m_diffPane, &DiffPane::resetZoom);
 
     auto *splitter = new QSplitter(Qt::Horizontal);
     m_splitter = splitter;
@@ -221,7 +222,7 @@ void MainWindow::buildUi()
     // The left width is chosen on first show (see showEvent) and remembered.
     connect(splitter, &QSplitter::splitterMoved, this, [this] {
         if (m_shown && m_left->isVisible())
-            QSettings().setValue(QStringLiteral("window/leftWidth"), m_splitter->sizes().first());
+            QSettings().setValue(settings::kWindowLeftWidth, m_splitter->sizes().first());
     });
 
     // ---- Mini rail: replaces the left section in the Mini layout
@@ -248,7 +249,7 @@ void MainWindow::buildUi()
 
     auto *body = new QHBoxLayout;
     body->setContentsMargins(0, 0, 0, 0);
-    body->setSpacing(8);
+    body->setSpacing(kBodySpacing);
     body->addWidget(m_rail);
     body->addWidget(splitter, 1);
     rootLayout->addLayout(body, 1);
@@ -256,17 +257,8 @@ void MainWindow::buildUi()
     // ---- Footer: sidebar toggle, repository and branch selectors, path and messages
     rootLayout->addWidget(m_footer);
 
-    // The commit view's file actions. Ctrl+A checks the files rather than
-    // selecting rows, so it sits on the two lists, where a text field never
-    // sees it.
-    for (QWidget *list : {static_cast<QWidget *>(m_commitPage->table()), static_cast<QWidget *>(m_rail->list())})
-        new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_A), list, this, &MainWindow::toggleAllChecked, Qt::WidgetShortcut);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A), this, this, &MainWindow::toggleAmend);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_E), this, this, [this] {
-        if (m_mode == CommitMode)
-            openInEditor();
-    });
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_D), this, this, &MainWindow::discardCurrent);
+    // Every keybinding at once, now that the widgets they belong to exist.
+    installShortcuts();
 
     setCentralWidget(central);
 
@@ -274,7 +266,7 @@ void MainWindow::buildUi()
     m_watcher = new QFileSystemWatcher(this);
     auto *debounce = new QTimer(this);
     debounce->setSingleShot(true);
-    debounce->setInterval(500);
+    debounce->setInterval(kWatchDebounceMs);
     connect(debounce, &QTimer::timeout, this, &MainWindow::refresh);
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, debounce, qOverload<>(&QTimer::start));
     connect(m_watcher, &QFileSystemWatcher::fileChanged, this, [this, debounce](const QString &path) {
@@ -289,81 +281,149 @@ void MainWindow::buildUi()
     connect(m_sync, &RemoteSync::repositoryChanged, debounce, qOverload<>(&QTimer::start));
 }
 
+// ---------------------------------------------------------------------------
+// Keybindings
+//
+// The one place a binding is written down: installShortcuts() makes the
+// QShortcuts, showKeybindings() lists the same rows in the same order.
+//
+// The letters follow lazygit, with Ctrl in front (Ctrl+Shift for its
+// capitals): R refresh, f fetch, p pull, P push, M merge, a stage all,
+// A amend, e edit, d discard, Ctrl+R recent repositories, Ctrl+S filter,
+// Ctrl+W whitespace, Ctrl+L syntax colours, q quit.
+// F5 by name: the platform's Refresh sequence includes Ctrl+R, which is the repositories.
+
+QList<MainWindow::Binding> MainWindow::bindings()
+{
+    const QString commit = tr("Commit view"), changes = tr("Changes list"), history = tr("History"),
+                  diff = tr("Diff"), merge = tr("Merge view"), text = tr("Text fields");
+    QList<Binding> list;
+
+    // The application. The view shortcuts live on the window, not on the
+    // toolbar buttons: a hidden button's shortcut is inactive, and the
+    // toolbar is gone in the Mini layout.
+    list << Binding{{QKeySequence(Qt::CTRL | Qt::Key_K)}, {}, tr("Keybindings"), {},
+                    [this] { showKeybindings(); }, {}, nullptr, false}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_1)}, {}, tr("Commit view"), {}, [this] { setMode(CommitMode); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_2)}, {}, tr("History view"), {}, [this] { setMode(HistoryMode); }}
+         // Ctrl+1 and Ctrl+2 are the views; the branches are the third "panel".
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_3)}, {}, tr("Branches"), {}, [this] { showBranchMenu(); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_R)}, {}, tr("Recent repositories"), {}, [this] { showRepoMenu(); }}
+         << Binding{{QKeySequence(QKeySequence::Open)}, {}, tr("Open repository…"), {},
+                    [this] { openRepositoryDialog(); }}
+         << Binding{{QKeySequence(Qt::Key_F5), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R)},
+                    QStringLiteral("F5 / CTRL SHIFT + R"), tr("Refresh"), {}, [this] { refresh(); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_F)}, {}, tr("Fetch"), {}, [this] { m_sync->fetch(); }, {}, m_sync}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_P)}, {}, tr("Pull"), {}, [this] { m_sync->pull(); }, {}, m_sync}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P)}, {}, tr("Push"), {}, [this] { m_sync->push(); }, {}, m_sync}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M)}, {}, tr("Merge branches"), {},
+                    [this] { showMergeDialog(); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_B)}, {}, tr("Docked / Mini layout"), {}, [this] {
+                        setPaneLayout(m_layout == PaneLayout::Mini ? PaneLayout::Docked : PaneLayout::Mini);
+                    }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B)}, {}, tr("Show / hide diff pane"), {},
+                    [this] { setDiffPaneVisible(!m_diffVisible); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Q)}, {}, tr("Quit"), {}, [this] { close(); }};
+
+    // The commit view. Ctrl+Return belongs to the Commit button itself; Ctrl+A
+    // checks the files rather than selecting rows, so it sits on the two
+    // lists, where a text field never sees it.
+    list << Binding{{}, QStringLiteral("CTRL + RETURN"), tr("Commit checked files"), commit, [this] {
+                        if (m_mode == CommitMode)
+                            m_commitPage->clickCommit();
+                    }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_G)}, {}, tr("Generate commit message"), commit,
+                    [this] { generateMessage(); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A)}, {}, tr("Amend last commit"), commit,
+                    [this] { toggleAmend(); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_A)}, {}, tr("Check all / none"), changes,
+                    [this] { toggleAllChecked(); }, {m_commitPage->table(), m_rail->list()}}
+         << Binding{{}, QStringLiteral("SPACE"), tr("Check / uncheck file"), tr("Changes list, Mini rail")}
+         << Binding{{}, QStringLiteral("CTRL + CLICK"), tr("Check / uncheck file"), tr("Mini rail")}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_E)}, {}, tr("Open file in its program"), commit, [this] {
+                        if (m_mode == CommitMode)
+                            openInEditor();
+                    }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_D)}, {}, tr("Discard file changes"), commit,
+                    [this] { discardCurrent(); }};
+
+    // History
+    list << Binding{{QKeySequence(Qt::CTRL | Qt::Key_S)}, {}, tr("Filter commits"), history,
+                    [this] { focusHistoryFilter(); }};
+
+    // The diff pane. Its shortcuts are the window's too: the pane can be
+    // hidden, and a hidden widget's shortcut does not fire.
+    list << Binding{{QKeySequence(Qt::Key_F8)}, {}, tr("Next change"), diff,
+                    [this] { m_diffPane->nextChange(); }, {}, m_diffPane}
+         << Binding{{QKeySequence(Qt::SHIFT | Qt::Key_F8)}, {}, tr("Previous change"), diff,
+                    [this] { m_diffPane->previousChange(); }, {}, m_diffPane}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_T)}, {}, tr("One / two panes"), diff,
+                    [this] { m_diffPane->togglePaneMode(); }, {}, m_diffPane}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_W)}, {}, tr("Show whitespace"), diff,
+                    [this] { m_diffPane->toggleWhitespace(); }, {}, m_diffPane}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_L)}, {}, tr("Syntax highlighting"), diff,
+                    [this] { m_diffPane->toggleSyntax(); }, {}, m_diffPane}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Plus), QKeySequence(Qt::CTRL | Qt::Key_Equal)},
+                    QStringLiteral("CTRL + PLUS"), tr("Zoom in"), diff,
+                    [this] { m_diffPane->zoomBy(1); }, {}, m_diffPane}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Minus)}, QStringLiteral("CTRL + MINUS"), tr("Zoom out"), diff,
+                    [this] { m_diffPane->zoomBy(-1); }, {}, m_diffPane}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_0)}, {}, tr("Reset zoom"), diff,
+                    [this] { m_diffPane->resetZoom(); }, {}, m_diffPane}
+         // What the diff view and its scroll bars handle themselves.
+         << Binding{{}, QStringLiteral("CTRL + WHEEL"), tr("Zoom"), diff}
+         << Binding{{}, QStringLiteral("CTRL + C"), tr("Copy selection"), diff}
+         << Binding{{}, QStringLiteral("CTRL + A"), tr("Select all"), diff}
+         << Binding{{}, QStringLiteral("ESCAPE"), tr("Clear selection"), diff}
+         << Binding{{}, QStringLiteral("UP / DOWN"), tr("Scroll a line"), diff}
+         << Binding{{}, QStringLiteral("LEFT / RIGHT"), tr("Scroll sideways"), diff}
+         << Binding{{}, QStringLiteral("PAGE DOWN / SPACE"), tr("Scroll a page down"), diff}
+         << Binding{{}, QStringLiteral("PAGE UP"), tr("Scroll a page up"), diff}
+         << Binding{{}, QStringLiteral("CTRL + HOME / CTRL + END"), tr("Beginning / end"), diff};
+
+    // The merge view, then lists, menus and text fields: all of them belong to
+    // widgets of their own, so the panel only writes them down.
+    list << Binding{{}, QStringLiteral("CTRL + S"), tr("Swap the two sides"), merge}
+         << Binding{{}, QStringLiteral("RETURN"), tr("Merge"), merge}
+         << Binding{{}, QStringLiteral("ESCAPE"), tr("Close"), merge}
+         << Binding{{}, QStringLiteral("UP / DOWN"), tr("Move between items"), tr("Lists, menus")}
+         << Binding{{}, QStringLiteral("RETURN"), tr("Choose item"), tr("Menus")}
+         << Binding{{}, QStringLiteral("ESCAPE"), tr("Close menu or panel"), tr("Menus, panels")}
+         << Binding{{}, QStringLiteral("TAB / SHIFT + TAB"), tr("Next / previous control")}
+         << Binding{{}, QStringLiteral("CTRL + Z / CTRL SHIFT + Z"), tr("Undo / redo"), text}
+         << Binding{{}, QStringLiteral("CTRL + C / X / V"), tr("Copy / cut / paste"), text}
+         << Binding{{}, QStringLiteral("CTRL + LEFT / RIGHT"), tr("Move by word"), text}
+         << Binding{{}, QStringLiteral("CTRL + BACKSPACE / DELETE"), tr("Delete previous / next word"), text}
+         << Binding{{}, QStringLiteral("HOME / END"), tr("Line beginning / end"), text};
+
+    return list;
+}
+
+void MainWindow::installShortcuts()
+{
+    const QList<Binding> all = bindings();
+    for (const Binding &b : all) {
+        if (b.keys.isEmpty())
+            continue;
+        QObject *const receiver = b.receiver ? b.receiver : this;
+        const QList<QWidget *> hosts = b.hosts.isEmpty() ? QList<QWidget *>{this} : b.hosts;
+        // A binding with hosts of its own is meant for those widgets alone.
+        const Qt::ShortcutContext scope = b.hosts.isEmpty() ? Qt::WindowShortcut : Qt::WidgetShortcut;
+        for (QWidget *host : hosts) {
+            for (const QKeySequence &keys : b.keys)
+                new QShortcut(keys, host, receiver, b.run, scope);
+        }
+    }
+}
+
 void MainWindow::showKeybindings()
 {
     auto *panel = new KeybindingsPanel(this);
-    const QString commit = tr("Commit view"), changes = tr("Changes list"), history = tr("History"),
-                  diff = tr("Diff"), merge = tr("Merge view"), text = tr("Text fields");
-    // The application
-    panel->add(QStringLiteral("CTRL + K"), tr("Keybindings"));
-    panel->add(QStringLiteral("CTRL + 1"), tr("Commit view"), QString(), [this] { setMode(CommitMode); });
-    panel->add(QStringLiteral("CTRL + 2"), tr("History view"), QString(), [this] { setMode(HistoryMode); });
-    panel->add(QStringLiteral("CTRL + 3"), tr("Branches"), QString(), [this] { showBranchMenu(); });
-    panel->add(QStringLiteral("CTRL + R"), tr("Recent repositories"), QString(), [this] { showRepoMenu(); });
-    panel->add(QStringLiteral("CTRL + O"), tr("Open repository…"), QString(), [this] { openRepositoryDialog(); });
-    panel->add(QStringLiteral("F5 / CTRL SHIFT + R"), tr("Refresh"), QString(), [this] { refresh(); });
-    panel->add(QStringLiteral("CTRL + F"), tr("Fetch"), QString(), [this] { m_sync->fetch(); });
-    panel->add(QStringLiteral("CTRL + P"), tr("Pull"), QString(), [this] { m_sync->pull(); });
-    panel->add(QStringLiteral("CTRL SHIFT + P"), tr("Push"), QString(), [this] { m_sync->push(); });
-    panel->add(QStringLiteral("CTRL SHIFT + M"), tr("Merge branches"), QString(), [this] { showMergeDialog(); });
-    panel->add(QStringLiteral("CTRL + B"), tr("Docked / Mini layout"), QString(), [this] {
-        setPaneLayout(m_layout == PaneLayout::Mini ? PaneLayout::Docked : PaneLayout::Mini);
-    });
-    panel->add(QStringLiteral("CTRL SHIFT + B"), tr("Show / hide diff pane"), QString(),
-               [this] { setDiffPaneVisible(!m_diffVisible); });
-    panel->add(QStringLiteral("CTRL + Q"), tr("Quit"), QString(), [this] { close(); });
-    // The commit view
-    panel->add(QStringLiteral("CTRL + RETURN"), tr("Commit checked files"), commit, [this] {
-        if (m_mode == CommitMode)
-            m_commitPage->commitButton()->click();
-    });
-    panel->add(QStringLiteral("CTRL + G"), tr("Generate commit message"), commit, [this] {
-        setMode(CommitMode);
-        generateMessage();
-    });
-    panel->add(QStringLiteral("CTRL SHIFT + A"), tr("Amend last commit"), commit, [this] { toggleAmend(); });
-    panel->add(QStringLiteral("CTRL + A"), tr("Check all / none"), changes, [this] { toggleAllChecked(); });
-    panel->add(QStringLiteral("SPACE"), tr("Check / uncheck file"), tr("Changes list, Mini rail"));
-    panel->add(QStringLiteral("CTRL + CLICK"), tr("Check / uncheck file"), tr("Mini rail"));
-    panel->add(QStringLiteral("CTRL + E"), tr("Open file in its program"), commit, [this] {
-        if (m_mode == CommitMode)
-            openInEditor();
-    });
-    panel->add(QStringLiteral("CTRL + D"), tr("Discard file changes"), commit, [this] { discardCurrent(); });
-    // History
-    panel->add(QStringLiteral("CTRL + S"), tr("Filter commits"), history, [this] { focusHistoryFilter(); });
-    // The diff pane
-    panel->add(QStringLiteral("F8"), tr("Next change"), diff, [this] { m_diffPane->nextChange(); });
-    panel->add(QStringLiteral("SHIFT + F8"), tr("Previous change"), diff, [this] { m_diffPane->previousChange(); });
-    panel->add(QStringLiteral("CTRL + T"), tr("One / two panes"), diff, [this] { m_diffPane->togglePaneMode(); });
-    panel->add(QStringLiteral("CTRL + W"), tr("Show whitespace"), diff, [this] { m_diffPane->toggleWhitespace(); });
-    panel->add(QStringLiteral("CTRL + L"), tr("Syntax highlighting"), diff, [this] { m_diffPane->toggleSyntax(); });
-    panel->add(QStringLiteral("CTRL + PLUS"), tr("Zoom in"), diff, [this] { m_diffPane->zoomBy(1); });
-    panel->add(QStringLiteral("CTRL + MINUS"), tr("Zoom out"), diff, [this] { m_diffPane->zoomBy(-1); });
-    panel->add(QStringLiteral("CTRL + 0"), tr("Reset zoom"), diff, [this] { m_diffPane->resetZoom(); });
-    panel->add(QStringLiteral("CTRL + WHEEL"), tr("Zoom"), diff);
-    panel->add(QStringLiteral("CTRL + C"), tr("Copy selection"), diff);
-    panel->add(QStringLiteral("CTRL + A"), tr("Select all"), diff);
-    panel->add(QStringLiteral("ESCAPE"), tr("Clear selection"), diff);
-    panel->add(QStringLiteral("UP / DOWN"), tr("Scroll a line"), diff);
-    panel->add(QStringLiteral("LEFT / RIGHT"), tr("Scroll sideways"), diff);
-    panel->add(QStringLiteral("PAGE DOWN / SPACE"), tr("Scroll a page down"), diff);
-    panel->add(QStringLiteral("PAGE UP"), tr("Scroll a page up"), diff);
-    panel->add(QStringLiteral("CTRL + HOME / CTRL + END"), tr("Beginning / end"), diff);
-    // The merge view
-    panel->add(QStringLiteral("CTRL + S"), tr("Swap the two sides"), merge);
-    panel->add(QStringLiteral("RETURN"), tr("Merge"), merge);
-    panel->add(QStringLiteral("ESCAPE"), tr("Close"), merge);
-    // Lists, menus, text
-    panel->add(QStringLiteral("UP / DOWN"), tr("Move between items"), tr("Lists, menus"));
-    panel->add(QStringLiteral("RETURN"), tr("Choose item"), tr("Menus"));
-    panel->add(QStringLiteral("ESCAPE"), tr("Close menu or panel"), tr("Menus, panels"));
-    panel->add(QStringLiteral("TAB / SHIFT + TAB"), tr("Next / previous control"));
-    panel->add(QStringLiteral("CTRL + Z / CTRL SHIFT + Z"), tr("Undo / redo"), text);
-    panel->add(QStringLiteral("CTRL + C / X / V"), tr("Copy / cut / paste"), text);
-    panel->add(QStringLiteral("CTRL + LEFT / RIGHT"), tr("Move by word"), text);
-    panel->add(QStringLiteral("CTRL + BACKSPACE / DELETE"), tr("Delete previous / next word"), text);
-    panel->add(QStringLiteral("HOME / END"), tr("Line beginning / end"), text);
+    const QList<Binding> all = bindings();
+    for (const Binding &b : all) {
+        panel->add(b.display.isEmpty() ? keysText(b.keys.first()) : b.display, b.action, b.context,
+                   b.panelRuns ? b.run : std::function<void()>());
+    }
     panel->popup();
 }
 
@@ -390,7 +450,7 @@ void MainWindow::toggleAmend()
 void MainWindow::setMode(Mode mode)
 {
     m_mode = mode;
-    m_stack->setCurrentIndex(mode == CommitMode ? 0 : 1);
+    m_stack->setCurrentWidget(mode == CommitMode ? static_cast<QWidget *>(m_commitPage) : m_history);
     {
         QSignalBlocker a(m_commitModeButton), b(m_historyModeButton);
         m_commitModeButton->setChecked(mode == CommitMode);
@@ -408,9 +468,10 @@ void MainWindow::setMode(Mode mode)
         }
         showHistoryDiff();
     } else {
-        const QModelIndex idx = m_commitPage->table()->currentIndex();
-        if (idx.isValid())
-            onCurrentRowChanged(idx);
+        bool ok = false;
+        const FileChange change = m_commitPage->currentChange(&ok);
+        if (ok)
+            showDiffFor(change);
         else
             m_diffPane->view()->clear(tr("Working tree clean — nothing to commit."));
     }
@@ -425,7 +486,7 @@ void MainWindow::setPaneLayout(PaneLayout layout, bool persist)
     if (layout == PaneLayout::Mini)
         m_rail->list()->setFocus();
     if (persist)
-        QSettings().setValue(QStringLiteral("window/layout"), paneLayoutKey(layout));
+        QSettings().setValue(settings::kWindowLayout, paneLayoutKey(layout));
 }
 
 void MainWindow::setDiffPaneVisible(bool on, bool persist)
@@ -435,7 +496,7 @@ void MainWindow::setDiffPaneVisible(bool on, bool persist)
         setPaneLayout(PaneLayout::Docked, persist);
     applyPanes();
     if (persist)
-        QSettings().setValue(QStringLiteral("window/diffPane"), on);
+        QSettings().setValue(settings::kWindowDiffPane, on);
 }
 
 // Shows the panes and buttons the current layout and diff toggle call for.
@@ -469,14 +530,12 @@ void MainWindow::applyPanes()
 
 void MainWindow::setAmend(bool on)
 {
-    QCheckBox *const amend = m_commitPage->amendBox();
-    if (amend->isEnabled())
-        amend->setChecked(on);
+    m_commitPage->setAmendChecked(on);
 }
 
 void MainWindow::setAutoFetchEnabled(bool on)
 {
-    m_sync->setAutoFetchInterval(on ? QSettings().value(QStringLiteral("remote/autoFetchSeconds"), 180).toInt() : 0);
+    m_sync->setAutoFetchInterval(on ? autoFetchSecondsSetting() : 0);
 }
 
 void MainWindow::changeEvent(QEvent *event)
@@ -498,9 +557,10 @@ void MainWindow::showEvent(QShowEvent *event)
         // remembered width (or 45%) instead. The splitter has not been laid
         // out yet, so its width comes from the window's, less the rail.
         const QMargins m = centralWidget()->layout()->contentsMargins();
-        const int total = width() - m.left() - m.right() - (m_rail->isVisibleTo(this) ? MiniRail::kWidth + 8 : 0);
+        const int total = width() - m.left() - m.right()
+            - (m_rail->isVisibleTo(this) ? MiniRail::kWidth + kBodySpacing : 0);
         const int rightMin = m_diffPane->isVisibleTo(this) ? 1 + m_splitter->handleWidth() : 0;
-        const int wanted = QSettings().value(QStringLiteral("window/leftWidth"), total * 45 / 100).toInt();
+        const int wanted = QSettings().value(settings::kWindowLeftWidth, total * kLeftSharePercent / 100).toInt();
         const int left = qBound(1, wanted, qMax(1, total - rightMin));
         m_splitter->setSizes({left, qMax(1, total - left)});
     }
@@ -520,41 +580,44 @@ void MainWindow::applyTheme()
     m_toolbar->applyTheme();
     m_commitPage->applyTheme();
     m_footer->applyTheme();
+    m_history->applyTheme();
+    m_rail->applyTheme();
+    // The captions of every section, wherever they were built.
     for (QLabel *l : findChildren<QLabel *>()) {
         if (l->objectName() == QLatin1String("sectionLabel") || l->objectName() == QLatin1String("dimLabel"))
             l->setFont(theme->captionFont());
     }
-    m_history->applyTheme();
-    m_rail->applyTheme();
 }
+
+// ---------------------------------------------------------------------------
+// Refresh
 
 void MainWindow::refresh()
 {
-    ChangesModel *const model = m_commitPage->model();
-    QSortFilterProxyModel *const proxy = m_commitPage->proxy();
-    QTableView *const table = m_commitPage->table();
-    MessageEdit *const message = m_commitPage->message();
-    QCheckBox *const amend = m_commitPage->amendBox();
-    DiffView *const diff = m_diffPane->view();
-
-    QString selectedPath;
-    bool ok = false;
-    const FileChange cur = m_commitPage->currentChange(&ok);
-    if (ok)
-        selectedPath = cur.path;
+    bool hadCurrent = false;
+    const FileChange current = m_commitPage->currentChange(&hadCurrent);
+    QString selectedPath = hadCurrent ? current.path : QString();
     if (!m_initialSelection.isEmpty()) {
         selectedPath = m_initialSelection;
         m_initialSelection.clear();
     }
 
+    updateHeader();
+    // Re-selecting the row below scrolls the views to it and reloads the
+    // diff from its first change; the user may have scrolled either on
+    // purpose, so put the scroll offsets (and the current change) back after.
+    const ViewState state = viewState();
+    reloadChanges();
+    restoreSelection(selectedPath, hadCurrent && current.path == selectedPath, state);
+    reloadHistory(state);
+}
+
+// The branch label, the merge buttons, what a merge in progress does to the
+// commit page, and the sync counts.
+void MainWindow::updateHeader()
+{
     const Commit head = m_repo->headCommit();
     const MergeState merge = m_repo->mergeState();
-    m_merging = merge.inProgress;
-    amend->setEnabled(head.isValid() && !merge.inProgress);
-    amend->setToolTip(merge.inProgress ? tr("Not while a merge is in progress")
-                      : head.isValid() ? tr("Rewrite the last commit (%1: %2) with the checked files and the message above")
-                                             .arg(head.shortHash, head.subject)
-                                       : tr("There is no commit to amend yet"));
     QString branch = icon(kBranch) + m_repo->branch() + chevron();
     if (m_repo->amending() && head.isValid())
         branch += tr("   ·   amending %1").arg(head.shortHash);
@@ -562,81 +625,62 @@ void MainWindow::refresh()
         branch += tr("   ·   merging %1").arg(merge.source);
     m_footer->branchButton()->setText(branch);
     updateMergeButtons(merge);
-    updateCommitButton();
-    // Git's own message for the merge commit goes in the box while it is
-    // empty (or still holds the previous proposal) and leaves with the merge.
-    if (merge.inProgress) {
-        const QString text = message->toPlainText();
-        if ((text.trimmed().isEmpty() || text == m_mergeMessage) && text != merge.message)
-            message->setPlainText(merge.message);
-        m_mergeMessage = merge.message;
-    } else if (!m_mergeMessage.isEmpty()) {
-        if (message->toPlainText() == m_mergeMessage)
-            message->clear();
-        m_mergeMessage.clear();
-    }
+    m_commitPage->setMergeState(merge, head);
     m_sync->refreshState();
-    // Re-selecting the row below scrolls the views to it and reloads the
-    // diff from its first change; the user may have scrolled either on
-    // purpose, so put the scroll offsets (and the current change) back after.
-    QScrollBar *const tableBar = table->verticalScrollBar();
-    QScrollBar *const tableHBar = table->horizontalScrollBar();
-    QScrollBar *const railBar = m_rail->list()->verticalScrollBar();
-    const int tableScroll = tableBar->value();
-    const int tableHScroll = tableHBar->value();
-    const int railScroll = railBar->value();
-    const DiffView::ViewState diffState = diff->viewState();
+}
+
+MainWindow::ViewState MainWindow::viewState() const
+{
+    ViewState state;
+    state.changes = m_commitPage->scrollOffset();
+    state.rail = m_rail->list()->verticalScrollBar()->value();
+    state.diff = m_diffPane->view()->viewState();
+    return state;
+}
+
+void MainWindow::reloadChanges()
+{
     m_refreshing = true;
-    model->setChanges(m_repo->status());
+    m_commitPage->reload();
     m_refreshing = false;
     watchChangedFiles();
+}
 
-    // Restore selection
-    bool restored = false;
-    for (int r = 0; r < proxy->rowCount(); ++r) {
-        const int src = proxy->mapToSource(proxy->index(r, 0)).row();
-        if (model->change(src).path == selectedPath) {
-            if (table->currentIndex().row() != r) // unchanged rows keep their current cell
-                table->selectRow(r);
-            restored = true;
-            break;
-        }
-    }
-    if (!restored) {
-        if (proxy->rowCount() > 0)
-            table->selectRow(0);
-        else if (m_mode == CommitMode)
-            diff->clear(tr("Working tree clean — nothing to commit."));
-    }
-    if (restored) {
-        tableBar->setValue(tableScroll);
-        tableHBar->setValue(tableHScroll);
-        railBar->setValue(railScroll);
-        if (ok && cur.path == selectedPath && m_mode == CommitMode) {
+void MainWindow::restoreSelection(const QString &path, bool sameFile, const ViewState &state)
+{
+    if (m_commitPage->selectPath(path)) {
+        m_commitPage->setScrollOffset(state.changes);
+        m_rail->list()->verticalScrollBar()->setValue(state.rail);
+        if (sameFile && m_mode == CommitMode) {
             // The row may still be current (no reset happened), so show the
             // diff again by hand: identical content is left alone, changed
             // content is put back where the user was reading.
-            showDiffFor(model->change(proxy->mapToSource(table->currentIndex()).row()));
-            diff->restoreViewState(diffState);
+            showCurrentDiff();
+            m_diffPane->view()->restoreViewState(state.diff);
         }
+    } else if (!m_commitPage->selectFirstRow() && m_mode == CommitMode) {
+        m_diffPane->view()->clear(tr("Working tree clean — nothing to commit."));
     }
     m_commitPage->onCheckedChanged();
+}
 
+void MainWindow::reloadHistory(const ViewState &state)
+{
     m_historyDirty = true;
-    if (m_mode == HistoryMode) {
-        Commit commit;
-        FileChange file;
-        const bool hadFile = m_history->currentFile(&commit, &file);
-        m_history->reload();
-        m_historyDirty = false;
-        Commit newCommit;
-        FileChange newFile;
-        if (hadFile && m_history->currentFile(&newCommit, &newFile) && newCommit.hash == commit.hash
-            && newFile.path == file.path) {
-            showHistoryDiff();
-            railBar->setValue(railScroll);
-            diff->restoreViewState(diffState);
-        }
+    if (m_mode != HistoryMode)
+        return;
+    Commit commit;
+    FileChange file;
+    const bool hadFile = m_history->currentFile(&commit, &file);
+    m_history->reload();
+    m_historyDirty = false;
+    Commit newCommit;
+    FileChange newFile;
+    if (hadFile && m_history->currentFile(&newCommit, &newFile) && newCommit.hash == commit.hash
+        && newFile.path == file.path) {
+        showHistoryDiff();
+        m_rail->list()->verticalScrollBar()->setValue(state.rail);
+        m_diffPane->view()->restoreViewState(state.diff);
     }
 }
 
@@ -677,7 +721,7 @@ void MainWindow::onCurrentRowChanged(const QModelIndex &current)
             m_diffPane->view()->clear();
         return;
     }
-    showDiffFor(m_commitPage->model()->change(m_commitPage->proxy()->mapToSource(current).row()));
+    showCurrentDiff();
 }
 
 void MainWindow::presentDiff(const QString &unified, const FileChange &change, bool binary, const QString &leftLabel,
@@ -709,23 +753,41 @@ void MainWindow::presentDiff(const QString &unified, const FileChange &change, b
         diff->firstChange();
 }
 
+// `base` names the left-hand side (HEAD, HEAD~1 or the parent commit) and
+// `baseLabel` stands in for it where it has no name (the empty tree under a
+// root commit); `unchanged` is the line for a diff without textual changes.
+MainWindow::DiffLabels MainWindow::diffLabels(const FileChange &change, const QString &base, const QString &baseLabel,
+                                              const QString &right, const QString &unchanged)
+{
+    DiffLabels labels;
+    labels.left = baseLabel;
+    if (change.isUntracked() || (change.kind == FileChange::Added && change.oldPath.isEmpty()))
+        labels.left = tr("(new file)");
+    else if (!change.oldPath.isEmpty())
+        labels.left = tr("%1: %2").arg(base, change.oldPath);
+    labels.right = change.kind == FileChange::Deleted ? tr("(deleted)") : right;
+    labels.empty = change.oldPath.isEmpty() ? unchanged
+                                            : tr("Renamed from %1 — contents unchanged.").arg(change.oldPath);
+    return labels;
+}
+
+void MainWindow::showCurrentDiff()
+{
+    bool ok = false;
+    const FileChange change = m_commitPage->currentChange(&ok);
+    if (ok)
+        showDiffFor(change);
+}
+
 void MainWindow::showDiffFor(const FileChange &change)
 {
     bool binary = change.binary;
     const QString unified = m_repo->diff(change, &binary);
     const QString base = m_repo->amending() ? tr("HEAD~1") : tr("HEAD");
-    QString leftLabel = base;
-    if (change.kind == FileChange::Untracked || (change.kind == FileChange::Added && change.oldPath.isEmpty()))
-        leftLabel = tr("(new file)");
-    else if (!change.oldPath.isEmpty())
-        leftLabel = tr("%1: %2").arg(base, change.oldPath);
-    const QString rightLabel = change.kind == FileChange::Deleted ? tr("(deleted)") : tr("Working Tree");
-    QString emptyMessage;
-    if (!change.oldPath.isEmpty())
-        emptyMessage = tr("Renamed from %1 — contents unchanged.").arg(change.oldPath);
-    else if (change.isStaged() && change.worktree == ' ')
-        emptyMessage = tr("Staged — identical to %1.").arg(base);
-    presentDiff(unified, change, binary, leftLabel, rightLabel, emptyMessage);
+    const QString staged = change.isStaged() && change.worktree == ' ' ? tr("Staged — identical to %1.").arg(base)
+                                                                      : QString();
+    const DiffLabels labels = diffLabels(change, base, base, tr("Working Tree"), staged);
+    presentDiff(unified, change, binary, labels.left, labels.right, labels.empty);
 }
 
 void MainWindow::showHistoryDiff()
@@ -747,149 +809,79 @@ void MainWindow::showHistoryDiff()
     bool binary = f.binary;
     const QString unified = m_repo->commitDiff(c, f, &binary);
     const QString parent = c.parents.isEmpty() ? QString() : c.parents.first().left(c.shortHash.size());
-    QString leftLabel = parent.isEmpty() ? tr("(empty tree)") : parent;
-    if (f.kind == FileChange::Added && f.oldPath.isEmpty())
-        leftLabel = tr("(new file)");
-    else if (!f.oldPath.isEmpty())
-        leftLabel = tr("%1: %2").arg(parent, f.oldPath);
-    const QString rightLabel = f.kind == FileChange::Deleted ? tr("(deleted)") : c.shortHash;
-    const QString emptyMessage = f.oldPath.isEmpty() ? tr("No textual changes.")
-                                                     : tr("Renamed from %1 — contents unchanged.").arg(f.oldPath);
-    presentDiff(unified, f, binary, leftLabel, rightLabel, emptyMessage);
+    const DiffLabels labels = diffLabels(f, parent, parent.isEmpty() ? tr("(empty tree)") : parent, c.shortHash,
+                                         tr("No textual changes."));
+    presentDiff(unified, f, binary, labels.left, labels.right, labels.empty);
 }
 
-// The commit page has ticked or unticked the amend box: the button text, the
-// changes list against the commit before, and its files checked.
+// The commit page has ticked or unticked the amend box: the changes list
+// against the commit before, and its files checked.
 void MainWindow::onAmendToggled(bool on)
 {
-    updateCommitButton();
     refresh();
     if (on)
         m_commitPage->checkHeadPaths();
 }
 
-void MainWindow::commit()
-{
-    MessageEdit *const messageEdit = m_commitPage->message();
-    ChangesModel *const model = m_commitPage->model();
-    QCheckBox *const amendBox = m_commitPage->amendBox();
-    const QString message = messageEdit->toPlainText().trimmed();
-    if (message.isEmpty()) {
-        QMessageBox::warning(this, tr("Commit"), tr("Please enter a commit message."));
-        messageEdit->setFocus();
-        return;
-    }
-    const QStringList paths = model->checkedPaths();
-    const bool amend = amendBox->isChecked();
-    if (amend) {
-        const QStringList published = m_repo->remoteBranchesContainingHead();
-        if (!published.isEmpty()) {
-            const auto answer = QMessageBox::warning(
-                this, tr("Amend last commit"),
-                tr("The last commit is already part of %1.\n\nAmending it rewrites published history; "
-                   "you will have to force-push, and others who have it must rebase.\n\nAmend anyway?")
-                    .arg(published.join(QStringLiteral(", "))),
-                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-            if (answer != QMessageBox::Yes)
-                return;
-        }
-    }
-    QString error;
-    const bool ok = amend ? m_repo->amendCommit(message, paths, &error) : m_repo->commit(message, paths, &error);
-    if (!ok) {
-        QMessageBox::critical(this, amend ? tr("Amend failed") : tr("Commit failed"),
-                              error.isEmpty() ? tr("git commit failed.") : error);
-        return;
-    }
-    const int count = model->checkedCount();
-    const bool merged = m_merging;
-    messageEdit->clear();
-    if (amend) {
-        amendBox->setChecked(false); // also refreshes
-        showStatus(tr("Amended the last commit on %1 with %2 file(s)").arg(m_repo->branch()).arg(count), 5000);
-    } else if (merged) {
-        showStatus(tr("Merge committed on %1").arg(m_repo->branch()), 5000);
-        refresh();
-    } else {
-        showStatus(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
-        refresh();
-    }
-}
+// ---------------------------------------------------------------------------
+// Fetch, pull and push
 
-void MainWindow::updateSyncButtons()
+// The tooltips of the three sync buttons and the upstream line of the branch
+// button, from the state alone so the slot below only hands them out.
+MainWindow::SyncTips MainWindow::syncTips(const UpstreamState &s, RemoteSync::Op op, const FetchHistory &fetches,
+                                          bool pushPublishes, const QStringList &pushArgs)
 {
-    const OmarchyTheme *theme = OmarchyTheme::instance();
-    const UpstreamState &s = m_sync->state();
-    const RemoteSync::Op op = m_sync->runningOp();
+    SyncTips tips;
 
-    QString fetchTip;
     if (s.remotes.isEmpty()) {
-        fetchTip = tr("No remote configured — nothing to fetch from");
+        tips.fetch = tr("No remote configured — nothing to fetch from");
     } else {
-        fetchTip = tr("Fetch from all remotes (Ctrl+F)");
+        tips.fetch = tr("Fetch from all remotes (Ctrl+F)");
         if (op == RemoteSync::Fetch)
-            fetchTip += tr("\nFetching…");
-        else if (m_sync->lastFetch().isValid() && m_sync->lastFetchOk())
-            fetchTip += tr("\nLast fetched %1").arg(ago(m_sync->lastFetch()));
-        else if (m_sync->lastFetch().isValid())
-            fetchTip += tr("\nLast fetch failed %1: %2").arg(ago(m_sync->lastFetch()), m_sync->lastFetchError());
-        const int every = m_sync->autoFetchInterval();
-        if (every > 0)
-            fetchTip += tr("\nFetches by itself every %n minute(s) while the window is open", nullptr, qMax(1, every / 60));
+            tips.fetch += tr("\nFetching…");
+        else if (fetches.last.isValid() && fetches.ok)
+            tips.fetch += tr("\nLast fetched %1").arg(ago(fetches.last));
+        else if (fetches.last.isValid())
+            tips.fetch += tr("\nLast fetch failed %1: %2").arg(ago(fetches.last), fetches.error);
+        if (fetches.interval > 0)
+            tips.fetch += tr("\nFetches by itself every %n minute(s) while the window is open", nullptr,
+                             qMax(1, fetches.interval / 60));
         else
-            fetchTip += tr("\nAutomatic fetching is off (remote/autoFetchSeconds in omagit.conf)");
+            tips.fetch += tr("\nAutomatic fetching is off (remote/autoFetchSeconds in omagit.conf)");
     }
 
-    QString pullTip;
     if (s.detached)
-        pullTip = tr("HEAD is detached — check out a branch to pull");
+        tips.pull = tr("HEAD is detached — check out a branch to pull");
     else if (s.branch.isEmpty())
-        pullTip = tr("Nothing to pull into yet");
+        tips.pull = tr("Nothing to pull into yet");
     else if (s.upstreamGone)
-        pullTip = tr("%1 no longer exists on the remote").arg(s.upstream);
+        tips.pull = tr("%1 no longer exists on the remote").arg(s.upstream);
     else if (!s.hasUpstream())
-        pullTip = tr("%1 has no upstream branch to pull from").arg(s.branch);
+        tips.pull = tr("%1 has no upstream branch to pull from").arg(s.branch);
     else if (op == RemoteSync::Fetch)
-        pullTip = tr("Checking %1 for new commits…").arg(s.upstream);
+        tips.pull = tr("Checking %1 for new commits…").arg(s.upstream);
     else if (op == RemoteSync::Pull)
-        pullTip = tr("Pulling from %1…").arg(s.upstream);
+        tips.pull = tr("Pulling from %1…").arg(s.upstream);
     else if (s.behind > 0)
-        pullTip = tr("Pull %n commit(s) from %1 into %2 (Ctrl+P)", nullptr, s.behind).arg(s.upstream, s.branch);
+        tips.pull = tr("Pull %n commit(s) from %1 into %2 (Ctrl+P)", nullptr, s.behind).arg(s.upstream, s.branch);
     else
-        pullTip = tr("Pull from %1 — nothing new since the last fetch (Ctrl+P)").arg(s.upstream);
+        tips.pull = tr("Pull from %1 — nothing new since the last fetch (Ctrl+P)").arg(s.upstream);
 
-    QString pushTip;
     if (s.detached)
-        pushTip = tr("HEAD is detached — check out a branch to push");
+        tips.push = tr("HEAD is detached — check out a branch to push");
     else if (s.branch.isEmpty())
-        pushTip = tr("Nothing to push yet");
+        tips.push = tr("Nothing to push yet");
     else if (s.remote.isEmpty())
-        pushTip = tr("No remote to push to");
+        tips.push = tr("No remote to push to");
     else if (op == RemoteSync::Push)
-        pushTip = tr("Pushing to %1…").arg(s.remote);
-    else if (m_sync->pushPublishes())
-        pushTip = tr("Publish %1 on %2 and track it from now on — git %3 (Ctrl+Shift+P)")
-                      .arg(s.branch, s.remote, m_sync->pushArgs().join(QLatin1Char(' ')));
+        tips.push = tr("Pushing to %1…").arg(s.remote);
+    else if (pushPublishes)
+        tips.push = tr("Publish %1 on %2 and track it from now on — git %3 (Ctrl+Shift+P)")
+                        .arg(s.branch, s.remote, pushArgs.join(QLatin1Char(' ')));
     else if (s.ahead > 0)
-        pushTip = tr("Push %n commit(s) from %1 to %2 (Ctrl+Shift+P)", nullptr, s.ahead).arg(s.branch, s.upstream);
+        tips.push = tr("Push %n commit(s) from %1 to %2 (Ctrl+Shift+P)", nullptr, s.ahead).arg(s.branch, s.upstream);
     else
-        pushTip = tr("Push to %1 — nothing to push (Ctrl+Shift+P)").arg(s.upstream);
-
-    const QColor red = theme->color(QStringLiteral("red"));
-    for (const SyncButtons &b : std::as_const(m_syncButtons)) {
-        b.fetch->setEnabled(m_sync->canFetch());
-        b.fetch->setToolTip(fetchTip);
-        b.fetch->setMark(m_sync->lastFetch().isValid() && !m_sync->lastFetchOk() ? QStringLiteral("!") : QString(), red);
-        b.pull->setEnabled(m_sync->canPull());
-        b.pull->setToolTip(pullTip);
-        b.pull->setBusy(op == RemoteSync::Fetch || op == RemoteSync::Pull);
-        b.pull->setCount(s.hasUpstream() ? s.behind : 0);
-        b.pull->setMark(s.upstreamGone ? QStringLiteral("!") : QString(), red);
-        b.push->setEnabled(m_sync->canPush());
-        b.push->setToolTip(pushTip);
-        b.push->setBusy(op == RemoteSync::Push);
-        b.push->setCount(s.hasUpstream() ? s.ahead : 0);
-    }
+        tips.push = tr("Push to %1 — nothing to push (Ctrl+Shift+P)").arg(s.upstream);
 
     // The branch name tells about its upstream on hover.
     QString upstream;
@@ -903,7 +895,35 @@ void MainWindow::updateSyncButtons()
         upstream = tr("No remote configured");
     if (!upstream.isEmpty())
         upstream += QLatin1Char('\n');
-    m_footer->branchButton()->setToolTip(upstream + tr("Click or Ctrl+3 to switch to another branch"));
+    tips.upstream = upstream + tr("Click or Ctrl+3 to switch to another branch");
+    return tips;
+}
+
+void MainWindow::updateSyncButtons()
+{
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    const UpstreamState &s = m_sync->state();
+    const RemoteSync::Op op = m_sync->runningOp();
+    const FetchHistory fetches{m_sync->lastFetch(), m_sync->lastFetchOk(), m_sync->lastFetchError(),
+                               m_sync->autoFetchInterval()};
+    const SyncTips tips = syncTips(s, op, fetches, m_sync->pushPublishes(), m_sync->pushArgs());
+
+    const QColor red = theme->color(QStringLiteral("red"));
+    for (const SyncButtons &b : std::as_const(m_syncButtons)) {
+        b.fetch->setEnabled(m_sync->canFetch());
+        b.fetch->setToolTip(tips.fetch);
+        b.fetch->setMark(m_sync->lastFetch().isValid() && !m_sync->lastFetchOk() ? QStringLiteral("!") : QString(), red);
+        b.pull->setEnabled(m_sync->canPull());
+        b.pull->setToolTip(tips.pull);
+        b.pull->setBusy(op == RemoteSync::Fetch || op == RemoteSync::Pull);
+        b.pull->setCount(s.hasUpstream() ? s.behind : 0);
+        b.pull->setMark(s.upstreamGone ? QStringLiteral("!") : QString(), red);
+        b.push->setEnabled(m_sync->canPush());
+        b.push->setToolTip(tips.push);
+        b.push->setBusy(op == RemoteSync::Push);
+        b.push->setCount(s.hasUpstream() ? s.ahead : 0);
+    }
+    m_footer->branchButton()->setToolTip(tips.upstream);
 }
 
 void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, const QString &message)
@@ -914,7 +934,7 @@ void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, cons
                                                       : tr("Push failed");
         QMessageBox::critical(this, title, message);
     }
-    showStatus(message.section(QLatin1Char('\n'), 0, 0), ok ? 8000 : 15000);
+    showStatus(message.section(QLatin1Char('\n'), 0, 0), ok ? kMediumStatusMs : kErrorStatusMs);
     if (op != RemoteSync::Fetch || ok)
         refresh();
 }
@@ -959,7 +979,7 @@ void MainWindow::checkoutBranch(const QString &name)
         return;
     }
     refresh();
-    showStatus(tr("Switched to %1").arg(m_repo->branch()), 5000);
+    showStatus(tr("Switched to %1").arg(m_repo->branch()), kShortStatusMs);
 }
 
 // ---------------------------------------------------------------------------
@@ -975,37 +995,21 @@ void MainWindow::showMergeDialog()
                     // The conflicted files wait in the Changes list, red, with
                     // git's message in the box; the first of them is selected.
                     setMode(CommitMode);
-                    ChangesModel *const model = m_commitPage->model();
-                    QSortFilterProxyModel *const proxy = m_commitPage->proxy();
-                    for (int r = 0; r < proxy->rowCount(); ++r) {
-                        if (model->change(proxy->mapToSource(proxy->index(r, 0)).row()).kind == FileChange::Unmerged) {
-                            m_commitPage->table()->selectRow(r);
-                            break;
-                        }
-                    }
+                    m_commitPage->selectFirstConflict();
                     const QString count = conflicts == 1 ? tr("1 conflicted file") : tr("%1 conflicted files").arg(conflicts);
-                    showStatus(tr("Merging %1 into %2 — %3 to resolve, then Commit merge").arg(source, destination, count), 20000);
+                    showStatus(tr("Merging %1 into %2 — %3 to resolve, then Commit merge").arg(source, destination, count),
+                               kPendingStatusMs);
                 } else if (fastForward) {
-                    showStatus(tr("Fast-forwarded %2 to %1").arg(source, destination), 8000);
+                    showStatus(tr("Fast-forwarded %2 to %1").arg(source, destination), kMediumStatusMs);
                 } else {
-                    showStatus(tr("Merged %1 into %2").arg(source, destination), 8000);
+                    showStatus(tr("Merged %1 into %2").arg(source, destination), kMediumStatusMs);
                 }
             });
     connect(dialog, &MergeDialog::mergeAborted, this, [this](const QString &source, const QString &destination) {
         refresh();
-        showStatus(tr("Aborted the merge of %1 into %2").arg(source, destination), 8000);
+        showStatus(tr("Aborted the merge of %1 into %2").arg(source, destination), kMediumStatusMs);
     });
     dialog->show();
-}
-
-void MainWindow::updateCommitButton()
-{
-    const bool amend = m_commitPage->amendBox()->isChecked();
-    QPushButton *const button = m_commitPage->commitButton();
-    button->setText(icon(kCommit) + (amend ? tr("Amend") : m_merging ? tr("Commit merge") : tr("Commit")));
-    button->setToolTip(amend ? tr("Rewrite the last commit with the checked files (Ctrl+Enter)")
-                       : m_merging ? tr("Finish the merge: commit the checked (resolved) files together with what git merged on its own (Ctrl+Enter)")
-                                   : tr("Commit the checked files (Ctrl+Enter)"));
 }
 
 void MainWindow::updateMergeButtons(const MergeState &merge)
@@ -1030,22 +1034,17 @@ void MainWindow::updateMergeButtons(const MergeState &merge)
 // ---------------------------------------------------------------------------
 // Repositories
 
-namespace {
-const auto kRecentKey = QStringLiteral("repos/recent");
-constexpr int kRecentMax = 15;
-} // namespace
-
 QStringList MainWindow::recentRepositories()
 {
-    QSettings settings;
-    const QStringList stored = settings.value(kRecentKey).toStringList();
+    QSettings conf;
+    const QStringList stored = conf.value(settings::kRecentRepositories).toStringList();
     QStringList list;
     for (const QString &root : stored) {
         if (QFileInfo(root).isDir() && !list.contains(root))
             list << root;
     }
     if (list != stored)
-        settings.setValue(kRecentKey, list);
+        conf.setValue(settings::kRecentRepositories, list);
     return list;
 }
 
@@ -1056,7 +1055,7 @@ void MainWindow::rememberRepository(const QString &root)
     list.prepend(root);
     while (list.size() > kRecentMax)
         list.removeLast();
-    QSettings().setValue(kRecentKey, list);
+    QSettings().setValue(settings::kRecentRepositories, list);
 }
 
 void MainWindow::showRepoMenu()
@@ -1109,17 +1108,12 @@ bool MainWindow::openRepository(const QString &path)
 
     m_initialSelection.clear();
     m_repo->setRoot(root); // RemoteSync follows through rootChanged
-    {
-        // The amend state belonged to the old repository; onAmendToggled(false)
-        // also drops its message from the box and refreshes.
-        QSignalBlocker blocker(m_commitPage->amendBox());
-        m_commitPage->amendBox()->setChecked(false);
-    }
-    m_commitPage->onAmendToggled(false);
+    // The amend state belonged to the old repository.
+    m_commitPage->resetAmend();
     watchWorkingTree();
     updateRepoLabels();
     rememberRepository(root);
-    showStatus(tr("Opened %1").arg(tildePath(root)), 5000);
+    showStatus(tr("Opened %1").arg(tildePath(root)), kShortStatusMs);
     return true;
 }
 
@@ -1142,13 +1136,15 @@ void MainWindow::watchWorkingTree()
 void MainWindow::watchChangedFiles()
 {
     constexpr int kMaxWatchedFiles = 500;
-    ChangesModel *const model = m_commitPage->model();
     QStringList wanted;
     if (QFile::exists(m_indexFile))
         wanted << m_indexFile;
     const QDir root(m_repo->root());
-    for (int i = 0; i < model->rowCount() && wanted.size() <= kMaxWatchedFiles; ++i) {
-        const QString path = root.filePath(model->change(i).path);
+    const QStringList changed = m_commitPage->paths();
+    for (const QString &relative : changed) {
+        if (wanted.size() > kMaxWatchedFiles)
+            break;
+        const QString path = root.filePath(relative);
         if (QFileInfo(path).isFile())
             wanted << path;
     }

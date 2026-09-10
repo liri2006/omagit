@@ -1,7 +1,10 @@
 #include "MergeDialog.h"
 #include "BranchMenu.h"
 #include "OmarchyTheme.h"
+#include "Settings.h"
+#include "UiHelpers.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QCoreApplication>
 #include <QFrame>
@@ -22,43 +25,45 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-namespace {
-// md-source_branch, md-chevron_down, md-swap_horizontal, md-source_merge
-constexpr uint kBranch = 0xF062C, kChevron = 0xF0140, kSwap = 0xF04E1, kMerge = 0xF062D;
-// md-check_circle, md-alert_circle, md-alert, md-information, md-close
-constexpr uint kGood = 0xF05E0, kBad = 0xF0028, kWarn = 0xF0026, kInfo = 0xF02FC;
-const auto kNoFastForwardSetting = QStringLiteral("merge/noFastForward");
+#include <memory>
 
+namespace {
+// md-swap_horizontal
+constexpr uint kSwap = 0xF04E1;
+// md-check_circle, md-alert_circle, md-alert
+constexpr uint kGood = 0xF05E0, kBad = 0xF0028, kWarn = 0xF0026;
+
+// Typing in a picker (or holding the swap button down) must not start a git
+// run per keystroke; the spinner turns while one is out.
+constexpr int kPreviewDebounceMs = 120;
+constexpr int kSpinnerIntervalMs = 80;
+constexpr int kPopupPollMs = 50;      // how often a verdict held back by an open menu asks again
+// The window is as wide as the two pickers side by side want to be.
+constexpr int kDialogWidth = 640;
+// The conflict list scrolls beyond this many rows instead of growing on.
+constexpr int kFileRows = 6;
+// Blocked paths named in the warning before it says "and N more".
+constexpr int kBlockedShown = 4;
+// Wide and tall enough that wrapping never bites when a line is measured.
+constexpr int kMeasureLimit = 2000;
+
+// The theme's glyph, or `fallback` when the font has none. Unlike ui::icon()
+// nothing follows it: these glyphs stand on their own.
 QString glyph(uint cp, const QString &fallback)
 {
     const QString g = OmarchyTheme::instance()->glyph(cp);
     return g.isEmpty() ? fallback : g;
 }
 
-// Glyph plus the two spaces the toolbar buttons put after theirs.
-QString icon(uint cp, const QString &fallback = QString())
+// A colour set by hand on a label, remembered so that a verdict which says
+// the same thing again does not re-polish the widget on every spinner tick.
+void setTextColor(QLabel *label, QString *applied, const QColor &color)
 {
-    const QString g = OmarchyTheme::instance()->glyph(cp);
-    return g.isEmpty() ? fallback : g + QStringLiteral("  ");
-}
-
-QLabel *sectionLabel(const QString &text)
-{
-    auto *l = new QLabel(text.toUpper());
-    l->setObjectName(QStringLiteral("sectionLabel"));
-    l->setFont(OmarchyTheme::instance()->captionFont());
-    return l;
-}
-
-QStringList spinnerFrames(const QFont &font)
-{
-    const QFontMetrics fm(font);
-    if (fm.inFont(QChar(0x280B)))
-        return {QStringLiteral("⠋"), QStringLiteral("⠙"), QStringLiteral("⠹"), QStringLiteral("⠸"), QStringLiteral("⠼"),
-                QStringLiteral("⠴"), QStringLiteral("⠦"), QStringLiteral("⠧"), QStringLiteral("⠇"), QStringLiteral("⠏")};
-    if (fm.inFont(QChar(0x25D0)))
-        return {QStringLiteral("◐"), QStringLiteral("◓"), QStringLiteral("◑"), QStringLiteral("◒")};
-    return {QStringLiteral("|"), QStringLiteral("/"), QStringLiteral("-"), QStringLiteral("\\")};
+    const QString sheet = QStringLiteral("color: %1;").arg(color.name());
+    if (*applied == sheet)
+        return;
+    *applied = sheet;
+    label->setStyleSheet(sheet);
 }
 
 // "1 commit" / "2 commits"
@@ -78,6 +83,98 @@ QString fewOf(const QStringList &list, int limit)
 }
 } // namespace
 
+// --- What the card says ----------------------------------------------------
+
+MergeVerdict MergeVerdict::checking(const QString &headline)
+{
+    MergeVerdict v;
+    v.kind = Checking;
+    v.headline = headline;
+    return v;
+}
+
+MergeVerdict MergeVerdict::problem(const QString &headline, const QString &detail)
+{
+    MergeVerdict v;
+    v.kind = Bad;
+    v.headline = headline;
+    if (!detail.isEmpty())
+        v.detail << detail;
+    return v;
+}
+
+MergeVerdict mergeVerdict(const MergePreview &preview, bool noFastForward, const QString &currentBranch)
+{
+    using V = MergeVerdict; // its tr() keeps the strings in the dialog's context
+    const MergePreview &p = preview;
+    const QString s = p.source, d = p.destination;
+    const QString commits = counted(p.commits, V::tr("commit"), V::tr("commits"));
+    const QString stat = counted(p.files, V::tr("file changed"), V::tr("files changed"))
+        + V::tr("   +%1 −%2").arg(p.added).arg(p.removed);
+    MergeVerdict v;
+    switch (p.outcome) {
+    case MergePreview::Same:
+        v.headline = V::tr("Pick two different branches.");
+        v.detail << V::tr("The same branch is on both sides.");
+        break;
+    case MergePreview::UpToDate:
+        v.headline = V::tr("Nothing to merge.");
+        v.detail << V::tr("%2 already has every commit of %1.").arg(s, d);
+        break;
+    case MergePreview::FastForward:
+        v.kind = V::Good;
+        if (noFastForward) {
+            v.headline = V::tr("Merges cleanly — no conflicts.");
+            v.detail << V::tr("A merge commit brings %1 from %2 into %3 (it could simply move up, but the box below asks for a commit)")
+                            .arg(commits, s, d);
+        } else {
+            v.headline = V::tr("Fast-forward — no conflicts possible.");
+            v.detail << V::tr("%3 simply moves up %1 to the tip of %2").arg(commits, s, d);
+        }
+        v.detail << stat;
+        break;
+    case MergePreview::Clean:
+        v.kind = V::Good;
+        v.headline = V::tr("Merges cleanly — no conflicts.");
+        v.detail << V::tr("%1 from %2 meet %3 of %4's own in a merge commit").arg(commits, s).arg(p.diverged).arg(d) << stat;
+        break;
+    case MergePreview::Conflicts:
+        v.kind = V::Bad;
+        v.headline = p.conflicts.size() == 1 ? V::tr("1 file would conflict.")
+                                             : V::tr("%1 files would conflict.").arg(p.conflicts.size());
+        v.detail << V::tr("%1 from %2 against %3 of %4's own").arg(commits, s).arg(p.diverged).arg(d) << stat
+                 << V::tr("Git leaves conflict markers in these files for you to resolve, then Commit merge:");
+        v.files = p.conflicts;
+        break;
+    case MergePreview::Failed:
+        v.kind = V::Bad;
+        v.headline = s.isEmpty() || d.isEmpty() ? p.error : V::tr("Could not check the merge.");
+        if (!s.isEmpty() && !d.isEmpty())
+            v.detail << p.error;
+        break;
+    }
+    if (p.isValid() && p.outcome != MergePreview::Same && !d.isEmpty() && d != currentBranch)
+        v.detail.insert(qMin(1, v.detail.size()), V::tr("%1 is checked out first").arg(d));
+    if (!p.blocked.isEmpty())
+        v.warning = (p.blocked.size() == 1
+                         ? V::tr("Local changes to %1 are in the way — commit or stash them first.")
+                         : V::tr("Local changes to %1 files are in the way: %2 — commit or stash them first.").arg(p.blocked.size()))
+                        .arg(fewOf(p.blocked, kBlockedShown));
+
+    v.canMerge = p.canMerge();
+    if (!p.blocked.isEmpty())
+        v.buttonTip = V::tr("Blocked by local changes — see above");
+    else if (p.outcome == MergePreview::Conflicts)
+        v.buttonTip = V::tr("Start the merge; the conflicted files wait in the Changes list (Enter)");
+    else if (p.outcome == MergePreview::FastForward && !noFastForward)
+        v.buttonTip = V::tr("Fast-forward %2 to %1 (Enter)").arg(s, d);
+    else if (v.canMerge)
+        v.buttonTip = V::tr("Merge %1 into %2 with a merge commit (Enter)").arg(s, d);
+    return v;
+}
+
+// --- The two sides ---------------------------------------------------------
+
 // One side of the merge: a field-like button showing the branch (glyph,
 // name in the title font, a chevron at the right edge) that drops the
 // branch list down on click.
@@ -93,10 +190,9 @@ public:
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     }
 
-    void setBranch(const QString &name, bool remote)
+    void setBranch(const QString &name)
     {
         m_name = name;
-        m_remote = remote;
         setAccessibleName(name);
         updateGeometry();
         update();
@@ -152,14 +248,14 @@ protected:
         const QColor dim = on ? t->mutedText() : t->fill(0.45);
         const QRect r = rect().adjusted(kPad + 4, 0, -(kPad + 4), 0);
         p.setFont(t->uiFont());
-        const QString mark = glyph(kBranch, QString());
+        const QString mark = glyph(ui::kBranch, QString());
         int x = r.left();
         if (!mark.isEmpty()) {
             p.setPen(dim);
             p.drawText(QRect(x, r.top(), p.fontMetrics().horizontalAdvance(mark), r.height()), Qt::AlignVCenter, mark);
             x += p.fontMetrics().horizontalAdvance(mark) + 10;
         }
-        const QString chevron = glyph(kChevron, QStringLiteral("▾"));
+        const QString chevron = glyph(ui::kChevron, QStringLiteral("▾"));
         const int chevronW = p.fontMetrics().horizontalAdvance(chevron);
         p.setPen(dim);
         p.drawText(QRect(r.right() - chevronW, r.top(), chevronW, r.height()), Qt::AlignVCenter, chevron);
@@ -177,107 +273,47 @@ protected:
 private:
     static constexpr int kPad = 8;
     QString m_name;
-    bool m_remote = false;
 };
 
-MergeDialog::MergeDialog(GitRepo *repo, QWidget *parent)
-    : QDialog(parent), m_repo(repo)
+// --- The verdict card ------------------------------------------------------
+
+// The panel under the pickers: a large icon on the left, the headline and
+// the detail lines beside it, the files git would leave conflicted, and a
+// warning at the foot. It knows nothing of merging — it shows a MergeVerdict.
+class VerdictCard : public QFrame
 {
-    setWindowTitle(tr("Merge"));
-    setObjectName(QStringLiteral("mergeDialog"));
-    setWindowModality(Qt::WindowModal);
-    setAttribute(Qt::WA_DeleteOnClose);
-    setSizeGripEnabled(false);
+public:
+    explicit VerdictCard(QWidget *parent = nullptr);
 
-    m_debounce = new QTimer(this);
-    m_debounce->setSingleShot(true);
-    m_debounce->setInterval(120);
-    connect(m_debounce, &QTimer::timeout, this, &MergeDialog::runPreview);
-    m_spinner = new QTimer(this);
-    m_spinner->setInterval(80);
-    connect(m_spinner, &QTimer::timeout, this, [this] {
-        const QStringList frames = spinnerFrames(m_verdictIcon->font());
-        m_spinnerFrame = (m_spinnerFrame + 1) % frames.size();
-        m_verdictIcon->setText(frames.at(m_spinnerFrame));
-    });
+    void applyTheme();
+    void setVerdict(const MergeVerdict &verdict);
+    // True while the spinner turns, so the dialog can hold the card's height.
+    bool checking() const { return m_spinner->isActive(); }
+    // The height of a card showing a headline and two lines of detail, what
+    // a clean merge or a fast-forward reports.
+    int typicalHeight() const;
 
-    buildUi();
-    applyTheme();
-    connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &MergeDialog::applyTheme);
+private:
+    QTimer *m_spinner;
+    int m_spinnerFrame = 0;
+    QLabel *m_icon, *m_headline, *m_detail, *m_warningIcon, *m_warning;
+    QWidget *m_warningRow;
+    QListWidget *m_files;
+    QString m_iconColor, m_headlineColor, m_warningIconColor; // the stylesheets in force
+};
 
-    m_branches = m_repo->branches();
-    m_state = m_repo->mergeState();
-    if (m_state.inProgress) {
-        m_source = m_state.source;
-        m_destination = m_branches.current;
-        updatePickers();
-        showMergeState();
-    } else {
-        QString destination = m_branches.current;
-        if (destination.isEmpty()) // detached HEAD: the main line, else the first branch
-            destination = m_repo->defaultBranch().isEmpty() ? m_branches.local.value(0) : m_repo->defaultBranch();
-        if (m_branches.isRemote(destination))
-            destination.clear();
-        setBranches(defaultSource(destination), destination);
-    }
-}
-
-MergeDialog::~MergeDialog()
+VerdictCard::VerdictCard(QWidget *parent)
+    : QFrame(parent)
 {
-    // A preview still running holds nothing of this object, but a QThread
-    // must not be destroyed while it runs.
-    for (QThread *t : std::as_const(m_threads))
-        t->wait();
-}
-
-void MergeDialog::buildUi()
-{
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 18, 20, 16);
-    layout->setSpacing(10);
-
-    // MERGE [source ▾]  ⇄  INTO [destination ▾]
-    auto *grid = new QGridLayout;
-    grid->setHorizontalSpacing(12);
-    grid->setVerticalSpacing(6);
-    m_sourceCaption = sectionLabel(tr("Merge"));
-    m_destinationCaption = sectionLabel(tr("Into"));
-    m_sourcePicker = new BranchPicker;
-    m_sourcePicker->setToolTip(tr("The branch whose commits are brought in — click to pick another"));
-    connect(m_sourcePicker, &QToolButton::clicked, this, &MergeDialog::pickSource);
-    m_destinationPicker = new BranchPicker;
-    m_destinationPicker->setToolTip(tr("The branch that receives them — checked out first when it is not the current one"));
-    connect(m_destinationPicker, &QToolButton::clicked, this, &MergeDialog::pickDestination);
-    m_swapButton = new QToolButton;
-    m_swapButton->setObjectName(QStringLiteral("swapButton"));
-    m_swapButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    m_swapButton->setCursor(Qt::PointingHandCursor);
-    m_swapButton->setFocusPolicy(Qt::TabFocus);
-    m_swapButton->setToolTip(tr("Swap the two sides — merge the other way round (Ctrl+S)"));
-    m_swapButton->setAccessibleName(tr("Swap"));
-    connect(m_swapButton, &QToolButton::clicked, this, &MergeDialog::swap);
-    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_S), this, this, &MergeDialog::swap);
-    grid->addWidget(m_sourceCaption, 0, 0);
-    grid->addWidget(m_destinationCaption, 0, 2);
-    grid->addWidget(m_sourcePicker, 1, 0);
-    grid->addWidget(m_swapButton, 1, 1, Qt::AlignCenter);
-    grid->addWidget(m_destinationPicker, 1, 2);
-    grid->setColumnStretch(0, 1);
-    grid->setColumnStretch(2, 1);
-    layout->addLayout(grid);
-    layout->addSpacing(2);
-
-    // The verdict: icon, headline, detail, the files, a warning.
-    m_verdict = new QFrame;
-    m_verdict->setObjectName(QStringLiteral("mergeVerdict"));
-    auto *card = new QGridLayout(m_verdict);
+    setObjectName(QStringLiteral("mergeVerdict"));
+    auto *card = new QGridLayout(this);
     card->setContentsMargins(14, 12, 14, 12);
     card->setHorizontalSpacing(12);
     card->setVerticalSpacing(6);
-    m_verdictIcon = new QLabel;
-    m_verdictIcon->setObjectName(QStringLiteral("bigLabel"));
-    m_verdictIcon->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
-    m_verdictIcon->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_icon = new QLabel;
+    m_icon->setObjectName(QStringLiteral("bigLabel"));
+    m_icon->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    m_icon->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_headline = new QLabel;
     m_headline->setWordWrap(true);
     m_headline->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -306,7 +342,7 @@ void MergeDialog::buildUi()
     warningLayout->addWidget(m_warningIcon);
     warningLayout->addWidget(m_warning, 1);
     m_warningRow->hide();
-    card->addWidget(m_verdictIcon, 0, 0, 2, 1, Qt::AlignTop);
+    card->addWidget(m_icon, 0, 0, 2, 1, Qt::AlignTop);
     card->addWidget(m_headline, 0, 1);
     card->addWidget(m_detail, 1, 1);
     card->addWidget(m_files, 2, 1);
@@ -315,22 +351,198 @@ void MergeDialog::buildUi()
     // Spare height (the card held at its previous size while checking) goes
     // below the text, so the spinner and its message stay at the top together.
     card->setRowStretch(4, 1);
-    layout->addWidget(m_verdict);
 
-    m_noFastForward = new QCheckBox(tr("Always create a merge commit"));
-    m_noFastForward->setToolTip(tr("git merge --no-ff: record a merge commit even when the branch could simply move up"));
-    m_noFastForward->setChecked(QSettings().value(kNoFastForwardSetting, false).toBool());
-    connect(m_noFastForward, &QCheckBox::toggled, this, [this](bool on) {
-        QSettings().setValue(kNoFastForwardSetting, on);
-        if (m_previewReady)
-            showPreview();
+    m_spinner = new QTimer(this);
+    m_spinner->setInterval(kSpinnerIntervalMs);
+    connect(m_spinner, &QTimer::timeout, this, [this] {
+        const QStringList frames = ui::spinnerFrames(m_icon->font());
+        m_spinnerFrame = (m_spinnerFrame + 1) % frames.size();
+        m_icon->setText(frames.at(m_spinnerFrame));
     });
-    layout->addWidget(m_noFastForward);
+}
+
+void VerdictCard::applyTheme()
+{
+    const OmarchyTheme *t = OmarchyTheme::instance();
+    m_detail->setFont(t->captionFont());
+    QFont bold = t->uiFont();
+    bold.setBold(true);
+    m_headline->setFont(bold);
+    QFont big = t->uiFont();
+    big.setPixelSize(qRound(t->fontBase() * 1.5));
+    m_icon->setFont(big);
+    m_icon->setFixedWidth(QFontMetrics(big).horizontalAdvance(glyph(kGood, QStringLiteral("✓"))) + 4);
+    m_warningIcon->setFont(t->uiFont());
+    m_warningIcon->setText(glyph(kWarn, QStringLiteral("!")));
+    setTextColor(m_warningIcon, &m_warningIconColor, t->color(QStringLiteral("yellow")));
+    m_warning->setFont(t->captionFont());
+    m_files->setFont(t->monoFont());
+}
+
+void VerdictCard::setVerdict(const MergeVerdict &verdict)
+{
+    const OmarchyTheme *t = OmarchyTheme::instance();
+    QColor color = t->mutedText();
+    QString mark;
+    switch (verdict.kind) {
+    case MergeVerdict::Checking: mark = ui::spinnerFrames(m_icon->font()).first(); break;
+    case MergeVerdict::Info: mark = glyph(ui::kInfo, QStringLiteral("i")); break;
+    case MergeVerdict::Good: color = t->color(QStringLiteral("green")); mark = glyph(kGood, QStringLiteral("✓")); break;
+    case MergeVerdict::Bad: color = t->color(QStringLiteral("red")); mark = glyph(kBad, QStringLiteral("✗")); break;
+    }
+    if (verdict.kind == MergeVerdict::Checking)
+        m_spinner->start();
+    else
+        m_spinner->stop();
+    m_icon->setText(mark);
+    setTextColor(m_icon, &m_iconColor, color);
+    m_headline->setText(verdict.headline);
+    setTextColor(m_headline, &m_headlineColor,
+                 verdict.kind == MergeVerdict::Good || verdict.kind == MergeVerdict::Bad ? color : t->text());
+    const QString detail = verdict.detail.join(QLatin1Char('\n'));
+    m_detail->setText(detail);
+    m_detail->setVisible(!detail.isEmpty());
+    m_files->clear();
+    for (const QString &path : verdict.files) {
+        auto *item = new QListWidgetItem(path, m_files);
+        item->setToolTip(path);
+    }
+    if (!verdict.files.isEmpty()) {
+        const int rowH = m_files->sizeHintForRow(0) > 0 ? m_files->sizeHintForRow(0) : m_files->fontMetrics().height() + 4;
+        m_files->setFixedHeight(rowH * qMin(verdict.files.size(), kFileRows) + 4);
+    }
+    m_files->setVisible(!verdict.files.isEmpty());
+    m_warning->setText(verdict.warning);
+    m_warningRow->setVisible(!verdict.warning.isEmpty());
+}
+
+int VerdictCard::typicalHeight() const
+{
+    const QMargins m = layout()->contentsMargins();
+    const int frame = rect().height() - contentsRect().height();
+    const int spacing = static_cast<QGridLayout *>(layout())->verticalSpacing();
+    // Measured the way QLabel lays out wrapped text (a bounding rect, not
+    // lineSpacing(): the two differ by the font's leading at some sizes).
+    auto textHeight = [](const QLabel *label, const QString &text) {
+        return label->fontMetrics().boundingRect(0, 0, kMeasureLimit, kMeasureLimit, Qt::TextWordWrap, text).height();
+    };
+    // The icon spans the headline and detail rows, so it only counts when
+    // it is taller than both of them together.
+    const int text = textHeight(m_headline, QStringLiteral("x")) + spacing + textHeight(m_detail, QStringLiteral("x\nx"));
+    return frame + m.top() + qMax(text, m_icon->sizeHint().height()) + m.bottom();
+}
+
+// --- The dialog ------------------------------------------------------------
+
+MergeDialog::MergeDialog(GitRepo *repo, QWidget *parent)
+    : QDialog(parent), m_repo(repo)
+{
+    setWindowTitle(tr("Merge"));
+    setObjectName(QStringLiteral("mergeDialog"));
+    setWindowModality(Qt::WindowModal);
+    setAttribute(Qt::WA_DeleteOnClose);
+    setSizeGripEnabled(false);
+
+    m_debounce = new QTimer(this);
+    m_debounce->setSingleShot(true);
+    m_debounce->setInterval(kPreviewDebounceMs);
+    connect(m_debounce, &QTimer::timeout, this, &MergeDialog::runPreview);
+
+    buildUi();
+    applyTheme();
+    connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &MergeDialog::applyTheme);
+
+    m_branches = m_repo->branches();
+    m_state = m_repo->mergeState();
+    if (m_state.inProgress) {
+        m_source = m_state.source;
+        m_destination = m_branches.current;
+        updatePickers();
+        showMergeState();
+    } else {
+        QString destination = m_branches.current;
+        if (destination.isEmpty()) // detached HEAD: the main line, else the first branch
+            destination = m_repo->defaultBranch().isEmpty() ? m_branches.local.value(0) : m_repo->defaultBranch();
+        if (m_branches.isRemote(destination))
+            destination.clear();
+        setBranches(defaultSource(destination), destination);
+    }
+}
+
+void MergeDialog::buildUi()
+{
+    auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(20, 18, 20, 16);
+    layout->setSpacing(10);
+    layout->addLayout(buildBranchRow());
+    layout->addSpacing(2);
+    m_card = new VerdictCard;
+    layout->addWidget(m_card);
+    layout->addWidget(buildNoFastForwardBox());
     layout->addSpacing(4);
     // All spare height belongs between the preview controls and the footer.
     // Otherwise QBoxLayout distributes it among the header and verdict rows.
     layout->addStretch(1);
+    layout->addLayout(buildButtonRow());
 
+    // The width is fixed; the height follows the content (fitToContent()).
+    setFixedWidth(kDialogWidth);
+    setTabOrder(m_sourcePicker, m_swapButton);
+    setTabOrder(m_swapButton, m_destinationPicker);
+    setTabOrder(m_destinationPicker, m_noFastForward);
+    setTabOrder(m_noFastForward, m_mergeButton);
+    setTabOrder(m_mergeButton, m_cancelButton);
+    m_sourcePicker->setFocus();
+}
+
+// MERGE [source ▾]  ⇄  INTO [destination ▾]
+QGridLayout *MergeDialog::buildBranchRow()
+{
+    auto *grid = new QGridLayout;
+    grid->setHorizontalSpacing(12);
+    grid->setVerticalSpacing(6);
+    m_sourceCaption = ui::sectionLabel(tr("Merge"));
+    m_destinationCaption = ui::sectionLabel(tr("Into"));
+    m_sourcePicker = new BranchPicker;
+    m_sourcePicker->setToolTip(tr("The branch whose commits are brought in — click to pick another"));
+    connect(m_sourcePicker, &QToolButton::clicked, this, &MergeDialog::pickSource);
+    m_destinationPicker = new BranchPicker;
+    m_destinationPicker->setToolTip(tr("The branch that receives them — checked out first when it is not the current one"));
+    connect(m_destinationPicker, &QToolButton::clicked, this, &MergeDialog::pickDestination);
+    m_swapButton = new QToolButton;
+    m_swapButton->setObjectName(QStringLiteral("swapButton"));
+    m_swapButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_swapButton->setCursor(Qt::PointingHandCursor);
+    m_swapButton->setFocusPolicy(Qt::TabFocus);
+    m_swapButton->setToolTip(tr("Swap the two sides — merge the other way round (Ctrl+S)"));
+    m_swapButton->setAccessibleName(tr("Swap"));
+    connect(m_swapButton, &QToolButton::clicked, this, &MergeDialog::swap);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_S), this, this, &MergeDialog::swap);
+    grid->addWidget(m_sourceCaption, 0, 0);
+    grid->addWidget(m_destinationCaption, 0, 2);
+    grid->addWidget(m_sourcePicker, 1, 0);
+    grid->addWidget(m_swapButton, 1, 1, Qt::AlignCenter);
+    grid->addWidget(m_destinationPicker, 1, 2);
+    grid->setColumnStretch(0, 1);
+    grid->setColumnStretch(2, 1);
+    return grid;
+}
+
+QCheckBox *MergeDialog::buildNoFastForwardBox()
+{
+    m_noFastForward = new QCheckBox(tr("Always create a merge commit"));
+    m_noFastForward->setToolTip(tr("git merge --no-ff: record a merge commit even when the branch could simply move up"));
+    m_noFastForward->setChecked(QSettings().value(settings::kMergeNoFastForward, false).toBool());
+    connect(m_noFastForward, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(settings::kMergeNoFastForward, on);
+        if (m_previewReady)
+            showPreview();
+    });
+    return m_noFastForward;
+}
+
+QHBoxLayout *MergeDialog::buildButtonRow()
+{
     auto *buttons = new QHBoxLayout;
     buttons->setSpacing(10);
     m_abortButton = new QPushButton(tr("Abort merge"));
@@ -351,38 +563,18 @@ void MergeDialog::buildUi()
     buttons->addStretch();
     buttons->addWidget(m_cancelButton);
     buttons->addWidget(m_mergeButton);
-    layout->addLayout(buttons);
-
-    // The width is fixed; the height follows the content (fitToContent()).
-    setFixedWidth(640);
-    setTabOrder(m_sourcePicker, m_swapButton);
-    setTabOrder(m_swapButton, m_destinationPicker);
-    setTabOrder(m_destinationPicker, m_noFastForward);
-    setTabOrder(m_noFastForward, m_mergeButton);
-    setTabOrder(m_mergeButton, m_cancelButton);
-    m_sourcePicker->setFocus();
+    return buttons;
 }
 
 void MergeDialog::applyTheme()
 {
     const OmarchyTheme *t = OmarchyTheme::instance();
-    for (QLabel *l : {m_sourceCaption, m_destinationCaption, m_detail})
+    for (QLabel *l : {m_sourceCaption, m_destinationCaption})
         l->setFont(t->captionFont());
-    QFont bold = t->uiFont();
-    bold.setBold(true);
-    m_headline->setFont(bold);
-    QFont big = t->uiFont();
-    big.setPixelSize(qRound(t->fontBase() * 1.5));
-    m_verdictIcon->setFont(big);
-    m_verdictIcon->setFixedWidth(QFontMetrics(big).horizontalAdvance(glyph(kGood, QStringLiteral("✓"))) + 4);
-    m_warningIcon->setFont(t->uiFont());
-    m_warningIcon->setText(glyph(kWarn, QStringLiteral("!")));
-    m_warningIcon->setStyleSheet(QStringLiteral("color: %1;").arg(t->color(QStringLiteral("yellow")).name()));
-    m_warning->setFont(t->captionFont());
-    m_files->setFont(t->monoFont());
+    m_card->applyTheme();
     m_swapButton->setText(glyph(kSwap, QStringLiteral("⇄")));
     m_swapButton->setFixedSize(m_sourcePicker->sizeHint().height(), m_sourcePicker->sizeHint().height());
-    m_mergeButton->setText(icon(kMerge) + tr("Merge"));
+    m_mergeButton->setText(ui::icon(ui::kMerge) + tr("Merge"));
     m_abortButton->setText(tr("Abort merge"));
     updatePickers();
     if (m_state.inProgress)
@@ -414,8 +606,8 @@ void MergeDialog::swap()
 // both sides are local.
 void MergeDialog::updatePickers()
 {
-    m_sourcePicker->setBranch(m_source, m_branches.isRemote(m_source));
-    m_destinationPicker->setBranch(m_destination, false);
+    m_sourcePicker->setBranch(m_source);
+    m_destinationPicker->setBranch(m_destination);
     const bool frozen = m_state.inProgress || m_merging;
     m_sourcePicker->setEnabled(!frozen);
     m_destinationPicker->setEnabled(!frozen);
@@ -483,121 +675,73 @@ void MergeDialog::schedulePreview()
         showPreview();
         return;
     }
-    setVerdict(Checking, tr("Checking what merging %1 into %2 would do…").arg(m_source, m_destination), QString());
+    setVerdict(MergeVerdict::checking(tr("Checking what merging %1 into %2 would do…").arg(m_source, m_destination)));
     m_mergeButton->setEnabled(false);
     m_debounce->start();
 }
 
 // The check runs git a few times (merge-tree among them, which can take a
-// moment on a large repository): off the UI thread, results told apart by
-// generation so a stale one is dropped.
+// moment on a large repository): off the UI thread on a GitRepo of its own,
+// since the window may point the shared one at another repository while
+// this runs. Results are told apart by generation so a stale one is dropped.
 void MergeDialog::runPreview()
 {
     const int generation = m_generation;
-    const QString source = m_source, destination = m_destination;
-    GitRepo *repo = m_repo;
-    auto *result = new MergePreview;
-    QThread *thread = QThread::create([repo, source, destination, result] { *result = repo->mergePreview(source, destination); });
-    m_threads << thread;
-    connect(thread, &QThread::finished, this, [this, thread, result, generation] {
-        m_threads.removeAll(thread);
-        if (generation == m_generation && !m_state.inProgress) {
-            m_preview = *result;
-            m_previewReady = true;
-            showPreview();
-        }
-        delete result;
+    const QString root = m_repo->root(), source = m_source, destination = m_destination;
+    const auto result = std::make_shared<MergePreview>();
+    QThread *thread = QThread::create([root, source, destination, result] {
+        const GitRepo repo(root);
+        *result = repo.mergePreview(source, destination);
     });
+    // Both the thread and the result outlive a dialog closed mid-run and go
+    // when the thread does; `this` as the context drops the answer instead.
+    connect(thread, &QThread::finished, this, [this, result, generation] { applyPreview(*result, generation); });
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
 }
 
+void MergeDialog::applyPreview(const MergePreview &preview, int generation)
+{
+    if (generation != m_generation || m_state.inProgress)
+        return;
+    // A branch list is open over the dialog: showing the verdict resizes the
+    // window under it, so the answer waits until the menu has closed. A short
+    // interval rather than 0: a zero timer would spin the menu's event loop.
+    if (QApplication::activePopupWidget()) {
+        QTimer::singleShot(kPopupPollMs, this, [this, preview, generation] { applyPreview(preview, generation); });
+        return;
+    }
+    m_preview = preview;
+    m_previewReady = true;
+    showPreview();
+}
+
 void MergeDialog::showPreview()
 {
-    const MergePreview &p = m_preview;
-    const QString s = p.source, d = p.destination;
-    const bool noFF = m_noFastForward->isChecked();
-    const QString commits = counted(p.commits, tr("commit"), tr("commits"));
-    const QString stat = counted(p.files, tr("file changed"), tr("files changed")) + tr("   +%1 −%2").arg(p.added).arg(p.removed);
-    QStringList detail;
-    QStringList files;
-    QString warning;
-    Kind kind = Info;
-    QString headline;
-    switch (p.outcome) {
-    case MergePreview::Same:
-        headline = tr("Pick two different branches.");
-        detail << tr("The same branch is on both sides.");
-        break;
-    case MergePreview::UpToDate:
-        headline = tr("Nothing to merge.");
-        detail << tr("%2 already has every commit of %1.").arg(s, d);
-        break;
-    case MergePreview::FastForward:
-        kind = Good;
-        if (noFF) {
-            headline = tr("Merges cleanly — no conflicts.");
-            detail << tr("A merge commit brings %1 from %2 into %3 (it could simply move up, but the box below asks for a commit)")
-                          .arg(commits, s, d);
-        } else {
-            headline = tr("Fast-forward — no conflicts possible.");
-            detail << tr("%3 simply moves up %1 to the tip of %2").arg(commits, s, d);
-        }
-        detail << stat;
-        break;
-    case MergePreview::Clean:
-        kind = Good;
-        headline = tr("Merges cleanly — no conflicts.");
-        detail << tr("%1 from %2 meet %3 of %4's own in a merge commit").arg(commits, s).arg(p.diverged).arg(d) << stat;
-        break;
-    case MergePreview::Conflicts:
-        kind = Bad;
-        headline = p.conflicts.size() == 1 ? tr("1 file would conflict.") : tr("%1 files would conflict.").arg(p.conflicts.size());
-        detail << tr("%1 from %2 against %3 of %4's own").arg(commits, s).arg(p.diverged).arg(d) << stat
-               << tr("Git leaves conflict markers in these files for you to resolve, then Commit merge:");
-        files = p.conflicts;
-        break;
-    case MergePreview::Failed:
-        kind = Bad;
-        headline = s.isEmpty() || d.isEmpty() ? p.error : tr("Could not check the merge.");
-        if (!s.isEmpty() && !d.isEmpty())
-            detail << p.error;
-        break;
-    }
-    if (p.isValid() && p.outcome != MergePreview::Same && !d.isEmpty() && d != m_branches.current)
-        detail.insert(qMin(1, detail.size()), tr("%1 is checked out first").arg(d));
-    if (!p.blocked.isEmpty())
-        warning = (p.blocked.size() == 1 ? tr("Local changes to %1 are in the way — commit or stash them first.")
-                                         : tr("Local changes to %1 files are in the way: %2 — commit or stash them first.").arg(p.blocked.size()))
-                      .arg(fewOf(p.blocked, 4));
-    setVerdict(kind, headline, detail.join(QLatin1Char('\n')), files, warning);
-
-    const bool can = p.canMerge() && !m_merging;
-    m_mergeButton->setEnabled(can);
-    QString tip;
-    if (!p.blocked.isEmpty())
-        tip = tr("Blocked by local changes — see above");
-    else if (p.outcome == MergePreview::Conflicts)
-        tip = tr("Start the merge; the conflicted files wait in the Changes list (Enter)");
-    else if (p.outcome == MergePreview::FastForward && !noFF)
-        tip = tr("Fast-forward %2 to %1 (Enter)").arg(s, d);
-    else if (can)
-        tip = tr("Merge %1 into %2 with a merge commit (Enter)").arg(s, d);
-    m_mergeButton->setToolTip(tip);
+    const MergeVerdict verdict = mergeVerdict(m_preview, m_noFastForward->isChecked(), m_branches.current);
+    setVerdict(verdict);
+    m_mergeButton->setEnabled(verdict.canMerge && !m_merging);
+    m_mergeButton->setToolTip(verdict.buttonTip);
 }
 
 void MergeDialog::showMergeState()
 {
     const MergeState &st = m_state;
     const QString d = m_destination.isEmpty() ? tr("the current branch") : m_destination;
-    QString detail;
+    MergeVerdict verdict;
+    verdict.kind = MergeVerdict::Bad;
+    verdict.headline = tr("A merge of %1 into %2 is in progress.").arg(st.source, d);
     if (st.conflicts.isEmpty())
-        detail = tr("Every conflict is resolved — Commit merge in the Changes list finishes it, or abort to put %1 back as it was.").arg(d);
+        verdict.detail << tr("Every conflict is resolved — Commit merge in the Changes list finishes it, "
+                             "or abort to put %1 back as it was.")
+                              .arg(d);
     else
-        detail = tr("%1 conflict markers — resolve them in the Changes list and Commit merge, "
-                    "or abort to put %2 back as it was:")
-                     .arg(st.conflicts.size() == 1 ? tr("1 file still carries") : tr("%1 files still carry").arg(st.conflicts.size()), d);
-    setVerdict(Bad, tr("A merge of %1 into %2 is in progress.").arg(st.source, d), detail, st.conflicts);
+        verdict.detail << tr("%1 conflict markers — resolve them in the Changes list and Commit merge, "
+                             "or abort to put %2 back as it was:")
+                              .arg(st.conflicts.size() == 1 ? tr("1 file still carries")
+                                                            : tr("%1 files still carry").arg(st.conflicts.size()), d);
+    verdict.files = st.conflicts;
+    setVerdict(verdict);
     m_mergeButton->hide();
     m_abortButton->show();
     m_cancelButton->setText(tr("Close"));
@@ -606,59 +750,10 @@ void MergeDialog::showMergeState()
     updatePickers();
 }
 
-void MergeDialog::setVerdict(Kind kind, const QString &headline, const QString &detail, const QStringList &files,
-                             const QString &warning)
+void MergeDialog::setVerdict(const MergeVerdict &verdict)
 {
-    const OmarchyTheme *t = OmarchyTheme::instance();
-    QColor color = t->mutedText();
-    QString mark;
-    switch (kind) {
-    case Checking: mark = spinnerFrames(m_verdictIcon->font()).first(); break;
-    case Info: mark = glyph(kInfo, QStringLiteral("i")); break;
-    case Good: color = t->color(QStringLiteral("green")); mark = glyph(kGood, QStringLiteral("✓")); break;
-    case Bad: color = t->color(QStringLiteral("red")); mark = glyph(kBad, QStringLiteral("✗")); break;
-    }
-    if (kind == Checking)
-        m_spinner->start();
-    else
-        m_spinner->stop();
-    m_verdictIcon->setText(mark);
-    m_verdictIcon->setStyleSheet(QStringLiteral("color: %1;").arg(color.name()));
-    m_headline->setText(headline);
-    m_headline->setStyleSheet(QStringLiteral("color: %1;").arg((kind == Good || kind == Bad ? color : t->text()).name()));
-    m_detail->setText(detail);
-    m_detail->setVisible(!detail.isEmpty());
-    m_files->clear();
-    for (const QString &path : files) {
-        auto *item = new QListWidgetItem(path, m_files);
-        item->setToolTip(path);
-    }
-    if (!files.isEmpty()) {
-        const int rowH = m_files->sizeHintForRow(0) > 0 ? m_files->sizeHintForRow(0) : m_files->fontMetrics().height() + 4;
-        m_files->setFixedHeight(rowH * qMin(files.size(), 6) + 4);
-    }
-    m_files->setVisible(!files.isEmpty());
-    m_warning->setText(warning);
-    m_warningRow->setVisible(!warning.isEmpty());
+    m_card->setVerdict(verdict);
     fitToContent();
-}
-
-// The height of the verdict card showing a headline and two lines of detail,
-// what a clean merge or a fast-forward reports.
-int MergeDialog::typicalVerdictHeight() const
-{
-    const QMargins m = m_verdict->layout()->contentsMargins();
-    const int frame = m_verdict->rect().height() - m_verdict->contentsRect().height();
-    const int spacing = static_cast<QGridLayout *>(m_verdict->layout())->verticalSpacing();
-    // Measured the way QLabel lays out wrapped text (a bounding rect, not
-    // lineSpacing(): the two differ by the font's leading at some sizes).
-    auto textHeight = [](const QLabel *label, const QString &text) {
-        return label->fontMetrics().boundingRect(0, 0, 2000, 2000, Qt::TextWordWrap, text).height();
-    };
-    // The icon spans the headline and detail rows, so it only counts when
-    // it is taller than both of them together.
-    const int text = textHeight(m_headline, QStringLiteral("x")) + spacing + textHeight(m_detail, QStringLiteral("x\nx"));
-    return frame + m.top() + qMax(text, m_verdictIcon->sizeHint().height()) + m.bottom();
 }
 
 // Size the window to its content: the pickers at the top, the buttons at
@@ -669,10 +764,10 @@ int MergeDialog::typicalVerdictHeight() const
 // result, before there is one) instead of collapsing and growing again.
 void MergeDialog::fitToContent()
 {
-    if (m_spinner->isActive())
-        m_verdict->setMinimumHeight(qMax(m_verdictHeight, typicalVerdictHeight()));
+    if (m_card->checking())
+        m_card->setMinimumHeight(qMax(m_verdictHeight, m_card->typicalHeight()));
     else
-        m_verdict->setMinimumHeight(0);
+        m_card->setMinimumHeight(0);
     QLayout *l = layout();
     l->invalidate();
     l->activate();
@@ -683,8 +778,8 @@ void MergeDialog::fitToContent()
     // (and, shorter than the content, a clipped card).
     if (target != height() || maximumHeight() != target)
         setFixedHeight(target);
-    if (!m_spinner->isActive() && isVisible())
-        m_verdictHeight = m_verdict->height();
+    if (!m_card->checking() && isVisible())
+        m_verdictHeight = m_card->height();
 }
 
 // Fonts and frame widths from the stylesheet are only final once the widgets
@@ -707,41 +802,57 @@ void MergeDialog::setBusy(bool busy)
     m_abortButton->setEnabled(!busy);
 }
 
+// git merges into the branch that is checked out, so a destination that is
+// not the current one is switched to first.
+bool MergeDialog::checkoutDestination(const QString &destination)
+{
+    if (destination == m_branches.current)
+        return true;
+    QString error;
+    if (!m_repo->checkout(destination, &error)) {
+        setBusy(false);
+        setVerdict(MergeVerdict::problem(tr("Could not switch to %1.").arg(destination), error));
+        return false;
+    }
+    m_branches = m_repo->branches();
+    return true;
+}
+
 void MergeDialog::startMerge()
 {
     if (m_merging || m_state.inProgress || !m_previewReady || !m_preview.canMerge())
         return;
     const QString source = m_source, destination = m_destination;
     setBusy(true);
-    if (destination != m_branches.current) {
-        QString error;
-        if (!m_repo->checkout(destination, &error)) {
-            setBusy(false);
-            setVerdict(Bad, tr("Could not switch to %1.").arg(destination), error);
-            return;
-        }
-        m_branches = m_repo->branches();
-    }
-    setVerdict(Checking, tr("Merging %1 into %2…").arg(source, destination), QString());
+    if (!checkoutDestination(destination))
+        return;
+    setVerdict(MergeVerdict::checking(tr("Merging %1 into %2…").arg(source, destination)));
     const bool noFF = m_noFastForward->isChecked();
     const bool fastForward = m_preview.outcome == MergePreview::FastForward && !noFF;
-    m_repo->runAsync(GitRepo::mergeArgs(source, noFF), this,
-                     [this, source, destination, fastForward](int code, const QByteArray &, const QByteArray &err) {
-                         if (code == 0) {
-                             emit merged(source, destination, 0, fastForward);
-                             accept();
-                             return;
-                         }
-                         const MergeState state = m_repo->mergeState();
-                         if (state.inProgress) {
-                             emit merged(source, destination, state.conflicts.size(), false);
-                             accept();
-                             return;
-                         }
-                         setBusy(false);
-                         setVerdict(Bad, tr("The merge failed."), QString::fromUtf8(err).trimmed());
-                     },
-                     300000, {QStringLiteral("GIT_EDITOR=true")});
+    m_repo->mergeAsync(source, noFF, this,
+                       [this, source, destination, fastForward](GitRepo::MergeResult result, const QString &error) {
+                           finishMerge(source, destination, fastForward, result, error);
+                       });
+}
+
+// What git left behind: the view closes on a merge that ran, conflicts and
+// all (the Changes list takes over), and stays open on one that did not.
+void MergeDialog::finishMerge(const QString &source, const QString &destination, bool fastForward,
+                              GitRepo::MergeResult result, const QString &error)
+{
+    if (result == GitRepo::Merged) {
+        emit merged(source, destination, 0, fastForward);
+        accept();
+        return;
+    }
+    if (result == GitRepo::MergeConflicts) {
+        // The paths come from the merge git left in place, not from its output.
+        emit merged(source, destination, m_repo->mergeState().conflicts.size(), false);
+        accept();
+        return;
+    }
+    setBusy(false);
+    setVerdict(MergeVerdict::problem(tr("The merge failed."), error));
 }
 
 void MergeDialog::abortMerge()
@@ -753,7 +864,7 @@ void MergeDialog::abortMerge()
     const QString source = m_state.source, destination = m_destination;
     if (!m_repo->abortMerge(&error)) {
         setBusy(false);
-        setVerdict(Bad, tr("Could not abort the merge."), error);
+        setVerdict(MergeVerdict::problem(tr("Could not abort the merge."), error));
         return;
     }
     emit mergeAborted(source, destination);

@@ -1,4 +1,5 @@
 #include "RemoteSync.h"
+#include "ProcessUtil.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -7,6 +8,15 @@
 namespace {
 constexpr int kMaxBackoff = 15 * 60; // seconds
 constexpr int kNudgeAge = 45;        // seconds; a nudge fetches when the last fetch is older
+// A ref file changes several times per command; the watch waits for quiet.
+constexpr int kWatchDebounceMs = 400;
+// Long enough for the window to have painted before a fetch competes for the
+// disk, short enough that it still feels like part of opening.
+constexpr int kFirstFetchDelayMs = 1500;
+// A fetch hanging on the network is worth less than a responsive window; a
+// pull or a push may legitimately move a lot of data.
+constexpr int kFetchTimeoutMs = 90000;
+constexpr int kTransferTimeoutMs = 300000;
 
 QString firstLine(const QByteArray &text)
 {
@@ -26,7 +36,7 @@ RemoteSync::RemoteSync(GitRepo *repo, QObject *parent)
     m_autoTimer.setSingleShot(true);
     connect(&m_autoTimer, &QTimer::timeout, this, &RemoteSync::autoFetch);
     m_debounce.setSingleShot(true);
-    m_debounce.setInterval(400);
+    m_debounce.setInterval(kWatchDebounceMs);
     connect(&m_debounce, &QTimer::timeout, this, &RemoteSync::repositoryChanged);
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString &path) {
         watchGitDir(); // new ref directories (first fetch of a remote) need a watch too
@@ -57,9 +67,7 @@ void RemoteSync::reset()
     if (m_process) {
         // The old repository's fetch is of no interest any more (and its
         // result would be read as the new one's).
-        disconnect(m_process, nullptr, this, nullptr);
-        m_process->kill();
-        m_process->waitForFinished(2000);
+        abandonProcess(m_process, this);
         m_process->deleteLater();
         m_process = nullptr;
     }
@@ -80,19 +88,13 @@ void RemoteSync::reset()
     nudge();
 }
 
-// A running fetch is not worth waiting for. Waiting emits finished(), so the
-// callback is detached first: the window owning this object is half gone.
+// A running fetch is not worth waiting for: the window that owns this
+// object is half gone.
 RemoteSync::~RemoteSync()
 {
-    if (m_process) {
-        disconnect(m_process, nullptr, this, nullptr);
-        m_process->kill();
-        m_process->waitForFinished(2000);
-    }
+    abandonProcess(m_process, this);
 }
 
-// Loose refs change by rename inside refs/heads and refs/remotes/<remote>,
-// packed refs and HEAD by rename inside the git directory itself, and
 // The entries of .git that say where the refs stand (HEAD, FETCH_HEAD,
 // packed-refs, ORIG_HEAD, the refs and logs directories...) with their sizes
 // and times. Lock files come and go with every git command and the index is
@@ -161,7 +163,7 @@ void RemoteSync::nudge()
         return;
     const bool stale = !m_lastFetch.isValid() || m_lastFetch.secsTo(QDateTime::currentDateTime()) >= kNudgeAge;
     if (stale && m_failures == 0)
-        m_autoTimer.start(1500); // let the window paint first
+        m_autoTimer.start(kFirstFetchDelayMs); // let the window paint first
     else
         scheduleAutoFetch();
 }
@@ -247,7 +249,7 @@ void RemoteSync::start(Op op, const QStringList &args)
         full << QStringLiteral("--quiet");
     m_process = m_repo->runAsync(full, this, [this, op](int code, const QByteArray &out, const QByteArray &err) {
         onFinished(op, code, out, err);
-    }, op == Fetch ? 90000 : 300000);
+    }, op == Fetch ? kFetchTimeoutMs : kTransferTimeoutMs);
 }
 
 void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteArray &err)

@@ -1,6 +1,8 @@
 build/
 omagit
 Makefile
+tests/Makefile*
+**/.qmake.stash
 .qmake.stash
 *.o
 moc_*

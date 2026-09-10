@@ -1,5 +1,6 @@
 #include "DiffPane.h"
 #include "DiffView.h"
+#include "Settings.h"
 #include "UiHelpers.h"
 
 #include <QFrame>
@@ -10,6 +11,15 @@
 #include <QVBoxLayout>
 
 using namespace ui;
+
+namespace {
+
+void saveOption(QLatin1StringView key, const QVariant &value)
+{
+    QSettings().setValue(key, value);
+}
+
+} // namespace
 
 DiffPane::DiffPane(QWidget *parent)
     : QWidget(parent)
@@ -59,11 +69,11 @@ DiffPane::DiffPane(QWidget *parent)
     connect(m_nextButton, &QToolButton::clicked, m_diff, &DiffView::nextChange);
     connect(wsButton, &QToolButton::toggled, m_diff, &DiffView::setShowWhitespace);
     {
-        QSettings settings;
-        const bool twoPane = settings.value(QStringLiteral("diff/twoPane"), true).toBool();
+        QSettings conf;
+        const bool twoPane = conf.value(settings::kDiffTwoPane, true).toBool();
         m_diff->setMode(twoPane ? DiffView::TwoPane : DiffView::OnePane);
         paneButton->setChecked(twoPane);
-        const bool syntax = settings.value(QStringLiteral("diff/syntaxHighlighting"), true).toBool();
+        const bool syntax = conf.value(settings::kDiffSyntaxHighlighting, true).toBool();
         m_diff->setSyntaxHighlighting(syntax);
         syntaxButton->setChecked(syntax);
     }
@@ -71,13 +81,13 @@ DiffPane::DiffPane(QWidget *parent)
     connect(m_diff, &DiffView::syntaxHighlightingChanged, this, [syntaxButton](bool on) {
         QSignalBlocker blocker(syntaxButton);
         syntaxButton->setChecked(on);
-        QSettings().setValue(QStringLiteral("diff/syntaxHighlighting"), on);
+        saveOption(settings::kDiffSyntaxHighlighting, on);
     });
     connect(paneButton, &QToolButton::toggled, m_diff, &DiffView::setTwoPane);
     connect(m_diff, &DiffView::modeChanged, this, [paneButton](DiffView::Mode mode) {
         QSignalBlocker blocker(paneButton);
         paneButton->setChecked(mode == DiffView::TwoPane);
-        QSettings().setValue(QStringLiteral("diff/twoPane"), mode == DiffView::TwoPane);
+        saveOption(settings::kDiffTwoPane, mode == DiffView::TwoPane);
     });
     connect(m_diff, &DiffView::changeIndexChanged, this, [this](int index, int total) {
         m_prevButton->setEnabled(total > 0 && index > 0);

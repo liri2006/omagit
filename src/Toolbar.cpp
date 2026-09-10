@@ -2,6 +2,7 @@
 #include "BadgeButton.h"
 #include "OmarchyTheme.h"
 #include "TickMenu.h"
+#include "UiHelpers.h"
 
 #include <QAction>
 #include <QMenu>
@@ -10,6 +11,8 @@
 
 namespace {
 constexpr uint kDots = 0xF01D8; // md-dots_horizontal
+// A separator is shorter than the buttons beside it, like the shell's own.
+constexpr int kSeparatorHeight = 22;
 }
 
 Toolbar::Toolbar(QWidget *parent)
@@ -56,8 +59,8 @@ void Toolbar::addButton(QToolButton *button, const QString &fullText, const QStr
 void Toolbar::addSeparator()
 {
     Item item;
-    item.separator = new QWidget(this);
-    item.separator->setAutoFillBackground(true);
+    item.separator = ui::hairline(Qt::Vertical);
+    item.separator->setParent(this);
     item.separator->show();
     m_items << item;
     applyTheme();
@@ -65,16 +68,8 @@ void Toolbar::addSeparator()
 
 void Toolbar::applyTheme()
 {
-    const OmarchyTheme *t = OmarchyTheme::instance();
-    const QString dots = t->glyph(kDots);
+    const QString dots = OmarchyTheme::instance()->glyph(kDots);
     m_more->setText(dots.isEmpty() ? QStringLiteral("…") : dots);
-    for (const Item &item : std::as_const(m_items)) {
-        if (!item.separator)
-            continue;
-        QPalette pal = item.separator->palette();
-        pal.setColor(QPalette::Window, t->border());
-        item.separator->setPalette(pal);
-    }
     measure();
 }
 
@@ -180,7 +175,7 @@ void Toolbar::relayout()
             item.button->setText(full ? item.full : item.icon);
             place(item.button, x, item.width(full));
         } else {
-            item.separator->setGeometry(x, (m_height - 22) / 2, 1, 22);
+            item.separator->setGeometry(x, (m_height - kSeparatorHeight) / 2, 1, kSeparatorHeight);
             item.separator->show();
         }
         x += item.width(full) + kSpacing;

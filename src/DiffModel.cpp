@@ -1,15 +1,25 @@
 #include "DiffModel.h"
 
+#include <QCoreApplication>
 #include <QRegularExpression>
 #include <QStringList>
 #include <algorithm>
+
+// Guard rails for the inline (intra-line) diff: the LCS table is O(n·m), so a
+// minified or generated line is not worth the time, and once nearly everything
+// on both sides changed a full-line highlight reads better than a shredded one.
+static constexpr qint64 kMaxLcsCells = 4'000'000;
+static constexpr int kMaxInlineChars = 4000;
+static constexpr double kFullLineCoverage = 0.85;
 
 DiffDocument DiffModel::parse(const QString &unified)
 {
     DiffDocument doc;
     if (unified.contains(QLatin1String("Binary files")) && !unified.contains(QLatin1String("\n@@"))) {
         doc.binary = true;
-        doc.message = QStringLiteral("Binary file — no textual diff available.");
+        // MainWindow shows its own wording; this is the fallback for any other
+        // caller, so it still goes through the translation catalogue.
+        doc.message = QCoreApplication::translate("DiffModel", "Binary file — no textual diff available.");
         return doc;
     }
 
@@ -107,19 +117,22 @@ static QVector<Token> tokenize(const QString &s)
 }
 
 // Classic LCS over tokens; marks tokens that are not part of the common
-// subsequence as changed on each side.
-static void inlineDiff(const QString &a, const QString &b, QVector<DiffSpan> &spansA, QVector<DiffSpan> &spansB)
+// subsequence as changed on each side. `dp` is the caller's scratch table,
+// handed in so a file full of changed lines allocates it once.
+static void inlineDiff(const QString &a, const QString &b, QVector<DiffSpan> &spansA,
+                       QVector<DiffSpan> &spansB, QVector<int> &dp)
 {
     const QVector<Token> ta = tokenize(a), tb = tokenize(b);
     const int n = ta.size(), m = tb.size();
-    if (n == 0 || m == 0 || qint64(n) * m > 4'000'000) {
+    if (n == 0 || m == 0 || qint64(n) * m > kMaxLcsCells) {
         if (n)
             spansA.append({0, int(a.size())});
         if (m)
             spansB.append({0, int(b.size())});
         return;
     }
-    QVector<int> dp((n + 1) * (m + 1), 0);
+    dp.resize((n + 1) * (m + 1));
+    dp.fill(0);
     auto at = [&](int i, int j) -> int & { return dp[i * (m + 1) + j]; };
     for (int i = n - 1; i >= 0; --i)
         for (int j = m - 1; j >= 0; --j)
@@ -163,7 +176,7 @@ static void inlineDiff(const QString &a, const QString &b, QVector<DiffSpan> &sp
             c += s.length;
         return len ? double(c) / len : 0.0;
     };
-    if (coverage(spansA, a.size()) > 0.85 && coverage(spansB, b.size()) > 0.85) {
+    if (coverage(spansA, a.size()) > kFullLineCoverage && coverage(spansB, b.size()) > kFullLineCoverage) {
         spansA = {{0, int(a.size())}};
         spansB = {{0, int(b.size())}};
     }
@@ -173,28 +186,15 @@ void DiffModel::computeInlineDiffs(DiffDocument &doc)
 {
     // Pair the i-th removed line of a block with the i-th added line, the
     // same way a classic one-pane diff view does.
-    int i = 0;
-    const int n = doc.lines.size();
-    while (i < n) {
-        if (doc.lines[i].state != DiffLine::Removed) {
-            ++i;
-            continue;
-        }
-        int r0 = i;
-        while (i < n && doc.lines[i].state == DiffLine::Removed)
-            ++i;
-        int r1 = i;
-        int a0 = i;
-        while (i < n && doc.lines[i].state == DiffLine::Added)
-            ++i;
-        int a1 = i;
+    QVector<int> dp;
+    forEachChangeBlock(doc.lines, [&](int r0, int r1, int a0, int a1) {
         const int pairs = std::min(r1 - r0, a1 - a0);
         for (int k = 0; k < pairs; ++k) {
             DiffLine &rem = doc.lines[r0 + k];
             DiffLine &add = doc.lines[a0 + k];
-            if (rem.text.size() > 4000 || add.text.size() > 4000)
+            if (rem.text.size() > kMaxInlineChars || add.text.size() > kMaxInlineChars)
                 continue;
-            inlineDiff(rem.text, add.text, rem.inline_, add.inline_);
+            inlineDiff(rem.text, add.text, rem.inline_, add.inline_, dp);
         }
-    }
+    });
 }

@@ -38,9 +38,6 @@ signals:
     void currentFileChanged();
     void refreshRequested();
 
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
-
 private slots:
     void onCommitChanged();
     void onFilterChanged();

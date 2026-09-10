@@ -8,6 +8,10 @@
 #include <QFont>
 #include <QPoint>
 #include <QVector>
+#include <array>
+
+class DiffScrollBar;
+class QPainter;
 
 // Side-by-side and one-pane diff viewer.
 //
@@ -24,8 +28,8 @@ public:
 
     explicit DiffView(QWidget *parent = nullptr);
 
-    void setDocument(const DiffDocument &doc, const QString &title, const QString &subtitle = QString(),
-                     const QString &leftLabel = QString(), const QString &rightLabel = QString());
+    void setDocument(const DiffDocument &doc, const QString &title, const QString &subtitle,
+                     const QString &leftLabel, const QString &rightLabel);
     void clear(const QString &message = QString());
     const DiffDocument &document() const { return m_doc; }
 
@@ -41,13 +45,8 @@ public:
     void restoreViewState(const ViewState &state);
 
     Mode mode() const { return m_mode; }
-    void setTabWidth(int spaces);
-    int tabWidth() const { return m_tabWidth; }
     void setShowWhitespace(bool on);
-    bool showWhitespace() const { return m_showWhitespace; }
     void setSyntaxHighlighting(bool on);
-    bool syntaxHighlighting() const { return m_syntax; }
-    Language language() const { return m_language; }
 
 public slots:
     void setMode(Mode mode);
@@ -87,30 +86,65 @@ private:
         bool operator==(const Pos &o) const { return pane == o.pane && row == o.row && col == o.col; }
     };
 
+    // One diff line with its tabs already expanded, built when the document is
+    // set so painting and hit-testing never allocate per line.
+    struct LineLayout {
+        QString text;          // tabs expanded
+        QVector<int> columns;  // raw index -> column; empty while the two agree
+        int column(int index) const { return columns.isEmpty() ? index : columns.at(index); }
+    };
+
+    // Two-pane geometry: the width the panes share (the divider takes the rest)
+    // and the least either of them may become, so neither loses its margin.
+    struct PaneSplit {
+        int available = 1;
+        int minimum = 0;
+        int clamp(int left) const { return qBound(minimum, left, available - minimum); }
+    };
+
+    // The part of a cell's geometry that every drawing step below needs.
+    struct Cell {
+        qreal x0 = 0;    // x of column 0, already scrolled
+        int y = 0;
+        int firstCol = 0;
+        int lastCol = 0;
+        int baseline = 0;
+    };
+
     void rebuildLayout();
+    void rebuildLineLayouts();
     void updateMetrics();
     void updateScrollBars();
     int headerHeight() const;
     int marginWidth() const;
     int paneCount() const { return m_panes.size(); }
+    int rowCount() const { return m_panes.isEmpty() ? 0 : m_panes[0].size(); }
+    PaneSplit paneSplitMetrics() const;
     QRect paneRect(int pane) const;  // full pane incl. margin, below the header
     bool onDivider(const QPoint &point) const;
+    void updateCursor(const QPoint &pos);
     void setPaneSplit(qreal split);
     int lineAt(int pane, int row) const; // index into m_doc.lines or -1 for filler
-    QString expanded(const DiffLine &l) const;
+    const LineLayout &layoutAt(int pane, int row) const;
     QString cellText(int pane, int row) const;
-    QVector<int> columnMap(const QString &raw) const; // raw index -> expanded column
     Pos posAt(const QPoint &p, int forcePane = -1) const;
     bool hasSelection() const { return !(m_selAnchor == m_selCursor); }
     QString selectedText() const;
     void scrollToRow(int row);
-    void drawMarginIcon(class QPainter &p, const QRect &r, DiffLine::State state) const;
-    void drawCell(class QPainter &p, int pane, int row, int y, const QRect &pr);
+    void drawMarginIcon(QPainter &p, const QRect &r, DiffLine::State state) const;
+    void drawCell(QPainter &p, int pane, int row, int y, const QRect &pr);
+    QColor fillLineBackground(QPainter &p, const DiffLine &l, const QRect &box) const;
+    void drawInlineHighlight(QPainter &p, const DiffLine &l, const LineLayout &layout,
+                             const Cell &cell, const QColor &inlineBg) const;
+    void drawSelection(QPainter &p, int pane, int row, const LineLayout &layout, const Cell &cell) const;
+    void drawCellText(QPainter &p, const DiffLine &l, const LineLayout &layout, const Cell &cell) const;
+    void drawWhitespaceMarkers(QPainter &p, const DiffLine &l, const LineLayout &layout, const Cell &cell) const;
     void applySyntax(); // runs the tokeniser over m_doc, or clears it
-    void drawMargin(class QPainter &p, int pane, int row, int y, const QRect &pr);
+    void drawMargin(QPainter &p, int pane, int row, int y, const QRect &pr);
     void goToBlock(int index);
 
     DiffDocument m_doc;
+    QVector<LineLayout> m_lineLayouts; // parallel to m_doc.lines
     QString m_title;
     QString m_subtitle;
     QString m_leftLabel;
@@ -129,12 +163,13 @@ private:
     bool m_showWhitespace = false;
     bool m_syntax = true;
     Language m_language = Language::None;
-    QColor m_syntaxPens[7];          // one per TokenKind, refreshed with the theme
+    std::array<QColor, size_t(kTokenKindCount)> m_syntaxPens; // one per TokenKind, refreshed with the theme
     int m_currentBlock = -1;
     Pos m_selAnchor, m_selCursor;
     bool m_dragging = false;
     bool m_resizingPanes = false;
     int m_dividerDragOffset = 0;
     qreal m_paneSplit = 0.5;
+    DiffScrollBar *m_changeBar = nullptr; // the vertical bar, which also paints the change ribbons
     QScrollBar *m_paneScrollBars[2] = {};
 };

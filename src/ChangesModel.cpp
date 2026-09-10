@@ -1,9 +1,9 @@
 #include "ChangesModel.h"
 #include "OmarchyTheme.h"
+#include "UiHelpers.h"
 
 #include <QColor>
 #include <QLocale>
-#include <QEvent>
 #include <QFont>
 #include <QFrame>
 #include <QHeaderView>
@@ -143,41 +143,41 @@ int ChangesModel::checkedCount() const
     return n;
 }
 
+// An empty list has no row to name in dataChanged; checkedChanged() still
+// goes out so the tristate box settles.
+void ChangesModel::setChecked(const std::function<bool(const FileChange &)> &pick, bool checked)
+{
+    for (const FileChange &c : std::as_const(m_changes)) {
+        if (!pick(c))
+            continue;
+        if (checked)
+            m_checked.insert(c.path);
+        else
+            m_checked.remove(c.path);
+    }
+    if (!m_changes.isEmpty())
+        emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
+    emit checkedChanged();
+}
+
 void ChangesModel::setAllChecked(bool checked)
 {
-    m_checked.clear();
-    if (checked)
-        for (const FileChange &c : m_changes)
-            m_checked.insert(c.path);
-    emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
-    emit checkedChanged();
+    setChecked([](const FileChange &) { return true; }, checked);
 }
 
 void ChangesModel::setUnversionedChecked(bool checked)
 {
-    for (const FileChange &c : m_changes)
-        if (c.isUntracked()) {
-            if (checked)
-                m_checked.insert(c.path);
-            else
-                m_checked.remove(c.path);
-        }
-    emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
-    emit checkedChanged();
+    setChecked([](const FileChange &c) { return c.isUntracked(); }, checked);
 }
 
 void ChangesModel::setPathsChecked(const QStringList &paths, bool checked)
 {
     const QSet<QString> set(paths.begin(), paths.end());
-    for (const FileChange &c : m_changes)
-        if (set.contains(c.path) || (!c.oldPath.isEmpty() && set.contains(c.oldPath))) {
-            if (checked)
-                m_checked.insert(c.path);
-            else
-                m_checked.remove(c.path);
-        }
-    emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
-    emit checkedChanged();
+    setChecked(
+        [&set](const FileChange &c) {
+            return set.contains(c.path) || (!c.oldPath.isEmpty() && set.contains(c.oldPath));
+        },
+        checked);
 }
 
 int ChangesModel::statusRank(FileChange::Kind kind)
@@ -262,7 +262,7 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
     }
     case Qt::FontRole:
         if (c.kind == FileChange::Unmerged) {
-            QFont f;
+            QFont f = t->uiFont();
             f.setBold(true);
             return f;
         }
@@ -351,21 +351,14 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->setTextElideMode(Qt::ElideMiddle);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->sortByColumn(ChangesModel::Status, Qt::AscendingOrder); // modified first, untracked last
-    table->horizontalHeader()->installEventFilter(this);
+    ui::onHeaderResize(table, [this] { fitPathColumn(); });
     applyTheme();
 }
 
 void ChangesTableSetup::applyTheme()
 {
-    m_table->verticalHeader()->setDefaultSectionSize(qRound(OmarchyTheme::instance()->fontBase() * 2.33));
+    m_table->verticalHeader()->setDefaultSectionSize(ui::tableRowHeight());
     m_table->viewport()->update();
-}
-
-bool ChangesTableSetup::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == m_table->horizontalHeader() && event->type() == QEvent::Resize)
-        fitPathColumn();
-    return QObject::eventFilter(watched, event);
 }
 
 void ChangesTableSetup::fitPathColumn()
@@ -374,5 +367,5 @@ void ChangesTableSetup::fitPathColumn()
     for (int c = 0; c < ChangesModel::ColumnCount; ++c)
         if (c != ChangesModel::Path)
             others += m_table->columnWidth(c);
-    m_table->setColumnWidth(ChangesModel::Path, qMax(240, m_table->viewport()->width() - others));
+    ui::fitStretchColumn(m_table, ChangesModel::Path, others);
 }

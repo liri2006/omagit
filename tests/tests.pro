@@ -4,8 +4,13 @@ CONFIG   += c++17 console
 CONFIG   -= app_bundle
 TARGET    = gitrepo_test
 TEMPLATE  = app
-SOURCES  += gitrepo_test.cpp ../src/GitRepo.cpp ../src/RemoteSync.cpp ../src/CommitMessageAgent.cpp
-HEADERS  += ../src/GitRepo.h ../src/RemoteSync.h ../src/CommitMessageAgent.h
+
+include(../omagit.pri)
+
+# Core only: linking the widget layer here would defeat the point of the
+# QT -= gui build, which is to keep GitRepo and friends free of QtGui.
+SOURCES  += gitrepo_test.cpp $$OMAGIT_CORE_SOURCES
+HEADERS  += $$OMAGIT_CORE_HEADERS
 OBJECTS_DIR = ../build/tests/obj
 MOC_DIR     = ../build/tests/moc
 DESTDIR     = ../build/tests
