@@ -591,8 +591,24 @@ QWidget *MainWindow::buildCommitPage()
 
     m_message = new MessageEdit;
     m_message->setPlaceholderText(tr("Commit message"));
-    m_message->setFixedHeight(theme->fontBase() * 7);
-    layout->addWidget(m_message);
+    m_message->setMinimumHeight(theme->fontBase() * 3);
+
+    auto *messageSplitter = new QSplitter(Qt::Vertical);
+    messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
+    messageSplitter->setHandleWidth(8);
+    messageSplitter->setChildrenCollapsible(false);
+    messageSplitter->addWidget(m_message);
+    auto *changes = new QWidget;
+    auto *changesLayout = new QVBoxLayout(changes);
+    changesLayout->setContentsMargins(0, 0, 0, 0);
+    changesLayout->setSpacing(8);
+    messageSplitter->addWidget(changes);
+    messageSplitter->setStretchFactor(0, 0);
+    messageSplitter->setStretchFactor(1, 1); // the changes list takes window resizes
+    connect(messageSplitter, &QSplitter::splitterMoved, this, [messageSplitter] {
+        QSettings().setValue(QStringLiteral("window/commitMessageSplitter"), messageSplitter->saveState());
+    });
+    layout->addWidget(messageSplitter, 1);
     QToolButton *generate = m_message->cornerButton();
     generate->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
     connect(generate, &QToolButton::clicked, this, &MainWindow::generateMessage);
@@ -608,7 +624,7 @@ QWidget *MainWindow::buildCommitPage()
     auto *refreshButton = smallButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
     connect(refreshButton, &QToolButton::clicked, this, &MainWindow::refresh);
     changesRow->addWidget(refreshButton);
-    layout->addLayout(changesRow);
+    changesLayout->addLayout(changesRow);
 
     m_model = new ChangesModel(this);
     auto *proxy = new UnversionedFilter(this);
@@ -680,8 +696,8 @@ QWidget *MainWindow::buildCommitPage()
     optionsRow->addWidget(m_showUnversioned);
     optionsRow->addWidget(m_amend);
     optionsRow->addStretch();
-    layout->addLayout(optionsRow);
-    layout->addWidget(m_table, 1);
+    changesLayout->addLayout(optionsRow);
+    changesLayout->addWidget(m_table, 1);
 
     auto *buttonRow = new QHBoxLayout;
     buttonRow->setSpacing(10);
@@ -694,6 +710,8 @@ QWidget *MainWindow::buildCommitPage()
     connect(m_commitButton, &QPushButton::clicked, this, &MainWindow::commit);
     buttonRow->addWidget(m_commitButton);
     layout->addLayout(buttonRow);
+    messageSplitter->setSizes({theme->fontBase() * 7, changes->sizeHint().height()});
+    messageSplitter->restoreState(QSettings().value(QStringLiteral("window/commitMessageSplitter")).toByteArray());
     return page;
 }
 
@@ -924,7 +942,7 @@ void MainWindow::applyTheme()
     m_diff->refreshTheme();
     m_toolbar->applyTheme();
     m_message->setFont(theme->uiFont());
-    m_message->setFixedHeight(theme->fontBase() * 7);
+    m_message->setMinimumHeight(theme->fontBase() * 3);
     m_message->applyTheme();
     m_branchButton->setFont(theme->uiFont());
     m_repoButton->setFont(theme->uiFont());
