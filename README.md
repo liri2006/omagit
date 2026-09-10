@@ -25,7 +25,7 @@ history with a branch graph, and plugs into the Nautilus context menu as
   Drag the center divider to resize the diff panes;
   double-click it to restore an equal split.
 - Commit the checked files with a message (Ctrl+Enter). In the changes list, Space checks or
-  unchecks a file and Ctrl+A all of them; Ctrl+Shift+A ticks *Amend last commit*, Ctrl+E opens
+  unchecks a file and Ctrl+Shift+Space all of them; Ctrl+Shift+A ticks *Amend last commit*, Ctrl+E opens
   the selected file in its own program, Ctrl+D discards its changes (after asking).
 - **Commit message from a coding agent**: the sparkle in the top right corner of the message
   box (Ctrl+G) hands the checked changes (all of them when none is checked) to a coding
@@ -143,8 +143,8 @@ omagit [path]            # any directory or file inside a repository (default: c
 The footer's info button or **Ctrl+K** opens the keybindings panel, styled after Omarchy's
 own Super+K menu: type to filter, ↑/↓ move the cursor, **Enter** runs the highlighted
 binding, **Esc** closes. The keys follow lazygit's letters with Ctrl in front (Ctrl+Shift for
-its capitals): Ctrl+F fetch, Ctrl+P pull, Ctrl+Shift+P push, Ctrl+Shift+M merge, Ctrl+A check
-all, Ctrl+Shift+A amend, Ctrl+E open, Ctrl+D discard, Ctrl+R recent repositories, Ctrl+S
+its capitals): Ctrl+F fetch, Ctrl+P pull, Ctrl+Shift+P push, Ctrl+Shift+M merge, Ctrl+Shift+Space
+check all, Ctrl+Shift+A amend, Ctrl+E open, Ctrl+D discard, Ctrl+R recent repositories, Ctrl+S
 filter the history, Ctrl+W whitespace, Ctrl+L syntax colours, Ctrl+Shift+R (or F5) refresh,
 Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list.
 

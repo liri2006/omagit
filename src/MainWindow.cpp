@@ -288,14 +288,14 @@ void MainWindow::buildUi()
 // QShortcuts, showKeybindings() lists the same rows in the same order.
 //
 // The letters follow lazygit, with Ctrl in front (Ctrl+Shift for its
-// capitals): R refresh, f fetch, p pull, P push, M merge, a stage all,
-// A amend, e edit, d discard, Ctrl+R recent repositories, Ctrl+S filter,
+// capitals): R refresh, f fetch, p pull, P push, M merge, A amend, e edit,
+// d discard, Ctrl+R recent repositories, Ctrl+S filter,
 // Ctrl+W whitespace, Ctrl+L syntax colours, q quit.
 // F5 by name: the platform's Refresh sequence includes Ctrl+R, which is the repositories.
 
 QList<MainWindow::Binding> MainWindow::bindings()
 {
-    const QString commit = tr("Commit view"), changes = tr("Changes list"), history = tr("History"),
+    const QString commit = tr("Commit view"), history = tr("History"),
                   diff = tr("Diff"), merge = tr("Merge view"), text = tr("Text fields");
     QList<Binding> list;
 
@@ -325,9 +325,10 @@ QList<MainWindow::Binding> MainWindow::bindings()
                     [this] { setDiffPaneVisible(!m_diffVisible); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Q)}, {}, tr("Quit"), {}, [this] { close(); }};
 
-    // The commit view. Ctrl+Return belongs to the Commit button itself; Ctrl+A
-    // checks the files rather than selecting rows, so it sits on the two
-    // lists, where a text field never sees it.
+    // The commit view. Ctrl+Return belongs to the Commit button itself.
+    // Space checks one file, so Ctrl+Shift+Space checks them all: a window
+    // shortcut, unlike lazygit's Ctrl+A, which is select-all in every text
+    // field and the diff. (Ctrl+Space is fcitx's input-method trigger.)
     list << Binding{{}, QStringLiteral("CTRL + RETURN"), tr("Commit checked files"), commit, [this] {
                         if (m_mode == CommitMode)
                             m_commitPage->clickCommit();
@@ -336,8 +337,8 @@ QList<MainWindow::Binding> MainWindow::bindings()
                     [this] { generateMessage(); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A)}, {}, tr("Amend last commit"), commit,
                     [this] { toggleAmend(); }}
-         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_A)}, {}, tr("Check all / none"), changes,
-                    [this] { toggleAllChecked(); }, {m_commitPage->table(), m_rail->list()}}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Space)}, QStringLiteral("CTRL SHIFT + SPACE"),
+                    tr("Check all / none"), commit, [this] { toggleAllChecked(); }}
          << Binding{{}, QStringLiteral("SPACE"), tr("Check / uncheck file"), tr("Changes list, Mini rail")}
          << Binding{{}, QStringLiteral("CTRL + CLICK"), tr("Check / uncheck file"), tr("Mini rail")}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_E)}, {}, tr("Open file in its program"), commit, [this] {
