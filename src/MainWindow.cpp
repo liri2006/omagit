@@ -11,6 +11,7 @@
 #include "HistoryView.h"
 #include "KeybindingsPanel.h"
 #include "LoginDialog.h"
+#include "CloneDialog.h"
 #include "MiniRail.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
@@ -318,6 +319,8 @@ QList<MainWindow::Binding> MainWindow::bindings()
          // Ctrl+1 and Ctrl+2 are the views; the branches are the third "panel".
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_3)}, {}, tr("Branches"), {}, [this] { showBranchMenu(); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_R)}, {}, tr("Recent repositories"), {}, [this] { showRepoMenu(); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O)}, {}, tr("Clone repository…"), {},
+                    [this] { showCloneDialog(); }}
          << Binding{{QKeySequence(QKeySequence::Open)}, {}, tr("Open repository…"), {},
                     [this] { openRepositoryDialog(); }}
          << Binding{{QKeySequence(Qt::Key_F5), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R)},
@@ -1114,8 +1117,19 @@ void MainWindow::showRepoMenu()
     QAction *open = menu.addAction(icon(kFolderOpen) + tr("Open…"));
     open->setToolTip(tr("Pick a folder inside a git repository (Ctrl+O)"));
     connect(open, &QAction::triggered, this, &MainWindow::openRepositoryDialog);
+    QAction *clone = menu.addAction(icon(kFetch) + tr("Clone…"));
+    clone->setToolTip(tr("Download a repository from a URL or GitHub (Ctrl+Shift+O)"));
+    connect(clone, &QAction::triggered, this, &MainWindow::showCloneDialog);
     const int menuY = -menu.sizeHint().height();
     menu.exec(m_footer->repoButton()->mapToGlobal(QPoint(0, menuY)));
+}
+
+void MainWindow::showCloneDialog()
+{
+    auto *dialog = new CloneDialog(CloneDialog::defaultFolder(m_repo->root()), this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &QDialog::accepted, this, [this, dialog] { openRepository(dialog->repositoryPath()); });
+    dialog->show();
 }
 
 void MainWindow::openRepositoryDialog()

@@ -267,6 +267,9 @@ LoginDialog::LoginDialog(const AskPassRequest &request, GitRepo *repo, QWidget *
     bool forEveryRemote = true;
     const QString helper = credentialHelperFor(repo, request, &forEveryRemote);
     m_note = noteText(helper, forEveryRemote);
+    // A clone has no repository configuration to inspect yet.
+    if (!repo && (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password))
+        m_note = tr("Git's configured credential helpers manage saved credentials.");
 
     buildUi();
     applyTheme();

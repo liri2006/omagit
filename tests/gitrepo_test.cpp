@@ -947,6 +947,18 @@ static void testAskPassServer()
                                         "SSH_ASKPASS_REQUIRE=force",
                                         "OMAGIT_ASKPASS_SOCKET=" + askPass.socketPath()}));
     CHECK(askPass.socketPath().contains(QString::number(QCoreApplication::applicationPid())));
+    {
+        AskPass clonePass;
+        CHECK(clonePass.socketPath() != askPass.socketPath());
+        CHECK(clonePass.listen());
+        QObject::connect(&clonePass, &AskPass::requestReceived, &clonePass, [&](const AskPassRequest &request) {
+            clonePass.answerSecret(request.id, "clone-only");
+        });
+        const auto result = runAskPassClient(clonePass.socketPath(), "Token:");
+        CHECK(result.code == 0);
+        CHECK(result.out == "clone-only\n");
+    } // destroying a clone's helper must leave remote sync's socket reachable
+
 
     QList<AskPassRequest> seen;
     bool stalled = false; // leave the request standing, the way a dialog does

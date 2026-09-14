@@ -6,6 +6,7 @@
 // git itself but no network, the way a fetch signs in.
 #include "../src/ChangesModel.h"
 #include "../src/CommitPage.h"
+#include "../src/CloneDialog.h"
 #include "../src/HistoryModel.h"
 #include "../src/AskPass.h"
 #include "../src/KeybindingsPanel.h"
@@ -26,6 +27,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QListWidget>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPushButton>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -48,6 +53,25 @@
 static std::unique_ptr<OmarchyTheme> g_theme;
 
 namespace {
+
+class ScopedEnv {
+public:
+    ScopedEnv(const char *key, const QByteArray &value) : key(key), old(qgetenv(key)), existed(qEnvironmentVariableIsSet(key)) { qputenv(key, value); }
+    ~ScopedEnv() { if (existed) qputenv(key, old); else qunsetenv(key); }
+private:
+    const char *key;
+    QByteArray old;
+    bool existed;
+};
+
+bool writeFixture(const QString &path, const QByteArray &data, bool executable = false)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size())
+        return false;
+    file.close();
+    return !executable || file.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+}
 
 // Committer dates decide the order `git log --date-order` returns, so every
 // commit gets one of its own: 2024-01-01 01:00, 02:00, ...
@@ -218,6 +242,261 @@ class UiTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void cloneUrlsAndDefaults()
+    {
+        QCOMPARE(CloneDialog::defaultFolder(), QDir::currentPath());
+        QCOMPARE(CloneDialog::defaultFolder("/tmp/projects/repo"), QString("/tmp/projects"));
+        for (const QString url : {"https://github.com/owner/repo.git", "https://example.org/owner/repo/",
+                                  "git@github.com:owner/repo.git", "ssh://git@example.org:2222/owner/repo.git",
+                                  "work:owner/repo.git", "git@[::1]:owner/repo.git"})
+            QCOMPARE(CloneDialog::repositoryName(url), QString("repo"));
+        for (const QString url : {"", "--upload-pack=evil", "/tmp/repo", "file:///tmp/repo", "http://host/repo",
+                                  "https://host", "https://host/..", "https://host/%2e%2e.git", "git@host:.git",
+                                  "https://user:secret@host/repo", "https://host/repo?x", "git@host:repo\nother"})
+            QVERIFY2(CloneDialog::repositoryName(url).isEmpty(), qPrintable(url));
+    }
+
+    void cloneDestinationValidation()
+    {
+        QTemporaryDir dir;
+        CloneDialog dialog(dir.path());
+        auto *url = dialog.findChild<QLineEdit *>("cloneUrl");
+        auto *folder = dialog.findChild<QLineEdit *>("cloneFolder");
+        auto *accept = dialog.findChild<QPushButton *>("cloneAccept");
+        QVERIFY(!accept->isEnabled());
+        url->setText("git@github.com:owner/repo.git");
+        QVERIFY(accept->isEnabled());
+        QCOMPARE(dialog.findChild<QLineEdit *>("cloneName")->text(), QString("repo"));
+        QVERIFY(dialog.findChild<QLabel *>("cloneDestinationPrefix")->text().contains(dir.path()));
+        QVERIFY(QDir(dir.path()).mkdir("repo"));
+        url->setText("https://github.com/owner/repo.git");
+        QVERIFY(!accept->isEnabled());
+        url->setText("https://github.com/owner/new.git");
+        folder->clear();
+        QVERIFY(!accept->isEnabled());
+        folder->setText(dir.filePath("missing"));
+        QVERIFY(!accept->isEnabled());
+        folder->setText(dir.path());
+        QVERIFY(accept->isEnabled());
+        auto *name = dialog.findChild<QLineEdit *>("cloneName");
+        for (const QString invalid : {"", ".", "..", "../outside", "/absolute", "nested/name", "bad\\name", " trailing "}) {
+            name->setText(invalid);
+            QVERIFY(!accept->isEnabled());
+        }
+        name->setText("repo");
+        QVERIFY(!accept->isEnabled()); // existing destination
+        name->setText("custom folder");
+        QVERIFY(accept->isEnabled());
+        url->setText("https://github.com/owner/another.git");
+        QCOMPARE(name->text(), QString("custom folder"));
+        QVERIFY(accept->isEnabled());
+    }
+
+    void cloneRealRepository()
+    {
+        QTemporaryDir source, destination, config;
+        QVERIFY(git(source.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(commit(source.path(), "Cloned commit", 1));
+        // Git's URL rewrite keeps this a real clone with no network or real credentials.
+        const QByteArray gitConfig = "[url \"" + source.path().toUtf8() + "\"]\n    insteadOf = https://clone.invalid/team/repo.git\n";
+        QVERIFY(writeFixture(config.filePath("gitconfig"), gitConfig));
+        ScopedEnv global("GIT_CONFIG_GLOBAL", config.filePath("gitconfig").toUtf8());
+        ScopedEnv system("GIT_CONFIG_NOSYSTEM", "1");
+        CloneDialog dialog(destination.path());
+        dialog.findChild<QLineEdit *>("cloneUrl")->setText("https://clone.invalid/team/repo.git");
+        dialog.findChild<QLineEdit *>("cloneName")->setText("custom folder");
+        QSignalSpy accepted(&dialog, &QDialog::accepted);
+        dialog.findChild<QPushButton *>("cloneAccept")->click();
+        QTRY_COMPARE_WITH_TIMEOUT(accepted.size(), 1, 10000);
+        QCOMPARE(dialog.repositoryPath(), destination.filePath("custom folder"));
+        GitRepo cloned(dialog.repositoryPath());
+        QCOMPARE(cloned.headCommit().subject, QString("Cloned commit"));
+    }
+
+    void githubCloneKeepsCredentialsForLaterGitCommands()
+    {
+        QTemporaryDir source, destination, config, bin;
+        QVERIFY(git(source.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(commit(source.path(), "Private repository", 1));
+        const QByteArray gitConfig = "[url \"" + source.path().toUtf8() + "\"]\n"
+            "    insteadOf = https://github.com/fixture/repo.git\n"
+            "[credential]\n    helper =\n";
+        const QString configPath = config.filePath("gitconfig");
+        QVERIFY(writeFixture(configPath, gitConfig));
+        ScopedEnv global("GIT_CONFIG_GLOBAL", configPath.toUtf8());
+        ScopedEnv system("GIT_CONFIG_NOSYSTEM", "1");
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+        QVERIFY(writeFixture(bin.filePath("gh"), R"(#!/bin/sh
+if [ "$1" = auth ] && [ "$2" = git-credential ]; then
+    if [ "$3" = get ]; then
+        printf 'username=fixture-user\npassword=fixture-token\n'
+    fi
+    exit 0
+fi
+case "$4" in
+user) printf '{"login":"fixture-user"}' ;;
+*) printf '[{"full_name":"fixture/repo","clone_url":"https://github.com/fixture/repo.git"}]' ;;
+esac
+)", true));
+        CloneDialog dialog(destination.path());
+        dialog.findChild<QPushButton *>("cloneGitHubTab")->click();
+        auto *list = dialog.findChild<QListWidget *>("cloneRepositories");
+        QTRY_COMPARE(list->count(), 1);
+        list->setCurrentRow(0);
+        QSignalSpy accepted(&dialog, &QDialog::accepted);
+        dialog.findChild<QPushButton *>("cloneAccept")->click();
+        QTRY_COMPARE_WITH_TIMEOUT(accepted.size(), 1, 10000);
+        GitRepo cloned(dialog.repositoryPath());
+        QCOMPARE(cloned.run({"config", "--local", "--get-all", "credential.https://github.com.helper"}),
+                 QByteArray("\n!gh auth git-credential\n"));
+        QFile globalFile(configPath);
+        QVERIFY(globalFile.open(QIODevice::ReadOnly));
+        QCOMPARE(globalFile.readAll(), gitConfig);
+
+        // A fresh Git process, with no clone-time overrides or askpass, must
+        // still be able to retrieve credentials as an automatic fetch does.
+        QProcess credential;
+        credential.setWorkingDirectory(dialog.repositoryPath());
+        auto env = QProcessEnvironment::systemEnvironment();
+        env.insert("GIT_TERMINAL_PROMPT", "0");
+        env.insert("GIT_ASKPASS", "/bin/false");
+        credential.setProcessEnvironment(env);
+        credential.start("git", {"credential", "fill"});
+        QVERIFY(credential.waitForStarted());
+        credential.write("protocol=https\nhost=github.com\n\n");
+        credential.closeWriteChannel();
+        QVERIFY(credential.waitForFinished(5000));
+        QCOMPARE(credential.exitCode(), 0);
+        const QByteArray answer = credential.readAllStandardOutput();
+        QVERIFY(answer.contains("username=fixture-user"));
+        QVERIFY(answer.contains("password=fixture-token"));
+    }
+
+    void cloneFailureAndCancellation()
+    {
+        QTemporaryDir bin, destination;
+        QVERIFY(writeFixture(bin.filePath("git"), "#!/bin/sh\nprintf 'fatal: fixture failure\\n' >&2\nexit 1\n", true));
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+        CloneDialog dialog(destination.path());
+        auto *accept = dialog.findChild<QPushButton *>("cloneAccept");
+        auto *status = dialog.findChild<QLabel *>("cloneStatus");
+        dialog.findChild<QLineEdit *>("cloneUrl")->setText("git@host:repo.git");
+        QSignalSpy accepted(&dialog, &QDialog::accepted);
+        accept->click();
+        QTRY_VERIFY(status->text().contains("fixture failure"));
+        QVERIFY(accept->isEnabled());
+        QCOMPARE(accepted.size(), 0);
+        QVERIFY(writeFixture(bin.filePath("git"), "#!/bin/sh\nexec /bin/sleep 30\n", true));
+        dialog.show();
+        accept->click();
+        QVERIFY(!accept->isEnabled());
+        dialog.reject();
+        QVERIFY(dialog.isVisible());
+        QVERIFY(accept->isEnabled());
+        QVERIFY(status->text().contains("stopped"));
+        dialog.reject();
+        QVERIFY(!dialog.isVisible());
+        QCOMPARE(accepted.size(), 0);
+    }
+
+    void cloneGitHubPaginationAndFilter()
+    {
+        QTemporaryDir bin, destination;
+        QJsonArray page;
+        for (int i = 0; i < 100; ++i)
+            page.append(QJsonObject{{"full_name", QString("team/repo%1").arg(i)},
+                {"clone_url", QString("https://github.com/team/repo%1.git").arg(i)}, {"private", true}});
+        QVERIFY(writeFixture(bin.filePath("page1"), QJsonDocument(page).toJson()));
+        QVERIFY(writeFixture(bin.filePath("gh"), R"(#!/bin/sh
+case "$4" in
+user) printf '{"login":"fixture-user"}' ;;
+*page=1) cat "$FIXTURE_DIR/page1" ;;
+*page=2) printf '[{"full_name":"shared/last","clone_url":"https://github.com/shared/last.git"}]' ;;
+*) exit 1 ;;
+esac
+)", true));
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+        ScopedEnv fixture("FIXTURE_DIR", bin.path().toUtf8());
+        CloneDialog dialog(destination.path());
+        dialog.show();
+        dialog.findChild<QPushButton *>("cloneGitHubTab")->click();
+        auto *list = dialog.findChild<QListWidget *>("cloneRepositories");
+        auto *accept = dialog.findChild<QPushButton *>("cloneAccept");
+        QTRY_COMPARE(list->count(), 101);
+        QTRY_VERIFY(list->isEnabled());
+        QVERIFY(!accept->isEnabled());
+        auto *filter = dialog.findChild<QLineEdit *>("cloneSearch");
+        filter->setFocus();
+        QTRY_VERIFY(filter->hasFocus());
+        QTest::keyClick(filter, Qt::Key_Down);
+        QCOMPARE(list->currentRow(), 0);
+        QTest::keyClick(filter, Qt::Key_Up);
+        QCOMPARE(list->currentRow(), 100);
+        QVERIFY(accept->isEnabled());
+        QCOMPARE(dialog.findChild<QLineEdit *>("cloneName")->text(), QString("last"));
+        filter->setText("TEAM/REPO");
+        QVERIFY(list->item(100)->isHidden());
+        QVERIFY(!accept->isEnabled());
+        QTest::keyClick(filter, Qt::Key_Down);
+        QCOMPARE(list->currentRow(), 0);
+        QVERIFY(accept->isEnabled());
+        filter->setText("repo1");
+        QTest::keyClick(filter, Qt::Key_Down);
+        QCOMPARE(list->currentRow(), 1);
+        QTest::keyClick(filter, Qt::Key_Down);
+        QCOMPARE(list->currentRow(), 10); // skip hidden rows 2–9
+        QTest::keyClick(filter, Qt::Key_Up);
+        QCOMPARE(list->currentRow(), 1);
+        QTest::keyClick(filter, Qt::Key_Up);
+        QCOMPARE(list->currentRow(), 19); // wrap among matches only
+        QVERIFY(filter->hasFocus());
+        QCOMPARE(filter->text(), QString("repo1"));
+        QTest::keyClicks(filter, "9"); // typing still refines the filter
+        QCOMPARE(filter->text(), QString("repo19"));
+        QTest::keyClick(filter, Qt::Key_Down);
+        QCOMPARE(list->currentRow(), 19);
+        filter->setText("no matches");
+        QTest::keyClick(filter, Qt::Key_Down);
+        QTest::keyClick(filter, Qt::Key_Up);
+        QCOMPARE(list->currentRow(), 19);
+        QVERIFY(!accept->isEnabled());
+        QVERIFY(dialog.findChild<QLabel *>("cloneStatus")->text().contains("No repositories match"));
+        dialog.findChild<QPushButton *>("cloneUrlTab")->click();
+        dialog.findChild<QLineEdit *>("cloneUrl")->setText("ssh://git@host/other.git");
+        QVERIFY(accept->isEnabled());
+    }
+
+    void cloneGitHubSignInAndRetry()
+    {
+        QTemporaryDir bin, destination;
+        QVERIFY(writeFixture(bin.filePath("gh"), R"(#!/bin/sh
+if [ "$1" = auth ]; then
+    printf 'Your one-time code: TEST-CODE\n' >&2
+    touch "$FIXTURE_DIR/signed-in"
+    exit 0
+fi
+if [ ! -f "$FIXTURE_DIR/signed-in" ]; then
+    printf 'Not logged in\n' >&2
+    exit 1
+fi
+case "$4" in
+user) printf '{"login":"fixture-user"}' ;;
+*) printf '[]' ;;
+esac
+)", true));
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+        ScopedEnv fixture("FIXTURE_DIR", bin.path().toUtf8());
+        CloneDialog dialog(destination.path());
+        dialog.show();
+        dialog.findChild<QPushButton *>("cloneGitHubTab")->click();
+        auto *login = dialog.findChild<QPushButton *>("cloneLogin");
+        QTRY_VERIFY(login->isVisible() && login->isEnabled());
+        QVERIFY(!dialog.findChild<QPushButton *>("cloneAccept")->isEnabled());
+        login->click();
+        QTRY_VERIFY(dialog.findChild<QLabel *>("cloneStatus")->text().contains("No repositories available"));
+        QVERIFY(!login->isVisible());
+    }
+
     // --- HistoryModel -------------------------------------------------------
 
     void graphOfLinearHistory()

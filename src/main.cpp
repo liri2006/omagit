@@ -1,6 +1,7 @@
 #include "AskPass.h"
 #include "GitRepo.h"
 #include "MainWindow.h"
+#include "CloneDialog.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
 
@@ -75,7 +76,7 @@ int main(int argc, char *argv[])
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge or login panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge, login or clone panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login|clone"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -104,13 +105,17 @@ int main(int argc, char *argv[])
     // repository opened last instead, the way an editor reopens its files.
     if (root.isEmpty() && args.isEmpty()) {
         const QStringList recent = MainWindow::recentRepositories();
-        if (!recent.isEmpty())
-            root = recent.first();
+        for (const QString &path : recent) {
+            root = GitRepo::findRoot(path);
+            if (!root.isEmpty())
+                break;
+        }
     }
     if (root.isEmpty()) {
-        QMessageBox::critical(nullptr, QStringLiteral("Omagit"),
-                              QStringLiteral("%1 is not inside a git repository.\n\n%2").arg(start, error));
-        return 1;
+        CloneDialog dialog(CloneDialog::defaultFolder(), nullptr, true);
+        if (dialog.exec() != QDialog::Accepted)
+            return 0;
+        root = dialog.repositoryPath();
     }
 
     GitRepo repo(root);
@@ -148,6 +153,7 @@ int main(int argc, char *argv[])
                     : menu == QLatin1String("keybindings")       ? "showKeybindings"
                     : menu == QLatin1String("agent")             ? "showAgentMenu"
                     : menu == QLatin1String("merge")             ? "showMergeDialog"
+                    : menu == QLatin1String("clone")             ? "showCloneDialog"
                     : menu == QLatin1String("login")             ? "showLoginDialog"
                                                                  : "showBranchMenu";
                 QMetaObject::invokeMethod(&window, slot);

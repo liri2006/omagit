@@ -51,7 +51,19 @@ history with a branch graph, and plugs into the Nautilus context menu as
   lately (the last 15, checked = the current one) and *Open…* (Ctrl+O) picks a folder anywhere
   inside another repository. Everything — changes, history, branch, Pull/Push counts, the
   working-tree watch — follows the switch. Started outside a repository without a path,
-  Omagit reopens the last one.
+  Omagit reopens the last one. With no repository to reopen, it offers cloning or opening an existing repository.
+- **Clone repository**: *Clone…* in the repository dropdown (Ctrl+Shift+O) accepts HTTPS
+  and SSH URLs, including `git@host:owner/repo.git`. Choose a destination folder; the
+  repository is created inside it and opened when cloning finishes. The folder defaults
+  to the current directory, or the open repository's parent. Existing destinations are
+  left alone. The prefilled repository folder name can be edited inline in the destination preview.
+  Progress and credential prompts stay in the app; *Stop* cancels the transfer
+  and leaves any partial download in place.
+  The **GitHub** tab uses [GitHub CLI](https://cli.github.com/) (`gh`, optional), offers
+  browser sign-in, and lists the current account's personal, organization and shared
+  repositories with a filter. GitHub credentials are managed by `gh`; clones from this tab
+  save the GitHub credential helper in the new repository so later fetches, pulls and
+  pushes use the same login.
 - **Pull, Push and Fetch** in the toolbar above the left section (Ctrl+P / Ctrl+Shift+P / Ctrl+F), in
   both modes and on the Mini rail. The Pull button carries a badge with the number of commits waiting on the
   upstream, the Push button the number not pushed yet; a walking-dots badge shows while

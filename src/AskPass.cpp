@@ -12,6 +12,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QUuid>
 
 namespace {
 
@@ -88,7 +89,7 @@ void removeStaleSockets(const QString &dir, const QString &keep)
         if (path == keep)
             continue;
         bool isPid = false;
-        const qint64 pid = QStringView(name).mid(socketPrefix().size()).toLongLong(&isPid);
+        const qint64 pid = name.mid(socketPrefix().size()).section(QLatin1Char('-'), 0, 0).toLongLong(&isPid);
         if (isPid && !QFile::exists(QStringLiteral("/proc/%1").arg(pid)))
             QLocalServer::removeServer(path);
     }
@@ -193,16 +194,16 @@ int askPassClient(const QString &socketPath, const QString &prompt, QIODevice *o
 AskPass::AskPass(QObject *parent)
     : QObject(parent), m_helper(QCoreApplication::applicationFilePath())
 {
-    // One socket per process: two windows fetching at once must not answer
-    // each other's prompts.
+    // Clone dialogs and remote sync can coexist in one process. Each owner
+    // needs its own socket, so neither steals the other's credential prompts.
     m_socketPath = socketDir() + QLatin1Char('/') + socketPrefix()
-        + QString::number(QCoreApplication::applicationPid());
+        + QString::number(QCoreApplication::applicationPid()) + QLatin1Char('-')
+        + QUuid::createUuid().toString(QUuid::Id128);
 }
 
 AskPass::~AskPass()
 {
-    // Only what this object put there: an instance that never got the socket
-    // (one per process is the rule) must not take away the one in use.
+    // Only remove a socket this object successfully opened.
     if (!listening())
         return;
     m_server->close();
@@ -219,7 +220,7 @@ bool AskPass::listen()
     if (listening())
         return true;
     removeStaleSockets(socketDir(), m_socketPath);
-    QLocalServer::removeServer(m_socketPath); // ours from a previous run of the same pid
+    QLocalServer::removeServer(m_socketPath); // an earlier failed listen by this instance
     if (!m_server) {
         m_server = new QLocalServer(this);
         m_server->setSocketOptions(QLocalServer::UserAccessOption);

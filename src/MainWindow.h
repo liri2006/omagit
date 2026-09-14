@@ -77,6 +77,7 @@ private slots:
     void showLoginDialog();
     void showRepoMenu();
     void openRepositoryDialog();
+    void showCloneDialog();
     // Ctrl+S: the history view with its filter focused (lazygit's filter key).
     void focusHistoryFilter();
     // Ctrl+A in the changes list / Mini rail, Ctrl+Shift+A, Ctrl+D.

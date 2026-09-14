@@ -36,6 +36,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/BranchMenu.cpp \
     $$PWD/src/MergeDialog.cpp \
     $$PWD/src/LoginDialog.cpp \
+    $$PWD/src/CloneDialog.cpp \
     $$PWD/src/MessageEdit.cpp \
     $$PWD/src/KeybindingsPanel.cpp \
     $$PWD/src/UiHelpers.cpp \
@@ -61,6 +62,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/BranchMenu.h \
     $$PWD/src/MergeDialog.h \
     $$PWD/src/LoginDialog.h \
+    $$PWD/src/CloneDialog.h \
     $$PWD/src/MessageEdit.h \
     $$PWD/src/KeybindingsPanel.h \
     $$PWD/src/UiHelpers.h \

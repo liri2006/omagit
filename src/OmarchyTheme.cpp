@@ -594,6 +594,20 @@ QTableView, QTreeView {
 QTableView::item, QTreeView::item { padding: 0 10px; border: none; }
 QTableView::item:hover, QTreeView::item:hover { background: %fill4%; }
 QTableView::item:selected, QTreeView::item:selected { background: %fill8%; color: %acc%; }
+QLineEdit#cloneName {
+    background: transparent; color: %dim%; padding: 2px 3px;
+    border: none; border-bottom: 1px solid %bd40%;
+}
+QLineEdit#cloneName:hover { background: %fill4%; border-bottom-color: %bd25%; }
+QLineEdit#cloneName:focus { background: %fill8%; color: %fg%; border-bottom-color: %acc%; }
+QListWidget#cloneRepositories {
+    background: %bg%; border: 1px solid %bd40%; border-radius: 0; outline: 0;
+}
+QListWidget#cloneRepositories::item { padding: 6px 10px; border: none; }
+QListWidget#cloneRepositories::item:hover { background: %fill4%; }
+QListWidget#cloneRepositories::item:selected { background: %fill8%; color: %acc%; }
+QDialog#cloneDialog QProgressBar { background: %fill8%; border: none; }
+QDialog#cloneDialog QProgressBar::chunk { background: %acc%; }
 QHeaderView { background: transparent; }
 QHeaderView::section {
     background: transparent; color: %dim%; font-weight: bold; font-size: %caption%px;
