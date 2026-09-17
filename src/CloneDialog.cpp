@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -17,16 +18,92 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPainter>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QShowEvent>
 #include <QStackedWidget>
 #include <QStandardPaths>
 #include <QSignalBlocker>
+#include <QStyle>
 #include <QTimer>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <memory>
+
+namespace {
+// As wide as the merge view: its list of repositories and the folder row with
+// its Browse button both want the room.
+constexpr int kDialogWidth = 640;
+// The fields are as tall as the sign-in dialog's, so the two read as one kit.
+constexpr int kFieldPadding = 8;
+// The list area is this many rows tall, whichever page it shows, and the list
+// scrolls beyond them.
+constexpr int kRepositoryRows = 7;
+// The padding the stylesheet gives a row of the list, above and below.
+constexpr int kRowPadding = 6;
+// The name field takes the row after the folder it goes into, and never less
+// than this: the folder shortens before the name field does.
+constexpr int kNameMinWidth = 220;
+// How much of a command's output the message line repeats: the bytes first,
+// then the lines that carry the reason.
+constexpr int kMessageBytes = 1500, kMessageLines = 4;
+// Wide and tall enough for any text a label of the dialog is measured with.
+constexpr int kMeasureLimit = 10000;
+
+// A colour set by hand on a label, remembered so that the same colour twice
+// does not re-polish the widget. An invalid colour hands the label back to
+// the stylesheet's own dim rule.
+void setTextColor(QLabel *label, QString *applied, const QColor &color)
+{
+    const QString sheet = color.isValid() ? QStringLiteral("color: %1;").arg(color.name()) : QString();
+    if (*applied == sheet)
+        return;
+    *applied = sheet;
+    label->setStyleSheet(sheet);
+}
+
+// The few lines of a command's output worth repeating: gh explains itself in
+// its first lines, `git clone` in its last — and while it runs, only the
+// last one, where its progress is.
+QString fewLines(const QString &output, bool fromEnd, int count = kMessageLines)
+{
+    const QStringList lines = output.left(kMessageBytes).trimmed()
+        .split(QRegularExpression(QStringLiteral("[\\r\\n]")), Qt::SkipEmptyParts);
+    const QStringList kept = fromEnd ? lines.mid(qMax(0, lines.size() - count)) : lines.mid(0, count);
+    return kept.join(QLatin1Char('\n'));
+}
+
+// "Creates ~/Projects/" beside the name field: as wide as its text so the
+// name field sits right after it, yet ready to give width back — it paints as
+// much of the path as the row leaves, so a deep folder shortens instead of
+// pushing the name field off the dialog.
+class ElidedLabel : public QLabel
+{
+public:
+    explicit ElidedLabel()
+    {
+        setObjectName(QStringLiteral("dimLabel"));
+        setFont(OmarchyTheme::instance()->captionFont());
+        setTextFormat(Qt::PlainText);
+        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    }
+
+    // May shrink to nothing; as tall as one line.
+    QSize minimumSizeHint() const override { return QSize(0, QLabel::sizeHint().height()); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        const QString shown = fontMetrics().elidedText(text(), Qt::ElideMiddle, contentsRect().width());
+        style()->drawItemText(&painter, contentsRect(), alignment() | Qt::TextSingleLine, palette(),
+                              isEnabled(), shown, foregroundRole());
+    }
+};
+} // namespace
 
 QString CloneDialog::defaultFolder(const QString &repositoryRoot)
 {
@@ -70,10 +147,10 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     setWindowTitle(tr("Clone repository"));
     setObjectName(QStringLiteral("cloneDialog"));
     setWindowModality(Qt::WindowModal);
-    resize(600, 390);
+    setSizeGripEnabled(false);
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(24, 22, 24, 22);
-    layout->setSpacing(12);
+    layout->setContentsMargins(20, 18, 20, 16);
+    layout->setSpacing(10);
     m_heading = new QLabel(tr("Clone repository"));
     layout->addWidget(m_heading);
     layout->addWidget(ui::dimLabel(tr("Download a repository and open it in Omagit.")));
@@ -96,9 +173,11 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     connect(m_githubTab, &QPushButton::clicked, this, [this] { switchSource(1); });
 
     m_sources = new QStackedWidget;
+    m_sources->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto *urlPage = new QWidget;
     auto *urlLayout = new QVBoxLayout(urlPage);
     urlLayout->setContentsMargins(0, 0, 0, 0);
+    urlLayout->setSpacing(6);
     auto *urlCaption = ui::sectionLabel(tr("Repository URL"));
     urlLayout->addWidget(urlCaption);
     m_url = new QLineEdit;
@@ -108,87 +187,112 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     urlCaption->setBuddy(m_url);
     urlLayout->addWidget(m_url);
     urlLayout->addWidget(ui::dimLabel(tr("HTTPS or SSH · git@github.com:owner/repo.git")));
-    urlLayout->addStretch();
     m_sources->addWidget(urlPage);
 
+    // The GitHub page keeps its three rows whatever it has to say, so it
+    // never re-shapes itself between one account and the next.
     auto *githubPage = new QWidget;
     auto *githubLayout = new QVBoxLayout(githubPage);
     githubLayout->setContentsMargins(0, 0, 0, 0);
+    githubLayout->setSpacing(6);
     auto *accountRow = new QHBoxLayout;
+    accountRow->setSpacing(8);
     m_account = ui::dimLabel();
     m_account->setTextFormat(Qt::PlainText);
-    m_account->setWordWrap(true);
-    m_refresh = new QPushButton(tr("Refresh"));
-    m_refresh->setObjectName(QStringLiteral("cloneRefresh"));
+    m_account->setAccessibleName(tr("GitHub account"));
+    m_count = ui::dimLabel();
+    m_count->setTextFormat(Qt::PlainText);
+    m_count->setAccessibleName(tr("Repository count"));
+    m_refresh = ui::smallButton(ui::kRefresh, QStringLiteral("↻"), tr("Refresh the list"));
+    m_refresh->setAccessibleName(tr("Refresh"));
     accountRow->addWidget(m_account, 1);
+    accountRow->addWidget(m_count);
     accountRow->addWidget(m_refresh);
     githubLayout->addLayout(accountRow);
-    m_login = new QPushButton(tr("Sign in to GitHub"));
-    m_login->setObjectName(QStringLiteral("cloneLogin"));
-    githubLayout->addWidget(m_login, 0, Qt::AlignLeft);
-    m_login->hide();
     m_search = new QLineEdit;
     m_search->setObjectName(QStringLiteral("cloneSearch"));
     m_search->setPlaceholderText(tr("Filter repositories…"));
     m_search->setAccessibleName(tr("Filter repositories"));
     m_search->installEventFilter(this);
     githubLayout->addWidget(m_search);
+
+    // One slot of fixed height: the list, or a sentence about why there is
+    // none to show.
+    m_listArea = new QStackedWidget;
     m_repositories = new QListWidget;
     m_repositories->setObjectName(QStringLiteral("cloneRepositories"));
     m_repositories->setAccessibleName(tr("GitHub repositories"));
-    m_repositories->setMinimumHeight(130);
-    githubLayout->addWidget(m_repositories, 1);
+    m_listArea->addWidget(m_repositories);
+    m_placeholderPage = new QFrame;
+    m_placeholderPage->setObjectName(QStringLiteral("clonePlaceholder"));
+    auto *placeholderLayout = new QVBoxLayout(m_placeholderPage);
+    placeholderLayout->setContentsMargins(20, 12, 20, 12);
+    placeholderLayout->setSpacing(10);
+    placeholderLayout->addStretch();
+    m_placeholder = ui::dimLabel();
+    m_placeholder->setTextFormat(Qt::PlainText);
+    m_placeholder->setAccessibleName(tr("Repository list state"));
+    m_placeholder->setWordWrap(true);
+    m_placeholder->setAlignment(Qt::AlignCenter);
+    placeholderLayout->addWidget(m_placeholder);
+    m_login = new QPushButton(tr("Sign in to GitHub"));
+    m_login->setObjectName(QStringLiteral("cloneLogin"));
+    placeholderLayout->addWidget(m_login, 0, Qt::AlignHCenter);
+    placeholderLayout->addStretch();
+    m_listArea->addWidget(m_placeholderPage);
+    githubLayout->addWidget(m_listArea);
     m_sources->addWidget(githubPage);
-    m_sources->setFixedHeight(120);
-    layout->addWidget(m_sources, 1);
+    layout->addWidget(m_sources);
 
     layout->addWidget(ui::hairline());
+    // Caption above field, the way the sign-in dialog captions its fields.
+    auto *destination = new QVBoxLayout;
+    destination->setSpacing(6);
     auto *folderCaption = ui::sectionLabel(tr("Destination folder"));
-    layout->addWidget(folderCaption);
+    destination->addWidget(folderCaption);
     auto *folderRow = new QHBoxLayout;
-    m_folder = new QLineEdit(folder);
+    m_folder = new QLineEdit(ui::tildePath(folder));
     m_folder->setObjectName(QStringLiteral("cloneFolder"));
     m_folder->setAccessibleName(tr("Destination folder"));
     folderCaption->setBuddy(m_folder);
     m_browse = new QPushButton(tr("Browse…"));
     folderRow->addWidget(m_folder, 1);
     folderRow->addWidget(m_browse);
-    layout->addLayout(folderRow);
-    m_destinationRow = new QWidget;
-    auto *destinationRow = new QHBoxLayout(m_destinationRow);
-    destinationRow->setContentsMargins(0, 0, 0, 0);
-    destinationRow->setSpacing(2);
-    m_destinationPrefix = ui::dimLabel();
-    m_destinationPrefix->setObjectName(QStringLiteral("cloneDestinationPrefix"));
-    m_destinationPrefix->setTextFormat(Qt::PlainText);
-    m_destinationPrefix->setWordWrap(false);
+    destination->addLayout(folderRow);
+    auto *destinationRow = new QHBoxLayout;
+    destinationRow->setSpacing(6);
+    m_destinationPrefix = new ElidedLabel;
+    m_destinationPrefix->setAccessibleName(tr("Destination"));
     m_name = new QLineEdit;
     m_name->setObjectName(QStringLiteral("cloneName"));
     m_name->setAccessibleName(tr("Repository folder name"));
+    m_name->setPlaceholderText(tr("repository"));
     m_name->setToolTip(tr("Edit the name of the folder created for this repository"));
-    m_name->setMinimumWidth(120);
+    m_name->setMinimumWidth(kNameMinWidth);
     m_destinationPrefix->setBuddy(m_name);
     destinationRow->addWidget(m_destinationPrefix);
     destinationRow->addWidget(m_name, 1);
-    layout->addWidget(m_destinationRow);
-    m_destination = ui::dimLabel();
-    m_destination->setObjectName(QStringLiteral("cloneDestination"));
-    m_destination->setTextFormat(Qt::PlainText);
-    m_destination->setWordWrap(true);
-    layout->addWidget(m_destination);
+    destination->addLayout(destinationRow);
+    layout->addLayout(destination);
+
+    // Always on screen, so a command starting does not move the buttons: the
+    // idle bar has an empty range and a transparent track, and shows nothing.
     m_progress = new QProgressBar;
-    m_progress->setRange(0, 0);
     m_progress->setTextVisible(false);
     m_progress->setFixedHeight(3);
-    m_progress->hide();
     layout->addWidget(m_progress);
-    m_status = ui::dimLabel();
-    m_status->setObjectName(QStringLiteral("cloneStatus"));
-    m_status->setTextFormat(Qt::PlainText);
-    m_status->setWordWrap(true);
-    m_status->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    layout->addWidget(m_status);
+    // One line for everything the dialog has to say: what a command is doing
+    // or how it ended, and the destination hint when nothing is running.
+    m_message = ui::dimLabel();
+    m_message->setAccessibleName(tr("Status"));
+    m_message->setTextFormat(Qt::PlainText);
+    m_message->setWordWrap(true);
+    m_message->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    m_message->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    layout->addWidget(m_message);
+
     auto *buttons = new QHBoxLayout;
+    buttons->setSpacing(10);
     m_open = new QPushButton(tr("Open existing…"));
     m_open->setVisible(allowOpen);
     buttons->addWidget(m_open);
@@ -207,17 +311,24 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     connect(m_cancel, &QPushButton::clicked, this, &CloneDialog::reject);
     connect(m_clone, &QPushButton::clicked, this, &CloneDialog::clone);
     connect(m_open, &QPushButton::clicked, this, &CloneDialog::openExisting);
-    connect(m_refresh, &QPushButton::clicked, this, &CloneDialog::loadGitHub);
+    connect(m_refresh, &QToolButton::clicked, this, &CloneDialog::loadGitHub);
     connect(m_login, &QPushButton::clicked, this, &CloneDialog::signIn);
-    connect(m_url, &QLineEdit::textChanged, this, &CloneDialog::updateDestination);
-    connect(m_folder, &QLineEdit::textChanged, this, &CloneDialog::updateDestination);
-    connect(m_name, &QLineEdit::textChanged, this, &CloneDialog::updateDestination);
+    connect(m_url, &QLineEdit::textChanged, this, &CloneDialog::userEdited);
+    connect(m_folder, &QLineEdit::textChanged, this, &CloneDialog::userEdited);
+    connect(m_name, &QLineEdit::textChanged, this, &CloneDialog::userEdited);
     connect(m_search, &QLineEdit::textChanged, this, &CloneDialog::filterRepositories);
-    connect(m_repositories, &QListWidget::currentRowChanged, this, &CloneDialog::updateDestination);
+    // Picking a repository names the folder after it, even over a name typed
+    // for the one picked before: the list is what the user is choosing from.
+    connect(m_repositories, &QListWidget::currentRowChanged, this, [this] {
+        const QSignalBlocker blocker(m_name);
+        m_name->setText(repositoryName(selectedUrl()));
+        m_name->setCursorPosition(0);
+        userEdited();
+    });
     connect(m_browse, &QPushButton::clicked, this, [this] {
         const QString dir = QFileDialog::getExistingDirectory(this, tr("Destination folder"), folderPath());
         if (!dir.isEmpty())
-            m_folder->setText(dir);
+            m_folder->setText(ui::tildePath(dir));
     });
     m_timeout->setSingleShot(true);
     connect(m_timeout, &QTimer::timeout, this, [this] {
@@ -245,6 +356,22 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     });
     connect(m_askPass, &AskPass::answered, this, [this] { m_timeout->start(); });
     connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &CloneDialog::applyTheme);
+
+    // The width is fixed; the height follows the content (fitToContent()).
+    setFixedWidth(kDialogWidth);
+    setTabOrder(m_urlTab, m_githubTab);
+    setTabOrder(m_githubTab, m_url);
+    setTabOrder(m_url, m_search);
+    setTabOrder(m_search, m_repositories);
+    setTabOrder(m_repositories, m_folder);
+    setTabOrder(m_folder, m_browse);
+    setTabOrder(m_browse, m_name);
+    setTabOrder(m_name, m_clone);
+    setTabOrder(m_clone, m_cancel);
+    setTabOrder(m_cancel, m_open);
+    updateSourcePolicies();
+    setBusy(false);
+    updateListArea();
     applyTheme();
     updateDestination();
     m_url->setFocus();
@@ -258,12 +385,24 @@ void CloneDialog::applyTheme()
     m_heading->setFont(theme->titleFont());
     for (auto *edit : {m_url, m_folder, m_search}) {
         edit->setFont(theme->uiFont());
-        edit->setMinimumHeight(QFontMetrics(theme->titleFont()).height() + 18);
+        edit->setMinimumHeight(QFontMetrics(theme->titleFont()).height() + 2 * kFieldPadding + 2);
     }
     m_name->setFont(theme->captionFont());
-    for (auto *label : {m_account, m_destination, m_destinationPrefix, m_status})
+    for (auto *label : {m_account, m_count, m_placeholder, m_destinationPrefix, m_message})
         label->setFont(theme->captionFont());
     m_repositories->setFont(theme->uiFont());
+    m_refresh->setFont(theme->uiFont());
+    m_refresh->setText(ui::icon(ui::kRefresh, QStringLiteral("↻")).trimmed());
+    m_clone->setText(ui::icon(ui::kFetch) + tr("Clone && open"));
+    // Two lines of caption, so a one-line hint and a two-line one leave the
+    // buttons where they are. Measured the way QLabel lays out wrapped text
+    // (a bounding rect, not lineSpacing(): the two differ by the font's
+    // leading at some sizes).
+    m_message->setMinimumHeight(QFontMetrics(theme->captionFont())
+        .boundingRect(0, 0, kMeasureLimit, kMeasureLimit, Qt::TextWordWrap, QStringLiteral("x\nx")).height());
+    updateListHeight();
+    updateMessage();
+    fitToContent();
 }
 
 QString CloneDialog::folderPath() const
@@ -292,45 +431,75 @@ void CloneDialog::updateDestination()
         if (m_name->text() == m_suggestedName) {
             const QSignalBlocker blocker(m_name);
             m_name->setText(suggestedName);
+            // A long name shows its start, not the end setText() scrolls to.
+            m_name->setCursorPosition(0);
         }
         m_suggestedName = suggestedName;
     }
     const QString name = m_name->text();
     const QString folder = folderPath();
-    m_destinationRow->setVisible(!suggestedName.isEmpty() && !folder.isEmpty());
     QString prefix = ui::tildePath(folder);
-    if (!prefix.endsWith(QLatin1Char('/')))
+    if (!prefix.isEmpty() && !prefix.endsWith(QLatin1Char('/')))
         prefix += QLatin1Char('/');
-    const QString preview = tr("Creates %1").arg(prefix);
-    m_destinationPrefix->setText(QFontMetrics(m_destinationPrefix->font()).elidedText(preview, Qt::ElideMiddle, 350));
+    const QString preview = prefix.isEmpty() ? tr("Creates") : tr("Creates %1").arg(prefix);
+    m_destinationPrefix->setText(preview);
     m_destinationPrefix->setToolTip(preview);
-    QString message;
+    m_hint.clear();
     bool valid = false;
     if (suggestedName.isEmpty())
-        message = m_sources->currentIndex() == 0 ? tr("Enter an HTTPS or SSH repository URL.") : tr("Choose a repository to clone.");
+        m_hint = m_sources->currentIndex() == 0 ? tr("Enter an HTTPS or SSH repository URL.") : tr("Choose a repository to clone.");
     else if (name.isEmpty() || name != name.trimmed() || name == QLatin1String(".") || name == QLatin1String("..")
              || name.contains(QRegularExpression(QStringLiteral("[\\x00-\\x1f\\x7f/\\\\]"))))
-        message = tr("Enter a folder name without slashes or leading or trailing spaces.");
+        m_hint = tr("Enter a folder name without slashes or leading or trailing spaces.");
     else if (folder.isEmpty() || !QFileInfo(folder).isDir())
-        message = tr("Choose an existing destination folder.");
+        m_hint = tr("Choose an existing destination folder.");
     else {
         const QString path = QDir(folder).filePath(name);
         const QFileInfo info(path);
         if (info.exists() || info.isSymLink())
-            message = tr("Already exists: %1. Change the name or destination folder.").arg(ui::tildePath(path));
+            m_hint = tr("Already exists: %1. Change the name or destination folder.").arg(ui::tildePath(path));
         else {
             valid = QFileInfo(folder).isWritable();
-            message = valid ? QString() : tr("This folder is not writable.");
+            if (!valid)
+                m_hint = tr("This folder is not writable.");
         }
     }
-    m_destination->setText(message);
-    m_destination->setVisible(!message.isEmpty());
+    updateMessage();
     m_clone->setEnabled(valid && !m_process && !m_cloning && !m_loading);
+}
+
+// An edit means the user has started over: whatever the last command ended
+// with is no longer what the dialog is about.
+void CloneDialog::userEdited()
+{
+    if (!m_process && !m_status.isEmpty())
+        setStatus(QString());
+    updateDestination();
+}
+
+void CloneDialog::setStatus(const QString &text, bool alert)
+{
+    m_status = text;
+    m_statusIsAlert = alert && !text.isEmpty();
+    updateMessage();
+}
+
+// A running (or failed) command outranks the destination hint: the hint is
+// what is left to say once nothing else is.
+void CloneDialog::updateMessage()
+{
+    m_message->setText(m_status.isEmpty() ? m_hint : m_status);
+    setTextColor(m_message, &m_messageColor,
+                 m_statusIsAlert ? OmarchyTheme::instance()->color(QStringLiteral("red")) : QColor());
+    refit();
 }
 
 void CloneDialog::setBusy(bool busy)
 {
-    m_progress->setVisible(busy);
+    // An empty range paints no chunk at all, a null one slides it along.
+    m_progress->setRange(0, busy ? 0 : 1);
+    if (!busy)
+        m_progress->setValue(0);
     for (auto *widget : QList<QWidget *>{m_sources, m_folder, m_name, m_browse, m_open})
         widget->setEnabled(!busy);
     m_urlTab->setEnabled(!m_cloning);
@@ -354,11 +523,15 @@ void CloneDialog::reject()
 {
     if (m_process) {
         stopProcess();
-        if (m_loading)
+        if (m_loading) {
             m_repositories->clear();
+            m_visible = 0;
+            m_github = GitHub::Ready;
+            updateListArea();
+        }
         m_cloning = m_loading = false;
         setBusy(false);
-        m_status->setText(m_cloneTarget.isEmpty() ? tr("Stopped.")
+        setStatus(m_cloneTarget.isEmpty() ? tr("Stopped.")
             : tr("Clone stopped. Any partial download remains at %1.").arg(ui::tildePath(m_cloneTarget)));
         return;
     }
@@ -391,9 +564,10 @@ void CloneDialog::run(const QString &program, const QStringList &args, Completio
         if (error->size() > 16384)
             *error = error->right(16384);
         if (live) {
-            const QString text = QString::fromUtf8(*error).trimmed();
-            const QStringList lines = text.split(QRegularExpression(QStringLiteral("[\\r\\n]")), Qt::SkipEmptyParts);
-            m_status->setText(m_cloning ? lines.value(lines.size() - 1) : text);
+            // git says where the clone has got to on its last line; gh says
+            // what it wants from the browser over several.
+            const QString text = QString::fromUtf8(*error);
+            setStatus(m_cloning ? fewLines(text.right(kMessageBytes), true, 1) : fewLines(text, false));
         }
     });
     auto finish = [this, process, output, error, done](bool ok) {
@@ -414,6 +588,17 @@ void CloneDialog::run(const QString &program, const QStringList &args, Completio
     m_timeout->start(live ? 15 * 60 * 1000 : 60000);
 }
 
+// The stack is as tall as the page on screen, not as the taller of the two:
+// the page it does not show is told its size hint does not count.
+void CloneDialog::updateSourcePolicies()
+{
+    for (int i = 0; i < m_sources->count(); ++i) {
+        const bool current = i == m_sources->currentIndex();
+        m_sources->widget(i)->setSizePolicy(current ? QSizePolicy::Preferred : QSizePolicy::Ignored,
+                                            current ? QSizePolicy::Fixed : QSizePolicy::Ignored);
+    }
+}
+
 void CloneDialog::switchSource(int index)
 {
     if (m_cloning)
@@ -421,14 +606,14 @@ void CloneDialog::switchSource(int index)
     stopProcess();
     m_loading = false;
     m_sources->setCurrentIndex(index);
-    m_sources->setFixedHeight(index == 0 ? 120 : 250);
-    resize(width(), index == 0 ? 390 : 540);
-    m_status->clear();
+    updateSourcePolicies();
+    setStatus(QString());
     setBusy(false);
     if (index == 1)
         loadGitHub();
     else
         m_url->setFocus();
+    fitToContent();
 }
 
 void CloneDialog::loadGitHub()
@@ -437,39 +622,41 @@ void CloneDialog::loadGitHub()
         return;
     m_cloneTarget.clear();
     m_repositories->clear();
-    m_login->hide();
-    m_search->hide();
-    m_repositories->hide();
-    m_status->clear();
+    m_visible = 0;
+    m_accountName.clear();
+    setStatus(QString());
     if (QStandardPaths::findExecutable(QStringLiteral("gh")).isEmpty()) {
-        m_account->setText(tr("Install GitHub CLI (gh) to browse your repositories."));
+        m_github = GitHub::NoTool;
+        updateListArea();
         updateDestination();
         return;
     }
     m_loading = true;
-    m_account->setText(tr("Checking GitHub account…"));
+    m_github = GitHub::Checking;
+    updateListArea();
     run(QStringLiteral("gh"), {QStringLiteral("api"), QStringLiteral("--hostname"), QStringLiteral("github.com"), QStringLiteral("user")},
         [this](bool ok, const QByteArray &out, const QString &error) {
         m_loading = false;
         const QString login = QJsonDocument::fromJson(out).object().value(QStringLiteral("login")).toString();
         if (!ok || login.isEmpty()) {
-            m_account->setText(tr("Sign in to see your personal, organization and shared repositories."));
-            m_login->show();
-            m_status->setText(error.left(1500));
+            m_github = GitHub::SignedOut;
+            updateListArea();
+            // Why gh said no, beside the button that signs in: context, not
+            // a failure of anything the user did.
+            setStatus(fewLines(error, false));
             setBusy(false);
             return;
         }
-        m_account->setText(tr("Signed in as %1").arg(login));
-        m_search->show();
-        m_repositories->show();
+        m_accountName = login;
         m_loading = true;
+        m_github = GitHub::Loading;
+        updateListArea();
         loadPage(1);
     });
 }
 
 void CloneDialog::loadPage(int page)
 {
-    m_status->setText(tr("Loading repositories…"));
     run(QStringLiteral("gh"), {QStringLiteral("api"), QStringLiteral("--hostname"), QStringLiteral("github.com"),
         QStringLiteral("user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member&page=%1").arg(page)},
         [this, page](bool ok, const QByteArray &out, const QString &error) {
@@ -478,8 +665,11 @@ void CloneDialog::loadPage(int page)
             m_loading = false;
             // Do not present an incomplete list as all available repositories.
             m_repositories->clear();
+            m_visible = 0;
+            m_github = GitHub::Ready;
+            updateListArea();
             setBusy(false);
-            m_status->setText(tr("Could not load repositories. Refresh to retry.\n%1").arg(error.left(1500)));
+            setStatus(tr("Could not load repositories. Refresh to retry.\n%1").arg(fewLines(error, false)), true);
             return;
         }
         const auto repos = doc.array();
@@ -498,6 +688,8 @@ void CloneDialog::loadPage(int page)
             return;
         }
         m_loading = false;
+        m_github = GitHub::Ready;
+        updateListHeight();
         setBusy(false);
         filterRepositories();
     });
@@ -532,23 +724,72 @@ bool CloneDialog::eventFilter(QObject *watched, QEvent *event)
 
 void CloneDialog::filterRepositories()
 {
-    int count = 0;
+    m_visible = 0;
     for (int i = 0; i < m_repositories->count(); ++i) {
         auto *item = m_repositories->item(i);
         item->setHidden(!item->text().contains(m_search->text().trimmed(), Qt::CaseInsensitive));
         if (!item->isHidden())
-            ++count;
+            ++m_visible;
     }
-    if (!m_loading && !m_process)
-        m_status->setText(m_repositories->count() == 0 ? tr("No repositories available for this account.")
-            : count == 0 ? tr("No repositories match your filter.") : count == 1 ? tr("1 repository") : tr("%n repositories", nullptr, count));
+    updateListArea();
     updateDestination();
+}
+
+// What the account line says, what stands in for the list, and how many
+// repositories are on it — the three follow from the same state.
+void CloneDialog::updateListArea()
+{
+    QString account, placeholder;
+    switch (m_github) {
+    case GitHub::Checking:
+        account = placeholder = tr("Checking GitHub account…");
+        break;
+    case GitHub::Loading:
+        account = tr("Signed in as %1").arg(m_accountName);
+        placeholder = tr("Loading repositories…");
+        break;
+    case GitHub::SignedOut:
+        account = tr("Not signed in");
+        placeholder = tr("Sign in to see your personal, organization and shared repositories.");
+        break;
+    case GitHub::NoTool:
+        account = tr("GitHub CLI (gh) is not installed");
+        placeholder = tr("Install GitHub CLI (gh) to browse your repositories.");
+        break;
+    case GitHub::Ready:
+        account = tr("Signed in as %1").arg(m_accountName);
+        if (m_repositories->count() == 0)
+            placeholder = tr("No repositories available for this account.");
+        else if (m_visible == 0)
+            placeholder = tr("No repositories match your filter.");
+        break;
+    }
+    m_account->setText(account);
+    m_placeholder->setText(placeholder);
+    m_login->setVisible(m_github == GitHub::SignedOut);
+    m_listArea->setCurrentWidget(placeholder.isEmpty() ? static_cast<QWidget *>(m_repositories) : m_placeholderPage);
+    m_search->setEnabled(m_repositories->count() > 0);
+    const int count = m_repositories->count();
+    m_count->setText(m_github != GitHub::Ready || count == 0 ? QString()
+        : m_visible < count ? tr("%1 of %2 repositories").arg(m_visible).arg(count)
+        : count == 1 ? tr("1 repository") : tr("%n repositories", nullptr, count));
+    refit();
+}
+
+// Seven rows tall, whichever page the area shows.
+void CloneDialog::updateListHeight()
+{
+    const int row = m_repositories->count() > 0 && m_repositories->sizeHintForRow(0) > 0
+        ? m_repositories->sizeHintForRow(0)
+        : QFontMetrics(OmarchyTheme::instance()->uiFont()).height() + 2 * kRowPadding;
+    m_listArea->setFixedHeight(row * kRepositoryRows + 2 * qMax(1, m_repositories->frameWidth()));
+    refit();
 }
 
 void CloneDialog::signIn()
 {
     m_loading = true;
-    m_status->setText(tr("Complete sign-in in your browser. A one-time code will appear here."));
+    setStatus(tr("Complete sign-in in your browser. A one-time code will appear here."));
     run(QStringLiteral("gh"), {QStringLiteral("auth"), QStringLiteral("login"), QStringLiteral("--hostname"),
         QStringLiteral("github.com"), QStringLiteral("--git-protocol"), QStringLiteral("https"), QStringLiteral("--web")},
         [this](bool ok, const QByteArray &, const QString &error) {
@@ -557,7 +798,7 @@ void CloneDialog::signIn()
         if (ok)
             loadGitHub();
         else
-            m_status->setText(tr("Sign-in did not finish. Try again.\n%1").arg(error.left(1500)));
+            setStatus(tr("Sign-in did not finish. Try again.\n%1").arg(fewLines(error, false)), true);
     }, true);
     // gh may ask for Enter before opening the browser, even with --web.
     m_process->write("\n");
@@ -581,14 +822,15 @@ void CloneDialog::clone()
     }
     args << QStringLiteral("--progress") << QStringLiteral("--") << url << m_cloneTarget;
     m_cloning = true;
-    m_status->setText(tr("Cloning %1…").arg(repositoryName(url)));
+    setStatus(tr("Cloning %1…").arg(repositoryName(url)));
     run(QStringLiteral("git"), args, [this](bool ok, const QByteArray &, const QString &error) {
         const bool cancelled = m_askPass->cancelled();
         m_askPass->endOperation();
         m_cloning = false;
         setBusy(false);
         if (!ok) {
-            m_status->setText(cancelled ? tr("Clone cancelled — not signed in.") : tr("Clone failed.\n%1").arg(error.right(1500)));
+            setStatus(cancelled ? tr("Clone cancelled — not signed in.")
+                                : tr("Clone failed.\n%1").arg(fewLines(error.right(kMessageBytes), true)), true);
             return;
         }
         m_repositoryPath = m_cloneTarget;
@@ -603,7 +845,43 @@ void CloneDialog::openExisting()
         return;
     m_repositoryPath = GitRepo::findRoot(folder);
     if (m_repositoryPath.isEmpty())
-        m_status->setText(tr("That folder is not inside a Git repository."));
+        setStatus(tr("That folder is not inside a Git repository."), true);
     else
         accept();
+}
+
+// Every change of a row's visibility or of a wrapped line of text asks for
+// this; one pass at the end of the event does for all of them.
+void CloneDialog::refit()
+{
+    if (m_refitPending)
+        return;
+    m_refitPending = true;
+    QTimer::singleShot(0, this, [this] {
+        m_refitPending = false;
+        fitToContent();
+    });
+}
+
+void CloneDialog::fitToContent()
+{
+    QLayout *l = layout();
+    l->invalidate();
+    l->activate();
+    const int content = l->hasHeightForWidth() ? l->totalHeightForWidth(width()) : l->totalSizeHint().height();
+    const int target = qMax(content, l->totalMinimumSize().height());
+    // A fixed height, not a resize(): the compositor honours the window's
+    // constraints, whereas a plain resize may be answered with the old size.
+    if (target != height() || maximumHeight() != target)
+        setFixedHeight(target);
+}
+
+// Fonts and frame widths from the stylesheet are only final once the widgets
+// are polished, which is later than the constructor.
+void CloneDialog::showEvent(QShowEvent *event)
+{
+    ensurePolished();
+    updateListHeight();
+    fitToContent();
+    QDialog::showEvent(event);
 }

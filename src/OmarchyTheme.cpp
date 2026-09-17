@@ -606,7 +606,10 @@ QListWidget#cloneRepositories {
 QListWidget#cloneRepositories::item { padding: 6px 10px; border: none; }
 QListWidget#cloneRepositories::item:hover { background: %fill4%; }
 QListWidget#cloneRepositories::item:selected { background: %fill8%; color: %acc%; }
-QDialog#cloneDialog QProgressBar { background: %fill8%; border: none; }
+/* What stands in for the list of repositories, framed as the list itself is. */
+QFrame#clonePlaceholder { background: %bg%; border: 1px solid %bd40%; }
+/* The idle bar has an empty range, so a transparent track shows nothing. */
+QDialog#cloneDialog QProgressBar { background: transparent; border: none; }
 QDialog#cloneDialog QProgressBar::chunk { background: %acc%; }
 QHeaderView { background: transparent; }
 QHeaderView::section {

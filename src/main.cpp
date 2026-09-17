@@ -169,6 +169,9 @@ int main(int argc, char *argv[])
             QTimer::singleShot(menu.isEmpty() ? qMin(after, 800) : after + 200 + settle, &window, [&window, keys] {
                 if (!window.windowHandle())
                     return;
+                // The window of the widget an @ token focused: a dialog just
+                // opened may not be the focus window yet when the keys go out.
+                QWindow *target = nullptr;
                 for (const QString &name : keys) {
                     if (name.startsWith(QLatin1Char('@'))) {
                         // Deliver the keys so far, then move the focus for the rest.
@@ -181,6 +184,7 @@ int main(int argc, char *argv[])
                                 continue;
                             auto *area = qobject_cast<QAbstractScrollArea *>(w);
                             (vbar && area ? static_cast<QWidget *>(area->verticalScrollBar()) : w)->setFocus();
+                            target = w->window()->windowHandle();
                             break;
                         }
                         continue;
@@ -190,7 +194,8 @@ int main(int argc, char *argv[])
                     // As the window system would report the key, so that the
                     // shortcuts see it first; a QKeyEvent posted by hand goes
                     // straight to the focused widget and never reaches them.
-                    QWindow *win = QGuiApplication::focusWindow() ? QGuiApplication::focusWindow() : window.windowHandle();
+                    QWindow *win = target ? target
+                        : QGuiApplication::focusWindow() ? QGuiApplication::focusWindow() : window.windowHandle();
                     QWindowSystemInterface::handleKeyEvent(win, QEvent::KeyPress, combo.key(), combo.keyboardModifiers(), text);
                     QWindowSystemInterface::handleKeyEvent(win, QEvent::KeyRelease, combo.key(), combo.keyboardModifiers(), text);
                 }

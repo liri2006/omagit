@@ -38,6 +38,7 @@
 #include <QSettings>
 #include <QSignalSpy>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -227,6 +228,16 @@ void watchSignIn(RemoteSync *sync, QList<AskPassRequest> *seen, SyncOutcome *out
                      });
 }
 
+// The clone dialog's captions all carry the objectName the dim stylesheet
+// rule needs, so they are found by what they are for instead.
+QLabel *cloneLabel(const QDialog &dialog, const QString &accessibleName)
+{
+    for (QLabel *label : dialog.findChildren<QLabel *>())
+        if (label->accessibleName() == accessibleName)
+            return label;
+    return nullptr;
+}
+
 // The buttons of a toolbar that are on screen, in the order they were added.
 QList<bool> visible(const QList<QToolButton *> &buttons)
 {
@@ -267,7 +278,7 @@ private slots:
         url->setText("git@github.com:owner/repo.git");
         QVERIFY(accept->isEnabled());
         QCOMPARE(dialog.findChild<QLineEdit *>("cloneName")->text(), QString("repo"));
-        QVERIFY(dialog.findChild<QLabel *>("cloneDestinationPrefix")->text().contains(dir.path()));
+        QVERIFY(cloneLabel(dialog, "Destination")->text().contains(dir.path()));
         QVERIFY(QDir(dir.path()).mkdir("repo"));
         url->setText("https://github.com/owner/repo.git");
         QVERIFY(!accept->isEnabled());
@@ -379,7 +390,7 @@ esac
         ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
         CloneDialog dialog(destination.path());
         auto *accept = dialog.findChild<QPushButton *>("cloneAccept");
-        auto *status = dialog.findChild<QLabel *>("cloneStatus");
+        auto *status = cloneLabel(dialog, "Status");
         dialog.findChild<QLineEdit *>("cloneUrl")->setText("git@host:repo.git");
         QSignalSpy accepted(&dialog, &QDialog::accepted);
         accept->click();
@@ -433,12 +444,15 @@ esac
         QTest::keyClick(filter, Qt::Key_Up);
         QCOMPARE(list->currentRow(), 100);
         QVERIFY(accept->isEnabled());
-        QCOMPARE(dialog.findChild<QLineEdit *>("cloneName")->text(), QString("last"));
+        auto *name = dialog.findChild<QLineEdit *>("cloneName");
+        QCOMPARE(name->text(), QString("last"));
+        name->setText("custom folder");
         filter->setText("TEAM/REPO");
         QVERIFY(list->item(100)->isHidden());
         QVERIFY(!accept->isEnabled());
         QTest::keyClick(filter, Qt::Key_Down);
         QCOMPARE(list->currentRow(), 0);
+        QCOMPARE(name->text(), QString("repo0")); // the pick wins over the typed name
         QVERIFY(accept->isEnabled());
         filter->setText("repo1");
         QTest::keyClick(filter, Qt::Key_Down);
@@ -460,7 +474,7 @@ esac
         QTest::keyClick(filter, Qt::Key_Up);
         QCOMPARE(list->currentRow(), 19);
         QVERIFY(!accept->isEnabled());
-        QVERIFY(dialog.findChild<QLabel *>("cloneStatus")->text().contains("No repositories match"));
+        QVERIFY(cloneLabel(dialog, "Repository list state")->text().contains("No repositories match"));
         dialog.findChild<QPushButton *>("cloneUrlTab")->click();
         dialog.findChild<QLineEdit *>("cloneUrl")->setText("ssh://git@host/other.git");
         QVERIFY(accept->isEnabled());
@@ -493,8 +507,83 @@ esac
         QTRY_VERIFY(login->isVisible() && login->isEnabled());
         QVERIFY(!dialog.findChild<QPushButton *>("cloneAccept")->isEnabled());
         login->click();
-        QTRY_VERIFY(dialog.findChild<QLabel *>("cloneStatus")->text().contains("No repositories available"));
+        QTRY_VERIFY(cloneLabel(dialog, "Repository list state")->text().contains("No repositories available"));
         QVERIFY(!login->isVisible());
+    }
+
+    // Nothing the dialog can say moves anything else about: the width is
+    // fixed and the height follows whichever source page is on screen.
+    void cloneDialogKeepsItsShape()
+    {
+        QTemporaryDir bin, destination;
+        QJsonArray repos;
+        for (const QString name : {"one", "two", "three"})
+            repos.append(QJsonObject{{"full_name", "team/" + name},
+                {"clone_url", QString("https://github.com/team/%1.git").arg(name)}});
+        QVERIFY(writeFixture(bin.filePath("repos"), QJsonDocument(repos).toJson()));
+        QVERIFY(writeFixture(bin.filePath("gh"), R"(#!/bin/sh
+case "$4" in
+user) printf '{"login":"fixture-user"}' ;;
+*) cat "$FIXTURE_DIR/repos" ;;
+esac
+)", true));
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+        ScopedEnv fixture("FIXTURE_DIR", bin.path().toUtf8());
+        QVERIFY(QDir(destination.path()).mkdir("taken"));
+        CloneDialog dialog(destination.path());
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+        // The refit is coalesced into the end of the event loop pass.
+        const auto settle = [] { QTest::qWait(30); };
+        settle();
+        const int height = dialog.height();
+        QCOMPARE(dialog.width(), 640);
+
+        auto *url = dialog.findChild<QLineEdit *>("cloneUrl");
+        url->setText("https://github.com/owner/taken.git");
+        settle();
+        QCOMPARE(dialog.height(), height); // the "Creates …" row was always there
+        QVERIFY(cloneLabel(dialog, "Status")->text().contains("Already exists")); // two lines
+        settle();
+        QCOMPARE(dialog.height(), height);
+        url->clear();
+        settle();
+        QCOMPARE(dialog.height(), height);
+
+        QStackedWidget *sources = nullptr, *listArea = nullptr;
+        for (auto *stack : dialog.findChildren<QStackedWidget *>())
+            (stack->parentWidget() == &dialog ? sources : listArea) = stack;
+        QVERIFY(sources && listArea);
+        dialog.findChild<QPushButton *>("cloneGitHubTab")->click();
+        auto *list = dialog.findChild<QListWidget *>("cloneRepositories");
+        QTRY_COMPARE(list->count(), 3);
+        settle();
+        // The stack is as tall as the page on screen, not as the taller one.
+        QCOMPARE(sources->height(), sources->currentWidget()->sizeHint().height());
+        QCOMPARE(dialog.width(), 640);
+        QCOMPARE(listArea->currentWidget(), static_cast<QWidget *>(list));
+        dialog.findChild<QLineEdit *>("cloneSearch")->setText("no such repository");
+        settle();
+        QCOMPARE(listArea->currentWidget()->objectName(), QString("clonePlaceholder"));
+        QCOMPARE(listArea->currentWidget()->height(), list->height());
+
+        dialog.findChild<QPushButton *>("cloneUrlTab")->click();
+        settle();
+        QCOMPARE(dialog.height(), height);
+    }
+
+    // Every caption of the dialog is a dim one: an objectName of its own
+    // would drop the stylesheet's QLabel#dimLabel rule.
+    void cloneLabelsKeepTheDimStyle()
+    {
+        QTemporaryDir destination;
+        CloneDialog dialog(destination.path());
+        for (const QString name : {"Destination", "Status", "GitHub account", "Repository count",
+                                   "Repository list state"}) {
+            QLabel *label = cloneLabel(dialog, name);
+            QVERIFY2(label, qPrintable(name));
+            QCOMPARE(label->objectName(), QString("dimLabel"));
+        }
     }
 
     // --- HistoryModel -------------------------------------------------------
