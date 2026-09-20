@@ -1,0 +1,338 @@
+[
+ {
+  "file": "01-Wide-Changes.svg",
+  "id": "Wide · Changes",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "02-Wide-History.svg",
+  "id": "Wide · History",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "03-Wide-Message-written-Amend.svg",
+  "id": "Wide · Message written + Amend",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "04-Wide-Merge-dialog.svg",
+  "id": "Wide · Merge dialog",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "05-Wide-Branch-menu.svg",
+  "id": "Wide · Branch menu",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "06-Wide-Keybindings.svg",
+  "id": "Wide · Keybindings",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "07-Wide-Agent-settings.svg",
+  "id": "Wide · Agent settings",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "08-Wide-Merge-in-progress.svg",
+  "id": "Wide · Merge in progress",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "09-Wide-Diff-hidden.svg",
+  "id": "Wide · Diff hidden",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "10-Wide-Changes-tree-view.svg",
+  "id": "Wide · Changes · tree view",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "11-Wide-Changes-compact-view.svg",
+  "id": "Wide · Changes · compact view",
+  "page": "Screens · Wide",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "12-Half-Changes.svg",
+  "id": "Half · Changes",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "13-Half-History.svg",
+  "id": "Half · History",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "14-Half-Mini-rail.svg",
+  "id": "Half · Mini rail",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "15-Half-Mini-rail-commit-popover.svg",
+  "id": "Half · Mini rail · commit popover",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "16-Half-Changes-tree-view.svg",
+  "id": "Half · Changes · tree view",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "17-Half-Repo-menu.svg",
+  "id": "Half · Repo menu",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "18-Half-Agent-settings-Codex.svg",
+  "id": "Half · Agent settings · Codex",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "19-Quarter-Changes.svg",
+  "id": "Quarter · Changes",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "20-Quarter-History.svg",
+  "id": "Quarter · History",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "21-Quarter-More-menu.svg",
+  "id": "Quarter · More menu",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "22-Shallow-Changes-945x400.svg",
+  "id": "Shallow · Changes 945x400",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 400
+ },
+ {
+  "file": "23-Third-Changes-tab.svg",
+  "id": "Third · Changes tab",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "24-Third-Diff-tab.svg",
+  "id": "Third · Diff tab",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "25-Third-History-tab.svg",
+  "id": "Third · History tab",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "26-Third-Sync-menu.svg",
+  "id": "Third · Sync menu",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "27-Third-Options-menu.svg",
+  "id": "Third · Options menu",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "28-Third-Merge-dialog.svg",
+  "id": "Third · Merge dialog",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "29-Third-Agent-settings-none-installed.svg",
+  "id": "Third · Agent settings · none installed",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "30-Third-tall-Changes-627x1234.svg",
+  "id": "Third tall · Changes 627x1234",
+  "page": "Screens · Narrow",
+  "w": 627,
+  "h": 1234
+ },
+ {
+  "file": "31-Eighth-Changes-tab.svg",
+  "id": "Eighth · Changes tab",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "32-Eighth-Diff-tab.svg",
+  "id": "Eighth · Diff tab",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "33-Eighth-Changes-tab-tree-view.svg",
+  "id": "Eighth · Changes tab · tree view",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "34-Eighth-History-tab.svg",
+  "id": "Eighth · History tab",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "35-Eighth-Branch-menu.svg",
+  "id": "Eighth · Branch menu",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "36-Eighth-shallow-470x400.svg",
+  "id": "Eighth shallow · 470x400",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 400
+ },
+ {
+  "file": "37-Eighth-Merge-dialog.svg",
+  "id": "Eighth · Merge dialog",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "38-Eighth-Agent-settings.svg",
+  "id": "Eighth · Agent settings",
+  "page": "Screens · Narrow",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "39-Light-Wide-Changes.svg",
+  "id": "Light · Wide Changes",
+  "page": "Light theme",
+  "w": 1900,
+  "h": 1234
+ },
+ {
+  "file": "40-Light-Quarter-History.svg",
+  "id": "Light · Quarter History",
+  "page": "Light theme",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "41-Light-Third-Diff-tab.svg",
+  "id": "Light · Third Diff tab",
+  "page": "Light theme",
+  "w": 627,
+  "h": 612
+ },
+ {
+  "file": "42-ChangesTree.svg",
+  "id": "ChangesTree",
+  "page": "Components",
+  "w": 560,
+  "h": 300
+ },
+ {
+  "file": "43-CommitPopover.svg",
+  "id": "CommitPopover",
+  "page": "Components",
+  "w": 360,
+  "h": 203
+ },
+ {
+  "file": "44-AgentPopover.svg",
+  "id": "AgentPopover",
+  "page": "Components",
+  "w": 360,
+  "h": 389
+ },
+ {
+  "file": "45-Cover-Omagit-UI.svg",
+  "id": "Cover · Omagit UI",
+  "page": "Cover",
+  "w": 1200,
+  "h": 760
+ },
+ {
+  "file": "46-Foundations.svg",
+  "id": "Foundations",
+  "page": "Foundations",
+  "w": 1840,
+  "h": 1180
+ },
+ {
+  "file": "47-Components.svg",
+  "id": "Components",
+  "page": "Components",
+  "w": 1500,
+  "h": 1520
+ },
+ {
+  "file": "48-Layout-rules.svg",
+  "id": "Layout rules",
+  "page": "Layout rules",
+  "w": 1500,
+  "h": 1000
+ }
+]

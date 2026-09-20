@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="Eighth · Diff tab" width="470" height="612" viewBox="0 0 470 612">
+<rect x="0" y="0" width="470" height="612" id="window" fill="#181c22"/>
+<g id="TopBar">
+<g id="RepoChip">
+<g id="icon/folderOpen" transform="translate(22,13) scale(0.5833)"><path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" fill="#e0e6ed"/></g>
+</g>
+<g id="BranchChip">
+<g id="icon/branch" transform="translate(60,13) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#4ecdc4"/></g>
+<text x="80" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
+<g id="icon/chevron" transform="translate(117,14) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+</g>
+<g id="BranchChip/label-accent">
+<text x="80" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">main</text>
+</g>
+<g id="More">
+<rect x="430" y="6" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="430.5" y="6.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/dots" transform="translate(437,13) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
+</g>
+<g id="SyncDropdown">
+<rect x="332" y="6" width="92" height="28" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="332.5" y="6.5" width="91" height="27" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/down" transform="translate(340,13) scale(0.5833)"><path d="M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z" fill="#e0e6ed"/></g>
+<text x="356" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">2</text>
+<g id="icon/up" transform="translate(370,13) scale(0.5833)"><path d="M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z" fill="#e0e6ed"/></g>
+<text x="386" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">1</text>
+<g id="icon/chevron" transform="translate(400,14) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+</g>
+<g id="NavTabs">
+<rect x="168" y="6" width="134" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<g id="Segment/normal commit">
+<g id="icon/commit" transform="translate(180,13) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#e0e6ed"/></g>
+<rect x="200" y="13" width="14" height="14" fill="#e0e6ed" fill-opacity="0.14"/>
+<text x="207" y="23.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#e0e6ed" text-anchor="middle" xml:space="preserve">7</text>
+</g>
+<g id="Segment/selected diff">
+<rect x="226" y="6" width="38" height="28" fill="#e0e6ed" fill-opacity="0.18"/>
+<g id="icon/diff" transform="translate(238,13) scale(0.5833)"><path d="M10,18H6V16H10V18M10,14H6V12H10V14M10,1V2H6C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H10V23H12V1H10M20,8V20C20,21.11 19.11,22 18,22H14V20H18V11H14V9H18.5L14,4.5V2L20,8M16,14H14V12H16V14M16,18H14V16H16V18Z" fill="#4ecdc4"/></g>
+</g>
+<rect x="226" y="6" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
+<g id="Segment/normal history">
+<g id="icon/history" transform="translate(276,13) scale(0.5833)"><path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" fill="#e0e6ed"/></g>
+</g>
+<rect x="264" y="6" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
+<rect x="168.5" y="6.5" width="133" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+</g>
+<rect x="0" y="39" width="470" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
+</g>
+<g id="Footer">
+<rect x="0" y="584" width="470" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
+<text x="12" y="602.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">~/Projects/omagit</text>
+<g id="Keybindings">
+<g id="icon/keyboard" transform="translate(439,591) scale(0.5833)"><path d="M4,5A2,2 0 0,0 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7A2,2 0 0,0 20,5H4M4,7H20V17H4V7M5,8V10H7V8H5M8,8V10H10V8H8M11,8V10H13V8H11M14,8V10H16V8H14M17,8V10H19V8H17M5,11V13H7V11H5M8,11V13H10V11H8M11,11V13H13V11H11M14,11V13H16V11H14M17,11V13H19V11H17M8,14V16H16V14H8Z" fill="#e0e6ed"/></g>
+</g>
+</g>
+<g id="MiniRail">
+<g id="Tile/checked GitRepo.cpp">
+<rect x="12" y="50" width="40" height="40" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="12.5" y="50.5" width="39" height="39" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="32" y="75.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" fill-opacity="1" text-anchor="middle" xml:space="preserve">cpp</text>
+<rect x="39" y="51" width="12" height="12" fill="#6a85ff" fill-opacity="1"/>
+<text x="45" y="59.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">M</text>
+<text x="16" y="86.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">1</text>
+</g>
+<g id="Tile/checked RemoteSync.cpp">
+<rect x="12" y="96" width="40" height="40" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="12.5" y="96.5" width="39" height="39" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="32" y="121.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" fill-opacity="1" text-anchor="middle" xml:space="preserve">cpp</text>
+<rect x="39" y="97" width="12" height="12" fill="#6a85ff" fill-opacity="1"/>
+<text x="45" y="105.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">M</text>
+<text x="16" y="132.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">2</text>
+</g>
+<g id="Tile/selected Toolbar.cpp">
+<rect x="12" y="142" width="40" height="40" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="12.5" y="142.5" width="39" height="39" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<text x="32" y="167.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#4ecdc4" fill-opacity="1" text-anchor="middle" xml:space="preserve">cpp</text>
+<rect x="39" y="143" width="12" height="12" fill="#6a85ff" fill-opacity="1"/>
+<text x="45" y="151.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">M</text>
+<text x="16" y="178.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">3</text>
+</g>
+<g id="Tile/checked README.md">
+<rect x="12" y="188" width="40" height="40" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="12.5" y="188.5" width="39" height="39" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="32" y="213.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#ff7b92" fill-opacity="1" text-anchor="middle" xml:space="preserve">md</text>
+<rect x="39" y="189" width="12" height="12" fill="#ff7b92" fill-opacity="1"/>
+<text x="45" y="197.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">D</text>
+<text x="16" y="224.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">4</text>
+</g>
+<g id="Tile/checked ui_tests.cpp">
+<rect x="12" y="234" width="40" height="40" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="12.5" y="234.5" width="39" height="39" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="32" y="259.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#b388eb" fill-opacity="1" text-anchor="middle" xml:space="preserve">cpp</text>
+<rect x="39" y="235" width="12" height="12" fill="#b388eb" fill-opacity="1"/>
+<text x="45" y="243.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">R</text>
+<text x="16" y="270.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">5</text>
+</g>
+<g id="Tile/unchecked notes.txt">
+<rect x="12" y="280" width="40" height="40" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="12.5" y="280.5" width="39" height="39" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="32" y="305.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" fill-opacity="0.45" text-anchor="middle" xml:space="preserve">txt</text>
+<rect x="39" y="281" width="12" height="12" fill="#8791a6" fill-opacity="0.5"/>
+<text x="45" y="289.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">?</text>
+<text x="16" y="316.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">6</text>
+</g>
+<g id="Tile/unchecked NewWidget.cpp">
+<rect x="12" y="326" width="40" height="40" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="12.5" y="326.5" width="39" height="39" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="32" y="351.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" fill-opacity="0.45" text-anchor="middle" xml:space="preserve">cpp</text>
+<rect x="39" y="327" width="12" height="12" fill="#8791a6" fill-opacity="0.5"/>
+<text x="45" y="335.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">?</text>
+<text x="16" y="362.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">7</text>
+</g>
+<rect x="12" y="526" width="40" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
+<g id="Tile/commit">
+<rect x="12" y="534" width="40" height="40" fill="#4ecdc4" fill-opacity="0.08"/>
+<rect x="12.5" y="534.5" width="39" height="39" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<g id="icon/commit" transform="translate(24,548) scale(0.6667)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#4ecdc4"/></g>
+<rect x="39" y="535" width="12" height="12" fill="#4ecdc4"/>
+<text x="45" y="543.9" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">5</text>
+</g>
+</g>
+<g id="DiffPane">
+<g id="PrevChange">
+<rect x="62.5" y="50.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.12"/>
+<g id="icon/up" transform="translate(69,57) scale(0.5833)"><path d="M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z" fill="#e0e6ed" fill-opacity="0.45"/></g>
+</g>
+<g id="NextChange">
+<rect x="94" y="50" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="94.5" y="50.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/down" transform="translate(101,57) scale(0.5833)"><path d="M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z" fill="#e0e6ed"/></g>
+</g>
+<text x="132" y="68.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">1/2</text>
+<g id="DiffMore">
+<rect x="430" y="50" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="430.5" y="50.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/dots" transform="translate(437,57) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
+</g>
+<rect x="62.5" y="86.5" width="395" height="487" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="62" y="87" width="396" height="26" fill="#e0e6ed" fill-opacity="0.04"/>
+<text x="72" y="104.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" xml:space="preserve">src/ui/Toolbar.cpp</text>
+<text x="448" y="104.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">HEAD → Working tree</text>
+<rect x="62" y="113" width="396" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
+<text x="108" y="129.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">1</text>
+<text x="122" y="129.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="186.8" y="129.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&quot;Toolbar.h&quot;</text>
+<text x="108" y="147.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">2</text>
+<text x="122" y="147.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="186.8" y="147.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&quot;UiHelpers.h&quot;</text>
+<text x="108" y="165.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">3</text>
+<text x="108" y="183.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">4</text>
+<text x="122" y="183.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="186.8" y="183.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QHBoxLayout&gt;</text>
+<text x="108" y="201.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">5</text>
+<text x="122" y="201.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="186.8" y="201.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QResizeEvent&gt;</text>
+<text x="108" y="219.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">6</text>
+<text x="122" y="219.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="186.8" y="219.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QToolButton&gt;</text>
+<text x="108" y="237.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">7</text>
+<text x="108" y="255.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">8</text>
+<text x="122" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">using</text>
+<text x="158" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="165.2" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">namespace</text>
+<text x="230" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> ui;</text>
+<text x="108" y="273.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">9</text>
+<text x="108" y="291.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">10</text>
+<text x="122" y="291.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Toolbar::Toolbar(</text>
+<text x="244.4" y="291.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
+<text x="294.8" y="291.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *parent)</text>
+<text x="108" y="309.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">11</text>
+<text x="122" y="309.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    : </text>
+<text x="165.2" y="309.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
+<text x="215.60000000000002" y="309.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">(parent)</text>
+<text x="108" y="327.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">12</text>
+<text x="122" y="327.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="108" y="345.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">13</text>
+<text x="122" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="150.8" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">auto</text>
+<text x="179.6" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *row = </text>
+<text x="237.2" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">new</text>
+<text x="258.8" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="266" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QHBoxLayout</text>
+<text x="345.20000000000005" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">(</text>
+<text x="352.4" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
+<text x="381.2" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
+<text x="108" y="363.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">14</text>
+<text x="122" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    row-&gt;setContentsMargins(</text>
+<text x="323.6" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="330.8" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
+<text x="345.20000000000005" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="352.4" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
+<text x="366.8" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="374" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
+<text x="388.40000000000003" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="395.6" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
+<text x="108" y="381.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">15</text>
+<text x="122" y="381.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    row-&gt;setSpacing(kSpacing);</text>
+<text x="108" y="399.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">16</text>
+<text x="122" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more = </text>
+<text x="215.60000000000002" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">new</text>
+<text x="237.2" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> BadgeButton(</text>
+<text x="330.8" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
+<text x="359.6" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
+<text x="108" y="417.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">17</text>
+<text x="122" y="417.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;setText(icon(kDots));</text>
+<text x="108" y="435.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">18</text>
+<text x="122" y="435.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;hide();</text>
+<text x="108" y="453.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">19</text>
+<text x="122" y="453.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<text x="108" y="471.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">20</text>
+<text x="108" y="489.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">21</text>
+<text x="122" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
+<text x="150.8" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::addButton(</text>
+<text x="294.8" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QToolButton</text>
+<text x="374" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *button, </text>
+<text x="108" y="507.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">22</text>
+<text x="122" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">                        </text>
+<text x="294.8" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="330.8" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="338" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QString</text>
+<text x="388.40000000000003" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;icon, </text>
+<text x="108" y="525.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">23</text>
+<text x="122" y="525.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="108" y="543.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">24</text>
+<text x="122" y="543.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_items.append({button, nullptr, full, ic</text>
+<text x="108" y="561.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">25</text>
+<text x="122" y="561.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    layout()-&gt;addWidget(button);</text>
+<rect x="444" y="116" width="4" height="272" id="Scrollbar" fill="#e0e6ed" fill-opacity="0.25"/>
+</g>
+</svg>
