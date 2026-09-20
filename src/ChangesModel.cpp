@@ -7,22 +7,32 @@
 #include <QFont>
 #include <QFrame>
 #include <QHeaderView>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
 #include <QStyledItemDelegate>
 #include <QTableView>
 
 namespace {
-// Paints the row's 1-based position in the view (so it follows sorting and
+// The design's checkbox column, and the width the row numbers have always had.
+constexpr int kCheckColumn = 30, kNumberColumn = 40;
+
+// The narrow first column. Where the list has checkboxes, the base class
+// paints the model's check state and nothing else; where it has not, this
+// paints the row's 1-based position in the view (so it follows sorting and
 // filtering) in the muted colour, with a tighter left padding than the
 // stylesheet gives ordinary cells so the column can stay narrow.
-class RowNumberDelegate : public QStyledItemDelegate
+class FirstColumnDelegate : public QStyledItemDelegate
 {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
+        if (index.data(Qt::CheckStateRole).isValid()) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
         QStyleOptionViewItem bg = option;
         bg.text.clear();
         QStyledItemDelegate::paint(painter, bg, index); // selection / hover background only
@@ -101,7 +111,7 @@ void ChangesModel::setChanges(const QList<FileChange> &changes)
             m_checked.insert(c.path);
     }
     endResetModel();
-    emit checkedChanged();
+    checkedHasChanged();
 }
 
 void ChangesModel::setCheckable(bool on)
@@ -156,7 +166,13 @@ void ChangesModel::setChecked(const std::function<bool(const FileChange &)> &pic
             m_checked.remove(c.path);
     }
     if (!m_changes.isEmpty())
-        emit dataChanged(index(0, Name), index(rowCount() - 1, Name), {Qt::CheckStateRole});
+        emit dataChanged(index(0, Check), index(rowCount() - 1, Check), {Qt::CheckStateRole});
+    checkedHasChanged();
+}
+
+void ChangesModel::checkedHasChanged()
+{
+    emit headerDataChanged(Qt::Horizontal, Check, Check); // the check-all box
     emit checkedChanged();
 }
 
@@ -237,12 +253,13 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
         }
         break;
     case Qt::CheckStateRole:
-        if (m_checkable && index.column() == Name)
+        if (m_checkable && index.column() == Check)
             return m_checked.contains(c.path) ? Qt::Checked : Qt::Unchecked;
         break;
     case Qt::TextAlignmentRole:
-        if (index.column() == Number || index.column() == Size || index.column() == LinesAdded
-            || index.column() == LinesRemoved)
+        // The row numbers of a list without checkboxes are the delegate's,
+        // which aligns them itself.
+        if (index.column() == Size || index.column() == LinesAdded || index.column() == LinesRemoved)
             return int(Qt::AlignRight | Qt::AlignVCenter);
         break;
     case Qt::ForegroundRole: {
@@ -285,7 +302,7 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
 
 bool ChangesModel::setData(const QModelIndex &index, const QVariant &value, int role)
 {
-    if (!m_checkable || !index.isValid() || role != Qt::CheckStateRole || index.column() != Name)
+    if (!m_checkable || !index.isValid() || role != Qt::CheckStateRole || index.column() != Check)
         return false;
     const QString &path = m_changes[index.row()].path;
     if (value.toInt() == Qt::Checked)
@@ -293,16 +310,27 @@ bool ChangesModel::setData(const QModelIndex &index, const QVariant &value, int 
     else
         m_checked.remove(path);
     emit dataChanged(index, index, {Qt::CheckStateRole});
-    emit checkedChanged();
+    checkedHasChanged();
     return true;
 }
 
 QVariant ChangesModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
+    if (orientation != Qt::Horizontal)
+        return {};
+    if (role == Qt::CheckStateRole) {
+        if (!m_checkable || section != Check)
+            return {};
+        const int checked = checkedCount();
+        return int(checked == 0                 ? Qt::Unchecked
+                   : checked == m_changes.size() ? Qt::Checked
+                                                 : Qt::PartiallyChecked);
+    }
+    if (role != Qt::DisplayRole)
         return {};
     switch (section) {
-    case Number: return tr("#");
+    // A column of checkboxes needs no title; the row numbers keep theirs.
+    case Check: return m_checkable ? QString() : tr("#");
     case Name: return tr("Name");
     case Path: return tr("Path");
     case Extension: return tr("Ext");
@@ -314,12 +342,143 @@ QVariant ChangesModel::headerData(int section, Qt::Orientation orientation, int 
     return {};
 }
 
+bool ChangesModel::setHeaderData(int section, Qt::Orientation orientation, const QVariant &value, int role)
+{
+    if (!m_checkable || orientation != Qt::Horizontal || section != Check || role != Qt::CheckStateRole)
+        return false;
+    setAllChecked(value.toInt() == Qt::Checked); // headerDataChanged follows from it
+    return true;
+}
+
 Qt::ItemFlags ChangesModel::flags(const QModelIndex &index) const
 {
     Qt::ItemFlags f = Qt::ItemIsEnabled | Qt::ItemIsSelectable;
-    if (m_checkable && index.column() == Name)
+    if (m_checkable && index.column() == Check)
         f |= Qt::ItemIsUserCheckable;
     return f;
+}
+
+// ---------------------------------------------------------------------------
+
+ChangesHeader::ChangesHeader(QTableView *table)
+    : QHeaderView(Qt::Horizontal, table), m_table(table)
+{
+    // A table only makes the header it builds itself clickable, and a column
+    // is sorted by clicking its section.
+    setSectionsClickable(true);
+}
+
+QVariant ChangesHeader::checkState() const
+{
+    return model() ? model()->headerData(ChangesModel::Check, Qt::Horizontal, Qt::CheckStateRole) : QVariant();
+}
+
+bool ChangesHeader::isCheckSection(const QPoint &pos) const
+{
+    return logicalIndexAt(pos) == ChangesModel::Check && checkState().isValid();
+}
+
+// Exactly where the rows put their own box, so the column reads as one line
+// of checkboxes: the table's style measures both from the item rule.
+QRect ChangesHeader::checkRect(const QRect &section) const
+{
+    QStyleOptionViewItem item;
+    item.initFrom(m_table);
+    item.rect = section;
+    item.features |= QStyleOptionViewItem::HasCheckIndicator;
+    return m_table->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &item, m_table);
+}
+
+QRect ChangesHeader::checkSectionRect() const
+{
+    const int section = ChangesModel::Check;
+    return QRect(sectionViewportPosition(section), 0, sectionSize(section), viewport()->height());
+}
+
+void ChangesHeader::paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const
+{
+    QHeaderView::paintSection(painter, rect, logicalIndex);
+    const QVariant state = logicalIndex == ChangesModel::Check ? checkState() : QVariant();
+    if (!state.isValid())
+        return;
+    QStyleOptionViewItem box;
+    box.initFrom(m_table);
+    box.features |= QStyleOptionViewItem::HasCheckIndicator;
+    box.rect = checkRect(rect);
+    box.state = QStyle::State_Enabled
+        | (state.toInt() == Qt::Checked            ? QStyle::State_On
+           : state.toInt() == Qt::PartiallyChecked ? QStyle::State_NoChange
+                                                   : QStyle::State_Off);
+    if (m_checkHovered)
+        box.state |= QStyle::State_MouseOver; // the rows' boxes light up under the pointer too
+    m_table->style()->drawPrimitive(QStyle::PE_IndicatorItemViewItemCheck, &box, painter, m_table);
+}
+
+void ChangesHeader::toggleAll()
+{
+    const bool all = checkState().toInt() == Qt::Checked;
+    // Through the model the table has, which may be a proxy that shows only
+    // some of the files: the box is over the rows on screen.
+    model()->setHeaderData(ChangesModel::Check, Qt::Horizontal, int(all ? Qt::Unchecked : Qt::Checked),
+                           Qt::CheckStateRole);
+}
+
+// A column of checkboxes is nothing to sort by, so the press never reaches
+// the header's own sorting: it ticks every file, or unticks them all once
+// they are.
+void ChangesHeader::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && isCheckSection(event->position().toPoint())) {
+        toggleAll();
+        event->accept();
+        return;
+    }
+    QHeaderView::mousePressEvent(event);
+}
+
+void ChangesHeader::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && isCheckSection(event->position().toPoint())) {
+        event->accept();
+        return;
+    }
+    QHeaderView::mouseReleaseEvent(event);
+}
+
+// Qt answers the second of two fast clicks with a double click, which the
+// header would take for a sort: toggle again instead, so clicking on and on
+// ticks and unticks the way a checkbox does.
+void ChangesHeader::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && isCheckSection(event->position().toPoint())) {
+        toggleAll();
+        event->accept();
+        return;
+    }
+    QHeaderView::mouseDoubleClickEvent(event);
+}
+
+void ChangesHeader::mouseMoveEvent(QMouseEvent *event)
+{
+    const QPoint pos = event->position().toPoint();
+    setCheckHovered(isCheckSection(pos) && checkRect(checkSectionRect()).contains(pos));
+    QHeaderView::mouseMoveEvent(event);
+}
+
+void ChangesHeader::leaveEvent(QEvent *event)
+{
+    setCheckHovered(false);
+    QHeaderView::leaveEvent(event);
+}
+
+// Only the box lights up, not the whole section, so a move that stays inside
+// it (or outside it) repaints nothing.
+void ChangesHeader::setCheckHovered(bool on)
+{
+    if (m_checkHovered == on)
+        return;
+    m_checkHovered = on;
+    updateSection(ChangesModel::Check);
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +486,9 @@ Qt::ItemFlags ChangesModel::flags(const QModelIndex &index) const
 ChangesTableSetup::ChangesTableSetup(QTableView *table)
     : QObject(table), m_table(table)
 {
+    // Before anything else on the header: a table hands its sorting and its
+    // section settings to the header it has at the time.
+    table->setHorizontalHeader(new ChangesHeader(table));
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setAlternatingRowColors(false);
@@ -336,12 +498,16 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->verticalHeader()->setVisible(false);
     table->horizontalHeader()->setStretchLastSection(false);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    table->horizontalHeader()->setMinimumSectionSize(40);
+    table->horizontalHeader()->setMinimumSectionSize(kNumberColumn);
     table->horizontalHeader()->setHighlightSections(false);
+    // The checkbox column is the design's, not the user's, to size; applyTheme
+    // gives it its width.
+    if (hasChecks())
+        table->horizontalHeader()->setSectionResizeMode(ChangesModel::Check, QHeaderView::Fixed);
     table->setWordWrap(false);
     table->setItemDelegate(new AccentSelectionDelegate(table));
-    table->setItemDelegateForColumn(ChangesModel::Number, new RowNumberDelegate(table));
-    table->setColumnWidth(ChangesModel::Number, 40);
+    table->setItemDelegateForColumn(ChangesModel::Check, new FirstColumnDelegate(table));
+    table->setColumnWidth(ChangesModel::Check, kNumberColumn);
     table->setColumnWidth(ChangesModel::Name, 240);
     table->setColumnWidth(ChangesModel::Extension, 64);
     table->setColumnWidth(ChangesModel::Size, 100);
@@ -355,9 +521,24 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     applyTheme();
 }
 
+// Whether the first column carries the checkboxes of a commit list or the
+// row numbers of the history's files.
+bool ChangesTableSetup::hasChecks() const
+{
+    return m_table->model()
+        && m_table->model()->headerData(ChangesModel::Check, Qt::Horizontal, Qt::CheckStateRole).isValid();
+}
+
 void ChangesTableSetup::applyTheme()
 {
     m_table->verticalHeader()->setDefaultSectionSize(ui::tableRowHeight());
+    // The checkbox column is the design's 30 px, which at the smaller text
+    // sizes is under the floor the other columns keep, so the floor follows
+    // it down. A list of row numbers keeps the width it has always had.
+    if (hasChecks()) {
+        m_table->horizontalHeader()->setMinimumSectionSize(qMin(kNumberColumn, ui::space(kCheckColumn)));
+        m_table->setColumnWidth(ChangesModel::Check, ui::space(kCheckColumn));
+    }
     m_table->viewport()->update();
 }
 

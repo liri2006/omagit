@@ -115,8 +115,13 @@ history with a branch graph, and plugs into the Nautilus context menu as
 - The toolbar adapts to the width of the left section: labels give way to icons, and icons
   to a *more* menu (Fetch folds first, Pull last), so the section can be dragged as narrow
   as you like; the diff pane can be dragged just as narrow. The toolbar's first button is
-  the Docked/Mini toggle; Refresh is the small icon next to the *n / m selected* count (and
+  the Docked/Mini toggle; Refresh is the small icon at the right of the *CHANGES* row (and
   next to *All branches* in History), F5 or Ctrl+Shift+R works everywhere.
+- The *CHANGES* title carries the count (*CHANGES · 5/7*: checked / listed) and the button says
+  what it will take (*Commit 5 files*). The box in the table's header checks or unchecks every
+  listed file, the eye beside Refresh shows or hides the unversioned files — hidden files are
+  never checked, so they are never committed — and *Amend last commit* sits at the left of the
+  bottom bar, next to the button it renames.
 - **Docked / Mini** layouts (the toolbar's first button or Ctrl+B; the choice is
   remembered). *Docked* keeps the left section (commit dialog or history) next to the diff
   pane. *Mini* shrinks it to a narrow rail of file miniatures (extension tile, status letter,

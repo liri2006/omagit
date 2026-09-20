@@ -271,6 +271,8 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_filesTable = new QTableView;
     m_filesTable->setObjectName(QStringLiteral("filesTable"));
     m_filesTable->setModel(filesProxy);
+    // After the model, which says these files have no checkboxes: the setup
+    // sizes the first column after that.
     m_filesSetup = new ChangesTableSetup(m_filesTable);
     connect(m_filesTable->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
             [this] { emit currentFileChanged(); });

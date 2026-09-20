@@ -11,6 +11,7 @@
 #include <functional>
 
 class QCheckBox;
+class QHBoxLayout;
 class QLabel;
 class QLayout;
 class QMenu;
@@ -21,7 +22,7 @@ class QTableView;
 class QTimer;
 class QToolButton;
 
-// The commit dialog: message, changes list, options, buttons.
+// The commit dialog: message, changes list, action bar.
 // It owns the coding-agent flow that writes the message and the commit
 // itself; everything that needs the repository as a whole (refreshing, the
 // diff pane) is left to the window through the signals below.
@@ -72,6 +73,9 @@ public:
 
     void applyTheme();
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 public slots:
     void onCheckedChanged();
     void onAmendToggled(bool on);
@@ -103,8 +107,13 @@ private:
     // deleted text does.
     void fitMessage(MessageEdit::Edit edit);
     QWidget *buildChangesSection();
-    QLayout *buildOptionsRow();
-    QLayout *buildButtonRow();
+    // The bottom row: Amend at the left, the Commit button at the right.
+    QLayout *buildActionBar();
+    // "Amend last commit" where the row has the width for it, "Amend" where
+    // it has not.
+    void updateAmendLabel();
+    // Unticks the unversioned files while the eye hides them.
+    void untickHidden();
     void showFileMenu(const QPoint &pos);
     // The cog menu's three sections.
     void addAgentSection(QMenu *menu, const AgentChoice &choice, const std::function<void(const AgentChoice &)> &save);
@@ -123,7 +132,9 @@ private:
     ChangesTableSetup *m_tableSetup;
     MessageEdit *m_message;      // the commit message, with the generate button in its corner
     QSplitter *m_messageSplitter; // the message over the changes list, the heights it grows in
+    QLayout *m_sectionsLayout;    // MESSAGE and CHANGES, over the action bar
     QLayout *m_changesLayout;     // CHANGES: its header row over the list, a scaled gap apart
+    QHBoxLayout *m_actionBar;     // the bottom row, a scaled gap under the list
     bool m_messageSizedByHand = false; // the user dragged the handle this session
     int m_messageRestHeight = -1;      // the pane's height before any text grew it
     QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning
@@ -132,10 +143,10 @@ private:
     int m_spinnerFrame = 0;
     bool m_streaming = false;    // a partial answer already replaced the message text
     QString m_messageBefore;     // the text the user had before the agent started, for a failed run
-    QLabel *m_summaryLabel;
+    QLabel *m_changesLabel;      // CHANGES · checked / shown
+    QWidget *m_changesDivider;   // between the eye and Refresh
     QPushButton *m_commitButton;
-    QCheckBox *m_selectAll;
-    QCheckBox *m_showUnversioned;
+    QToolButton *m_unversioned;  // the eye: checked = unversioned files shown
     QCheckBox *m_amend;
     QString m_headMessage;
     bool m_merging = false;      // a merge is in progress (MERGE_HEAD exists)

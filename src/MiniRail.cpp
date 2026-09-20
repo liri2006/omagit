@@ -196,8 +196,8 @@ void MiniRailList::keyPressEvent(QKeyEvent *event)
 void MiniRailList::toggleChecked(const QModelIndex &current)
 {
     // The selection model is the changes table's, whose current index may
-    // sit in any column; the check state lives in the Name column.
-    const QModelIndex index = current.siblingAtColumn(ChangesModel::Name);
+    // sit in any column; the check state lives in the first one.
+    const QModelIndex index = current.siblingAtColumn(ChangesModel::Check);
     const QVariant check = index.data(Qt::CheckStateRole);
     if (!check.isValid())
         return;
@@ -336,8 +336,8 @@ void MiniRail::setSource(QAbstractItemModel *model, QItemSelectionModel *selecti
     if (m_list->model() != model) {
         m_list->setModel(model);
         // Only once a model is set: QListView ignores a column its model does
-        // not have. Name is the column carrying the check state.
-        m_list->setModelColumn(ChangesModel::Name);
+        // not have. Check is the column carrying the check state.
+        m_list->setModelColumn(ChangesModel::Check);
     }
     if (m_list->selectionModel() != selection)
         m_list->setSelectionModel(selection);

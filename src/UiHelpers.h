@@ -44,6 +44,8 @@ constexpr uint kChevron = 0xF0140, kFolder = 0xF024B, kFolderOpen = 0xF0770, kMa
 constexpr uint kSparkle = 0xF0674, kCog = 0xF0493, kRobot = 0xF06A9;
 // md-information: the keybindings button in the footer.
 constexpr uint kInfo = 0xF02FC;
+// md-eye: the unversioned files are shown (the button is on) or hidden.
+constexpr uint kEye = 0xF0208;
 
 // The frames of the generate button while an agent thinks: a braille spinner
 // when the font has one, a turning circle otherwise.
@@ -74,7 +76,7 @@ Button *toolButton(const QString &text, const QString &tip = QString())
 }
 
 // Icon-only buttons: Inline is a 24 px square for a section header row, Toolbar
-// is 28 px wide and as tall as the fields and buttons of the row it sits in.
+// is 28 px wide and exactly as tall as a text button of the row it sits in.
 enum class IconButtonSize { Inline = 24, Toolbar = 28 };
 
 // A centred glyph in a square that follows the text size. Ghost ones carry no

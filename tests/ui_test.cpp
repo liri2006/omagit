@@ -21,13 +21,17 @@
 #include "../src/UiHelpers.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
+#include <QHBoxLayout>
+#include <QHeaderView>
 #include <QHostAddress>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QMouseEvent>
 #include <QListWidget>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -38,15 +42,19 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QSplitterHandle>
 #include <QStackedWidget>
+#include <QStandardPaths>
+#include <QTableView>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
 #include <QUrl>
+#include <QVBoxLayout>
 
 #include <functional>
 #include <memory>
@@ -138,6 +146,205 @@ MergePreview preview(MergePreview::Outcome outcome)
 void settle()
 {
     QTest::qWait(30);
+}
+
+// One of each control the kit measures in scaled pixels, in a shown host so
+// the stylesheet's own padding is part of the numbers. The live text-size
+// test builds one, changes the desktop's text size under it, and holds it
+// against a kit built fresh at the new size.
+struct Kit
+{
+    std::unique_ptr<QWidget> host;
+    QToolButton *inlineButton = nullptr;
+    QToolButton *toolbarButton = nullptr;
+    QToolButton *textButton = nullptr; // what a toolbar icon button has to be as tall as
+    QLineEdit *promptField = nullptr;
+    QWidget *promptBox = nullptr;
+    QWidget *header = nullptr;
+
+    QList<int> metrics() const
+    {
+        return {inlineButton->width(),       inlineButton->height(),
+                toolbarButton->width(),      toolbarButton->height(),
+                promptField->height(),       promptBox->sizeHint().width(),
+                promptBox->sizeHint().height(), header->height()};
+    }
+};
+
+Kit buildKit()
+{
+    Kit kit;
+    kit.host.reset(new QWidget);
+    auto *rows = new QVBoxLayout(kit.host.get());
+    kit.inlineButton = ui::iconButton(ui::kCog, QStringLiteral("⚙"), QStringLiteral("Agent"));
+    kit.toolbarButton = ui::iconButton(ui::kRefresh, QStringLiteral("R"), QStringLiteral("Refresh"),
+                                       ui::IconButtonSize::Toolbar, false);
+    kit.textButton = ui::toolButton(QStringLiteral("x"));
+    kit.promptField = ui::promptField(QStringLiteral("Search branches…"));
+    kit.promptBox = ui::promptBox(kit.promptField);
+    kit.header = new QWidget;
+    kit.header->setLayout(ui::sectionHeaderRow(ui::sectionLabel(QStringLiteral("MESSAGE"))));
+    rows->addWidget(kit.inlineButton);
+    rows->addWidget(kit.toolbarButton);
+    rows->addWidget(kit.textButton);
+    rows->addWidget(kit.promptBox);
+    rows->addWidget(kit.header);
+    rows->addStretch(1); // the leftover height is the stretch's, not a control's
+    kit.host->resize(400, 400); // both kits are laid out in the same box
+    kit.host->show();
+    return kit;
+}
+
+// What a kit built from scratch at the text size of the moment measures.
+QList<int> freshKitMetrics()
+{
+    Kit kit = buildKit();
+    QTest::qWaitForWindowExposed(kit.host.get());
+    settle();
+    return kit.metrics();
+}
+
+// A commit page on a repository of its own: one commit, two files changed
+// since it, and two unversioned ones beside them — so the list starts with
+// two of its four files checked.
+struct CommitFixture
+{
+    std::unique_ptr<QTemporaryDir> dir;
+    std::unique_ptr<GitRepo> repo;
+    std::unique_ptr<CommitPage> page;
+
+    ChangesModel *model() const
+    {
+        return static_cast<ChangesModel *>(static_cast<QSortFilterProxyModel *>(page->table()->model())->sourceModel());
+    }
+    ChangesHeader *header() const { return qobject_cast<ChangesHeader *>(page->table()->horizontalHeader()); }
+    QPushButton *commitButton() const { return page->findChild<QPushButton *>(); }
+    QCheckBox *amend() const { return page->findChild<QCheckBox *>(); }
+    // The only checkable square of the header row is the unversioned eye.
+    QToolButton *eye() const
+    {
+        for (QToolButton *b : page->findChildren<QToolButton *>(QStringLiteral("iconButton")))
+            if (b->isCheckable())
+                return b;
+        return nullptr;
+    }
+    QString title() const
+    {
+        for (const QLabel *l : page->findChildren<QLabel *>(QStringLiteral("sectionLabel")))
+            if (l->text().startsWith(QStringLiteral("CHANGES")))
+                return l->text();
+        return QString();
+    }
+    // The check-all box of the header, as the header itself reads it.
+    int checkAll() const
+    {
+        return page->table()->model()->headerData(ChangesModel::Check, Qt::Horizontal, Qt::CheckStateRole).toInt();
+    }
+    QPoint sectionCentre(int section) const
+    {
+        QHeaderView *h = page->table()->horizontalHeader();
+        return QPoint(h->sectionViewportPosition(section) + h->sectionSize(section) / 2,
+                      h->viewport()->height() / 2);
+    }
+    void clickSection(int section) const
+    {
+        QTest::mouseClick(page->table()->horizontalHeader()->viewport(), Qt::LeftButton, {}, sectionCentre(section));
+    }
+    // Two clicks fast enough for Qt to call the second one a double click.
+    void doubleClickSection(int section) const
+    {
+        QTest::mouseDClick(page->table()->horizontalHeader()->viewport(), Qt::LeftButton, {}, sectionCentre(section));
+    }
+    void clickCell(int row, int column) const
+    {
+        QTableView *t = page->table();
+        QTest::mouseClick(t->viewport(), Qt::LeftButton, {}, t->visualRect(t->model()->index(row, column)).center());
+    }
+    QStringList checkedPaths() const
+    {
+        QStringList paths = model()->checkedPaths();
+        paths.sort();
+        return paths;
+    }
+};
+
+// The page on its own, so a second one can be built beside the fixture's.
+std::unique_ptr<CommitPage> commitPage(GitRepo *repo)
+{
+    // The page asks the agent CLIs on PATH for their models as it is built;
+    // a PATH with only the repository on it keeps those processes out of
+    // these tests.
+    const QByteArray env = qgetenv("PATH");
+    qputenv("PATH", repo->root().toUtf8());
+    auto page = std::make_unique<CommitPage>(repo);
+    qputenv("PATH", env);
+    page->resize(760, 600);
+    page->show();
+    page->reload();
+    return page;
+}
+
+CommitFixture commitFixture()
+{
+    CommitFixture f;
+    f.dir.reset(new QTemporaryDir);
+    const QString path = f.dir->path();
+    if (!f.dir->isValid() || !git(path, {"init", "-q", "-b", "main"}))
+        return f;
+    writeFixture(QDir(path).filePath(QStringLiteral("a.txt")), "a\n");
+    writeFixture(QDir(path).filePath(QStringLiteral("b.txt")), "b\n");
+    if (!git(path, {"add", "-A"}) || !git(path, {"commit", "-q", "-m", "first"}, 1))
+        return f;
+    writeFixture(QDir(path).filePath(QStringLiteral("a.txt")), "a changed\n");
+    writeFixture(QDir(path).filePath(QStringLiteral("b.txt")), "b changed\n");
+    writeFixture(QDir(path).filePath(QStringLiteral("u1.txt")), "u1\n");
+    writeFixture(QDir(path).filePath(QStringLiteral("u2.txt")), "u2\n");
+    f.repo.reset(new GitRepo(path));
+    f.page = commitPage(f.repo.get());
+    return f;
+}
+
+// What a commit page measures in scaled pixels, spelled out so a mismatch
+// names itself: the design's checkbox column, the gaps of the section grid,
+// the handle the message and the list share, and the divider of the CHANGES
+// row.
+QStringList pageMetrics(CommitPage *page)
+{
+    auto *splitter = page->findChild<QSplitter *>(QStringLiteral("commitMessageSplitter"));
+    QWidget *changes = splitter ? splitter->widget(1) : nullptr;
+    // The one child a single pixel wide is the divider between the eye and
+    // Refresh; its height is the page's to set.
+    int divider = -1;
+    for (const QWidget *w : page->findChildren<QWidget *>())
+        if (w->minimumWidth() == 1 && w->maximumWidth() == 1)
+            divider = w->height();
+    const QCheckBox *amend = page->findChild<QCheckBox *>();
+    const auto entry = [](const char *name, int value) { return QStringLiteral("%1=%2").arg(QLatin1String(name)).arg(value); };
+    return {entry("check", page->table()->columnWidth(ChangesModel::Check)),
+            entry("row", page->table()->verticalHeader()->defaultSectionSize()),
+            entry("actionBarGap", page->layout()->spacing()),
+            entry("headerGap", changes ? changes->layout()->spacing() : -1),
+            entry("handle", splitter ? splitter->handle(1)->height() : -1),
+            entry("divider", divider),
+            entry("amendWidth", amend->width()),
+            QStringLiteral("amend=") + amend->text()};
+}
+
+// The narrowest page that still spells "Amend last commit" out: what the
+// action bar folds at, and so the width to compare two pages at.
+int amendFoldWidth(CommitPage *page)
+{
+    int folded = 160, whole = 900; // the label is short at one end, long at the other
+    while (folded + 1 < whole) {
+        const int middle = (folded + whole) / 2;
+        page->resize(middle, 600);
+        settle();
+        if (page->findChild<QCheckBox *>()->text() == QLatin1String("Amend"))
+            folded = middle;
+        else
+            whole = middle;
+    }
+    return whole;
 }
 
 // A remote git can reach but can never sign in to: every request is answered
@@ -780,24 +987,38 @@ esac
 
     // --- UiHelpers: the kit primitives --------------------------------------
 
-    // Both sizes are squares of scaled pixels, and the stylesheet can tell a
-    // ghost one from a button with chrome by its own property.
+    // An inline one is a square of scaled pixels; a toolbar one is that wide
+    // and exactly as tall as the text button beside it. The stylesheet tells
+    // the kinds apart by the buttons' own properties.
     void iconButtonsAreSquaresOfTheDesignsSizes()
     {
         std::unique_ptr<QToolButton> inline_(ui::iconButton(ui::kCog, QStringLiteral("⚙"), QStringLiteral("Agent")));
         QCOMPARE(inline_->objectName(), QString("iconButton"));
         QCOMPARE(inline_->property("ghost").toBool(), true);
+        QCOMPARE(inline_->property("toolbar").toBool(), false);
         QCOMPARE(inline_->size(), QSize(ui::space(24), ui::space(24)));
         QCOMPARE(inline_->minimumSize(), inline_->maximumSize()); // fixed, so the glyph stays centred
 
-        std::unique_ptr<QToolButton> toolbar(ui::iconButton(ui::kRefresh, QStringLiteral("R"), QStringLiteral("Refresh"),
-                                                            ui::IconButtonSize::Toolbar, false));
-        // Toolbar ones take the height of their row, never less than the design's.
+        QWidget host;
+        auto *row = new QHBoxLayout(&host);
+        QToolButton *toolbar = ui::iconButton(ui::kRefresh, QStringLiteral("R"), QStringLiteral("Refresh"),
+                                              ui::IconButtonSize::Toolbar, false);
+        QToolButton *text = ui::toolButton(QStringLiteral("x"));
+        row->addWidget(toolbar);
+        row->addWidget(text);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        settle();
+
+        QCOMPARE(toolbar->property("ghost").toBool(), false);
+        QCOMPARE(toolbar->property("toolbar").toBool(), true);
+        QCOMPARE(toolbar->width(), ui::space(28));
         QCOMPARE(toolbar->minimumWidth(), ui::space(28));
         QCOMPARE(toolbar->maximumWidth(), ui::space(28));
-        QCOMPARE(toolbar->minimumHeight(), ui::space(28));
-        QVERIFY(toolbar->maximumHeight() > ui::space(28));
-        QCOMPARE(toolbar->property("ghost").toBool(), false);
+        // The design's 28 px is a width; the height is the one any button of
+        // the row asks for, at this text size and every other.
+        QCOMPARE(toolbar->sizeHint().height(), text->sizeHint().height());
+        QCOMPARE(toolbar->height(), text->height());
     }
 
     // The popup prompt carries no box of its own — the popup's accent frame
@@ -1011,8 +1232,10 @@ esac
         // 8 px handle must not win), and the header rows carry 24 px squares.
         QCOMPARE(splitter->handleWidth(), ui::sectionGap());
         QCOMPARE(splitter->handle(1)->height(), ui::sectionGap());
+        // ...and the action bar hangs 8 px under the list, a gap of its own.
+        QCOMPARE(page.layout()->spacing(), ui::space(8));
         const QList<QToolButton *> squares = page.findChildren<QToolButton *>(QStringLiteral("iconButton"));
-        QCOMPARE(squares.size(), 2); // the agent cog and Refresh
+        QCOMPARE(squares.size(), 3); // the agent cog, the unversioned eye and Refresh
         for (const QToolButton *square : squares)
             QCOMPARE(square->size(), QSize(ui::space(24), ui::space(24)));
 
@@ -1108,6 +1331,310 @@ esac
         settle();
         QCOMPARE(pane(), initial);
         QVERIFY(message->contentHeight() < initial);
+    }
+
+    // --- CommitPage: the CHANGES section and the action bar -----------------
+
+    // The count is part of the section's title, and the Commit button says
+    // how many files it would take, with the key that presses it.
+    void theTitleAndTheCommitButtonCountTheCheckedFiles()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
+        settle();
+        // The button's text carries the glyph and the key that presses it;
+        // its accessible name is the wording alone, and follows it.
+        const auto says = [&f](const QString &label) {
+            return f.commitButton()->text().endsWith(label + QStringLiteral("  ⏎"))
+                && f.commitButton()->accessibleName() == label;
+        };
+
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 2/4"));
+        QVERIFY(says(QStringLiteral("Commit 2 files")));
+        QVERIFY(f.commitButton()->isEnabled());
+
+        f.model()->setAllChecked(true);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 4/4"));
+        QVERIFY(says(QStringLiteral("Commit 4 files")));
+
+        // Nothing checked: no count, and nothing to press either.
+        f.model()->setAllChecked(false);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 0/4"));
+        QVERIFY(says(QStringLiteral("Commit")));
+        QVERIFY(!f.commitButton()->isEnabled());
+
+        // One file is a file, not "1 files".
+        f.model()->setPathsChecked({QStringLiteral("a.txt")}, true);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 1/4"));
+        QVERIFY(says(QStringLiteral("Commit 1 file")));
+
+        // Amending and a merge in progress keep their own wording, count or
+        // no count. (Amend first: a merge rules the checkbox out.)
+        f.page->setAmendChecked(true);
+        QVERIFY(says(QStringLiteral("Amend")));
+        f.page->setAmendChecked(false);
+        MergeState merge;
+        merge.inProgress = true;
+        f.page->setMergeState(merge, Commit());
+        QVERIFY(says(QStringLiteral("Commit merge")));
+        merge.inProgress = false;
+        f.page->setMergeState(merge, Commit());
+        QVERIFY(says(QStringLiteral("Commit 1 file")));
+
+        // An empty list is the section's name on its own.
+        f.model()->setChanges({});
+        QCOMPARE(f.title(), QStringLiteral("CHANGES"));
+        QVERIFY(says(QStringLiteral("Commit")));
+    }
+
+    // Check-all is the box in the table's own header: it follows the files,
+    // a click on it ticks or unticks them, and it sorts nothing.
+    void theCheckAllBoxSitsInTheTableHeader()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
+        settle();
+        QVERIFY(f.header());
+        QCOMPARE(f.checkAll(), int(Qt::PartiallyChecked));
+        f.model()->setAllChecked(true);
+        QCOMPARE(f.checkAll(), int(Qt::Checked));
+        f.model()->setAllChecked(false);
+        QCOMPARE(f.checkAll(), int(Qt::Unchecked));
+
+        // Partial or none, a click checks them all; checked, it clears them.
+        f.model()->setPathsChecked({QStringLiteral("a.txt")}, true);
+        QCOMPARE(f.checkAll(), int(Qt::PartiallyChecked));
+        const int sorted = f.header()->sortIndicatorSection();
+        f.clickSection(ChangesModel::Check);
+        QCOMPARE(f.model()->checkedCount(), f.model()->count());
+        QCOMPARE(f.checkAll(), int(Qt::Checked));
+        f.clickSection(ChangesModel::Check);
+        QCOMPARE(f.model()->checkedCount(), 0);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 0/4"));
+        // A column of checkboxes is nothing to sort by; the others still are.
+        QCOMPARE(f.header()->sortIndicatorSection(), sorted);
+
+        // Qt answers the second of two fast clicks with a double click, which
+        // a checkbox has to take for a click of its own: the pair ticks and
+        // unticks instead of the second one reaching the header.
+        f.clickSection(ChangesModel::Check);
+        QCOMPARE(f.model()->checkedCount(), f.model()->count());
+        f.doubleClickSection(ChangesModel::Check);
+        QCOMPARE(f.model()->checkedCount(), 0);
+        QCOMPARE(f.header()->sortIndicatorSection(), sorted);
+
+        f.clickSection(ChangesModel::Name);
+        QCOMPARE(f.header()->sortIndicatorSection(), int(ChangesModel::Name));
+
+        // Space on the current row checks that one file, as before.
+        f.page->selectFirstRow();
+        f.page->table()->setFocus();
+        QTest::keyClick(f.page->table(), Qt::Key_Space);
+        QCOMPARE(f.model()->checkedCount(), 1);
+        QTest::keyClick(f.page->table(), Qt::Key_Space);
+        QCOMPARE(f.model()->checkedCount(), 0);
+
+        // ...whatever cell of the row is the current one: a click on a file's
+        // name or its path leaves the current index in a column that carries
+        // no checkbox of its own.
+        for (const int column : {int(ChangesModel::Name), int(ChangesModel::Path)}) {
+            f.clickCell(0, column);
+            QCOMPARE(f.page->table()->currentIndex().column(), column);
+            QTest::keyClick(f.page->table(), Qt::Key_Space);
+            QCOMPARE(f.model()->checkedCount(), 1);
+            QTest::keyClick(f.page->table(), Qt::Key_Space);
+            QCOMPARE(f.model()->checkedCount(), 0);
+        }
+
+        // ...and the keybinding's check all / none is the same two states.
+        f.page->toggleAllChecked();
+        QCOMPARE(f.model()->checkedCount(), f.model()->count());
+        f.page->toggleAllChecked();
+        QCOMPARE(f.model()->checkedCount(), 0);
+
+        // The history's files have no checkboxes, so that column is their
+        // number, as it has always been.
+        ChangesModel files;
+        files.setCheckable(false);
+        QVERIFY(!files.headerData(ChangesModel::Check, Qt::Horizontal, Qt::CheckStateRole).isValid());
+        QCOMPARE(files.headerData(ChangesModel::Check, Qt::Horizontal, Qt::DisplayRole).toString(),
+                 QStringLiteral("#"));
+    }
+
+    // The eye takes the unversioned files out of the list, and the title
+    // counts what is left.
+    void theEyeHidesTheUnversionedFiles()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
+        settle();
+        QToolButton *eye = f.eye();
+        QVERIFY(eye);
+        QVERIFY(eye->isChecked()); // they are shown to begin with
+        QCOMPARE(eye->accessibleName(), QStringLiteral("Show unversioned files"));
+        QCOMPARE(eye->size(), QSize(ui::space(24), ui::space(24)));
+        QCOMPARE(f.page->proxy()->rowCount(), 4);
+
+        eye->click();
+        QVERIFY(!eye->isChecked());
+        QCOMPARE(f.page->proxy()->rowCount(), 2);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 2/2"));
+        eye->click();
+        QCOMPARE(f.page->proxy()->rowCount(), 4);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 2/4"));
+    }
+
+    // Nothing the eye hides is ever committed: with the unversioned files out
+    // of the list, none of them is checked, and the title, the button and the
+    // check-all box all count the files on show.
+    void hiddenFilesAreNeverChecked()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
+        settle();
+        QToolButton *eye = f.eye();
+        QVERIFY(eye);
+        const auto says = [&f](const QString &label) {
+            return f.commitButton()->text().endsWith(label + QStringLiteral("  ⏎"));
+        };
+        // The header reads the box off the table's model, so both kinds of
+        // change have to reach it: the source's own (forwarded by the proxy)
+        // and rows coming and going (the proxy's own).
+        QSignalSpy headerChanged(f.page->proxy(), &QAbstractItemModel::headerDataChanged);
+
+        f.model()->setAllChecked(true);
+        QCOMPARE(f.checkAll(), int(Qt::Checked));
+        QVERIFY(headerChanged.count() > 0);
+        headerChanged.clear();
+
+        // Off: the two unversioned files leave the list and their marks with it.
+        eye->click();
+        QVERIFY(headerChanged.count() > 0);
+        QCOMPARE(f.page->proxy()->rowCount(), 2);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 2/2"));
+        QVERIFY(says(QStringLiteral("Commit 2 files")));
+        QCOMPARE(f.checkAll(), int(Qt::Checked));
+        QCOMPARE(f.checkedPaths(), QStringList({QStringLiteral("a.txt"), QStringLiteral("b.txt")}));
+
+        // Check-all, by click and by keybinding, is over the shown rows only.
+        f.clickSection(ChangesModel::Check);
+        QCOMPARE(f.model()->checkedCount(), 0);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 0/2"));
+        f.clickSection(ChangesModel::Check);
+        QCOMPARE(f.checkedPaths(), QStringList({QStringLiteral("a.txt"), QStringLiteral("b.txt")}));
+        QCOMPARE(f.checkAll(), int(Qt::Checked));
+        f.page->toggleAllChecked();
+        QCOMPARE(f.model()->checkedCount(), 0);
+        f.page->toggleAllChecked();
+        QCOMPARE(f.checkedPaths(), QStringList({QStringLiteral("a.txt"), QStringLiteral("b.txt")}));
+
+        // Check marks survive a reload by path, so a mark that reached a
+        // hidden file (the way amending ticks the files of the commit) is
+        // gone again after the next one.
+        f.model()->setPathsChecked({QStringLiteral("u1.txt")}, true);
+        QCOMPARE(f.model()->checkedCount(), 3);
+        f.page->reload();
+        QCOMPARE(f.checkedPaths(), QStringList({QStringLiteral("a.txt"), QStringLiteral("b.txt")}));
+
+        // A file that turns up unversioned arrives unchecked and out of sight.
+        QVERIFY(writeFixture(QDir(f.dir->path()).filePath(QStringLiteral("u3.txt")), "u3\n"));
+        f.page->reload();
+        QCOMPARE(f.model()->count(), 5);
+        QCOMPARE(f.page->proxy()->rowCount(), 2);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 2/2"));
+
+        // On again: all five are listed, the three unversioned ones unticked,
+        // and the box is partial.
+        eye->click();
+        QCOMPARE(f.page->proxy()->rowCount(), 5);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 2/5"));
+        QCOMPARE(f.checkAll(), int(Qt::PartiallyChecked));
+        QCOMPARE(f.checkedPaths(), QStringList({QStringLiteral("a.txt"), QStringLiteral("b.txt")}));
+    }
+
+    // Amending ticks the files of HEAD by path, after the reload. HEAD may
+    // have deleted a file that is back as an unversioned one: behind the eye
+    // it must not come out ticked, or the amend would take a file nobody saw.
+    void amendingLeavesHiddenFilesUnticked()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        const QString path = f.dir->path();
+        QVERIFY(git(path, {"rm", "-q", "--cached", "b.txt"}));
+        QVERIFY(git(path, {"commit", "-q", "-m", "drop b"}, 1));
+        // b.txt is still on disk: deleted by HEAD, unversioned now.
+        f.page->reload();
+        QVERIFY(f.repo->headPaths().contains(QStringLiteral("b.txt")));
+
+        f.eye()->click(); // off
+        f.model()->setAllChecked(false);
+        // The order the window amends in: reload, then the paths of HEAD.
+        f.page->reload();
+        f.page->checkHeadPaths();
+        QVERIFY(!f.checkedPaths().contains(QStringLiteral("b.txt")));
+        QCOMPARE(f.model()->checkedCount(), 0);
+        QCOMPARE(f.title(), QStringLiteral("CHANGES · 0/1"));
+
+        // With the eye on the same two steps do tick it: it is there to see.
+        f.eye()->click();
+        f.page->reload();
+        f.page->checkHeadPaths();
+        QVERIFY(f.checkedPaths().contains(QStringLiteral("b.txt")));
+    }
+
+    // The check-all box lights up under the pointer, like the boxes of the
+    // rows under it.
+    void theCheckAllBoxLightsUpUnderThePointer()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
+        settle();
+        QHeaderView *h = f.page->table()->horizontalHeader();
+        QVERIFY(h->viewport()->hasMouseTracking()); // moves arrive with no button held down
+        f.model()->setAllChecked(false); // a ticked box is the accent either way
+        const auto moveTo = [h](const QPoint &pos) {
+            QMouseEvent move(QEvent::MouseMove, pos, h->viewport()->mapToGlobal(pos), Qt::NoButton, {}, {});
+            QApplication::sendEvent(h->viewport(), &move);
+        };
+        const QImage plain = h->grab().toImage();
+
+        moveTo(f.sectionCentre(ChangesModel::Check));
+        const QImage hovered = h->grab().toImage();
+        QVERIFY(hovered != plain);
+        // The section around the box is not the box: only the indicator does.
+        moveTo(QPoint(h->sectionViewportPosition(ChangesModel::Check), h->viewport()->height() - 1));
+        QCOMPARE(h->grab().toImage(), plain);
+        moveTo(f.sectionCentre(ChangesModel::Check));
+        QCOMPARE(h->grab().toImage(), hovered);
+        // The pointer leaving the header takes the hover with it.
+        QEvent leave(QEvent::Leave);
+        QApplication::sendEvent(h, &leave);
+        QCOMPARE(h->grab().toImage(), plain);
+    }
+
+    // The action bar holds the amend checkbox and the Commit button on one
+    // line; too narrow for both, and the checkbox goes by its short name.
+    void theAmendLabelShortensOnANarrowPage()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
+        settle();
+        QCOMPARE(f.amend()->text(), QStringLiteral("Amend last commit"));
+        // The empty middle of the row is nobody's: the checkbox is as wide as
+        // its label, not as wide as the space the button leaves.
+        QCOMPARE(f.amend()->width(), f.amend()->sizeHint().width());
+        f.page->resize(260, 600);
+        settle();
+        QCOMPARE(f.amend()->text(), QStringLiteral("Amend"));
+        f.page->resize(760, 600);
+        settle();
+        QCOMPARE(f.amend()->text(), QStringLiteral("Amend last commit"));
     }
 
     // --- mergeVerdict() -----------------------------------------------------
@@ -1802,8 +2329,8 @@ esac
     }
 
     // --- OmarchyTheme -------------------------------------------------------
-    // Last: the two of them point OmarchyTheme::instance() at a theme of
-    // their own, and put the desktop's back when they are done.
+    // Last: each of them points OmarchyTheme::instance() at a theme of its
+    // own, and puts the desktop's back when it is done.
 
     // Every measurement of the kit is in 12 px-base pixels and grows with the
     // desktop's text size.
@@ -1831,6 +2358,153 @@ esac
         qunsetenv("OMAGIT_THEME_DIR");
         g_theme.reset(new OmarchyTheme);
         g_theme->apply(*qApp);
+    }
+
+    // `omarchy display text size` rewrites shell.toml under a running window:
+    // every control already on screen has to end up where one built fresh at
+    // the new size starts, and find its way back down again.
+    void theKitFollowsALiveTextSizeChange()
+    {
+        QTemporaryDir dir, home, noPath;
+        QVERIFY(dir.isValid() && home.isValid() && noPath.isValid());
+        const QString toml = QDir(dir.path()).filePath(QStringLiteral("shell.toml"));
+        QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            // The scratch home keeps the desktop's own shell.toml, which would
+            // be read after the theme's, out of the way; a PATH with nothing on
+            // it hides omarchy-font-current, so a reload's font query answers
+            // on the spot instead of from a process.
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            ScopedEnv emptyPath("PATH", noPath.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+            QSignalSpy changed(&theme, &OmarchyTheme::changed);
+
+            Kit live = buildKit(); // built once, at 12, and never built again
+            QVERIFY(QTest::qWaitForWindowExposed(live.host.get()));
+            settle();
+            QCOMPARE(live.metrics(), freshKitMetrics());
+            const QList<int> atTwelve = live.metrics();
+
+            // The desktop's text size goes up under the live controls: the
+            // watcher notices the rewritten file and the theme reloads.
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 18\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 18, 10000);
+            settle();
+            QCOMPARE(changed.count(), 1);
+            QCOMPARE(live.metrics(), freshKitMetrics());
+            QVERIFY(live.metrics() != atTwelve); // everything measured did move
+            QCOMPARE(live.inlineButton->size(), QSize(ui::space(24), ui::space(24)));
+            QCOMPARE(live.toolbarButton->width(), ui::space(28));
+            QCOMPARE(live.promptField->height(), ui::space(28));
+            QCOMPARE(live.header->height(), ui::headerRowHeight());
+            // The toolbar one is as tall as a text button, whatever that is
+            // with this font, not the 28 px the design names for its width.
+            QCOMPARE(live.toolbarButton->sizeHint().height(), live.textButton->sizeHint().height());
+            QCOMPARE(live.toolbarButton->height(), live.textButton->height());
+
+            // ...and back down to where it started.
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 12, 10000);
+            settle();
+            QCOMPARE(live.metrics(), freshKitMetrics());
+            QCOMPARE(live.metrics(), atTwelve);
+            QCOMPARE(live.toolbarButton->height(), live.textButton->height());
+
+            live.host.reset(); // the controls go before the theme they follow
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
+    }
+
+    // The same live change, for the commit page: one page built at 12 and left
+    // standing, held against a page built from scratch at every size the
+    // desktop moves to.
+    void theCommitPageFollowsALiveTextSizeChange()
+    {
+        QTemporaryDir dir, home, tools;
+        QVERIFY(dir.isValid() && home.isValid() && tools.isValid());
+        const QString toml = QDir(dir.path()).filePath(QStringLiteral("shell.toml"));
+        QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+        // A PATH with nothing on it but git: omarchy-font-current stays out of
+        // reach, so a reload's font query answers on the spot, and no coding
+        // agent is found either — while the page can still read a repository.
+        const QString gitBinary = QStandardPaths::findExecutable(QStringLiteral("git"));
+        QVERIFY(!gitBinary.isEmpty());
+        QVERIFY(QFile::link(gitBinary, QDir(tools.path()).filePath(QStringLiteral("git"))));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            ScopedEnv onlyGit("PATH", tools.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+
+            // MainWindow::applyTheme() is what drives a page in production: it
+            // calls CommitPage::applyTheme() — once as the window is built and
+            // again on every OmarchyTheme::changed — and gives every section
+            // label the caption font of the moment.
+            const auto applyThemeAsMainWindowDoes = [](CommitPage *p) {
+                p->applyTheme();
+                for (QLabel *l : p->findChildren<QLabel *>())
+                    if (l->objectName() == QLatin1String("sectionLabel")
+                        || l->objectName() == QLatin1String("dimLabel"))
+                        l->setFont(OmarchyTheme::instance()->captionFont());
+            };
+
+            CommitFixture live = commitFixture();
+            QVERIFY(live.page);
+            CommitPage *page = live.page.get();
+            applyThemeAsMainWindowDoes(page);
+            QObject::connect(&theme, &OmarchyTheme::changed, page,
+                             [page, applyThemeAsMainWindowDoes] { applyThemeAsMainWindowDoes(page); });
+            QVERIFY(QTest::qWaitForWindowExposed(page));
+            settle();
+
+            // Both pages at two widths around the one the action bar folds at,
+            // so the label and its box are measured where they change.
+            const auto matchesAFreshPage = [&live, applyThemeAsMainWindowDoes] {
+                std::unique_ptr<CommitPage> fresh = commitPage(live.repo.get());
+                applyThemeAsMainWindowDoes(fresh.get());
+                QVERIFY(QTest::qWaitForWindowExposed(fresh.get()));
+                settle();
+                const int fold = amendFoldWidth(fresh.get());
+                QCOMPARE(amendFoldWidth(live.page.get()), fold);
+                for (const int width : {fold - 1, fold + 1}) {
+                    live.page->resize(width, 600);
+                    fresh->resize(width, 600);
+                    settle();
+                    QCOMPARE(pageMetrics(live.page.get()), pageMetrics(fresh.get()));
+                }
+                live.page->resize(760, 600); // the width the page was measured at
+                settle();
+            };
+
+            const QStringList atTwelve = pageMetrics(page);
+            matchesAFreshPage();
+
+            // The desktop's text size goes up under the live page.
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 18\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 18, 10000);
+            settle();
+            matchesAFreshPage();
+            QVERIFY(pageMetrics(page) != atTwelve); // the measurements did move
+
+            // ...and back down to where it started.
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 12, 10000);
+            settle();
+            matchesAFreshPage();
+            QCOMPARE(pageMetrics(page), atTwelve);
+
+            live.page.reset(); // the page goes before the theme it follows
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
     }
 
     void themeReadsColorsTomlAndFallsBack()

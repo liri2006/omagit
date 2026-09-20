@@ -573,6 +573,9 @@ QString OmarchyTheme::buildStyleSheet() const
         {QStringLiteral("heading"), QString::number(headingFont().pixelSize())},
         // The design's 14 px glyph, on the same scale as ui::space().
         {QStringLiteral("icon"), QString::number(qMax(1, qRound(m_fontBase * 14 / 12.0)))},
+        // Air above and below the commit page's 16 px splitter handle, so
+        // only a 4 px strip in its middle lights up under the pointer.
+        {QStringLiteral("handlepad"), QString::number(qMax(1, qRound(m_fontBase * 6 / 12.0)))},
         {QStringLiteral("big"), QString::number(qRound(m_fontBase * 1.5))},
     };
 
@@ -636,8 +639,11 @@ QPushButton:focus, QToolButton:focus { border-color: %bd25%; background: %fill8%
 QToolButton::menu-indicator { image: none; width: 0; height: 0; }
 /* The icon squares of the chrome: the glyph is centred by the fixed size
    ui::iconButton() gives them, so all a rule has to drop is the padding.
+   A toolbar one is only fixed sideways and keeps the vertical padding of
+   the text buttons it stands beside, so the row comes out one height.
    Ghost ones carry no chrome of their own until the pointer is on them. */
 QToolButton#iconButton { padding: 0; }
+QToolButton#iconButton[toolbar="true"] { padding: 5px 0; }
 QToolButton#iconButton[ghost="true"] { background: transparent; border: 1px solid transparent; }
 QToolButton#iconButton[ghost="true"]:hover { background: %fill8%; border-color: %bd25%; }
 QToolButton#iconButton[ghost="true"]:pressed { background: %fill22%; border-color: %bd25%; }
@@ -655,12 +661,20 @@ QCheckBox::indicator:hover, QTableView::indicator:hover, QTreeView::indicator:ho
 QCheckBox::indicator:checked, QTableView::indicator:checked, QTreeView::indicator:checked {
     background: %acc%; border-color: %acc%; image: url(:/check.svg);
 }
-QCheckBox::indicator:indeterminate { background: %fill18%; border-color: %acc%; image: url(:/partial.svg); }
+/* Partial: the check-all box of a changes table, with some of its files ticked. */
+QCheckBox::indicator:indeterminate, QTableView::indicator:indeterminate, QTreeView::indicator:indeterminate {
+    background: %fill18%; border-color: %acc%; image: url(:/partial.svg);
+}
 
 QSplitter::handle { background: transparent; }
 QSplitter::handle:horizontal { width: 8px; }
 QSplitter::handle:vertical { height: 8px; }
 QSplitter::handle:hover { background: %fill8%; }
+/* The commit page's handle carries the whole gap between two sections, so
+   lighting the band edge to edge would be a bar; only its middle answers.
+   Hover only: a margin in the resting rule would go into the handle's size
+   hint (sizeFromContents asks for it stateless) and widen the gap itself. */
+QSplitter#commitMessageSplitter::handle:vertical:hover { margin: %handlepad%px 0; }
 
 QScrollBar:vertical { background: transparent; width: 8px; margin: 0; border: none; }
 QScrollBar::handle:vertical { background: %bd25%; min-height: 24px; border-radius: 0; margin: 0 2px; }

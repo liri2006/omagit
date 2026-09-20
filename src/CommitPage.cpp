@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -30,20 +31,108 @@
 using namespace ui;
 
 namespace {
+// The design hangs the action bar 8 px under the changes list — its own gap,
+// not the 6 px a section header row keeps to its content.
+int actionBarGap()
+{
+    return space(8);
+}
+
+// The eye's filter, and with it the check-all box of the table's header: the
+// box stands for the rows the list is showing, so with the unversioned files
+// hidden it neither counts them nor ticks them.
 class UnversionedFilter : public QSortFilterProxyModel
 {
 public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
-    bool showUnversioned = true;
+
+    void setShowUnversioned(bool on)
+    {
+        if (m_showUnversioned == on)
+            return;
+        m_showUnversioned = on;
+        invalidate();
+        // The source forwards its own headerDataChanged through the proxy, but
+        // rows coming and going is ours to report: the header would otherwise
+        // keep painting the state of the list it saw last.
+        emit headerDataChanged(Qt::Horizontal, ChangesModel::Check, ChangesModel::Check);
+    }
+
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override
+    {
+        const QVariant base = QSortFilterProxyModel::headerData(section, orientation, role);
+        // An invalid state is a list without checkboxes at all (the history's
+        // files): it has no box to paint, filtered or not.
+        if (role != Qt::CheckStateRole || orientation != Qt::Horizontal || section != ChangesModel::Check
+            || !base.isValid())
+            return base;
+        const int rows = rowCount(), checked = checkedRows();
+        return int(checked == 0      ? Qt::Unchecked
+                   : checked == rows ? Qt::Checked
+                                     : Qt::PartiallyChecked);
+    }
+
+    bool setHeaderData(int section, Qt::Orientation orientation, const QVariant &value, int role) override
+    {
+        if (role != Qt::CheckStateRole || orientation != Qt::Horizontal || section != ChangesModel::Check)
+            return QSortFilterProxyModel::setHeaderData(section, orientation, value, role);
+        auto *source = qobject_cast<ChangesModel *>(sourceModel());
+        if (!source || !QSortFilterProxyModel::headerData(section, orientation, role).isValid())
+            return false;
+        QStringList paths;
+        paths.reserve(rowCount());
+        for (int row = 0, rows = rowCount(); row < rows; ++row)
+            paths << index(row, ChangesModel::Check).data(ChangesModel::PathRole).toString();
+        source->setPathsChecked(paths, value.toInt() == Qt::Checked); // exactly the rows on show
+        return true;
+    }
 
 protected:
     bool filterAcceptsRow(int row, const QModelIndex &parent) const override
     {
-        if (showUnversioned)
+        if (m_showUnversioned)
             return true;
         auto *m = static_cast<ChangesModel *>(sourceModel());
         Q_UNUSED(parent)
         return !m->change(row).isUntracked();
+    }
+
+private:
+    // How many of the rows on show are ticked.
+    int checkedRows() const
+    {
+        int checked = 0;
+        for (int row = 0, rows = rowCount(); row < rows; ++row)
+            if (index(row, ChangesModel::Check).data(Qt::CheckStateRole).toInt() == Qt::Checked)
+                ++checked;
+        return checked;
+    }
+
+    bool m_showUnversioned = true;
+};
+
+// The commit list's own Space: the current cell may sit in any column — a
+// click on a file name leaves it in Name, which carries no checkbox — so the
+// key goes to the row's box, the way the Mini rail's does.
+class ChangesTable : public QTableView
+{
+public:
+    using QTableView::QTableView;
+
+protected:
+    void keyPressEvent(QKeyEvent *event) override
+    {
+        if (event->key() == Qt::Key_Space && event->modifiers() == Qt::NoModifier && currentIndex().isValid()) {
+            const QModelIndex box = currentIndex().siblingAtColumn(ChangesModel::Check);
+            const QVariant check = box.data(Qt::CheckStateRole);
+            if (check.isValid()) {
+                model()->setData(box, check.toInt() == Qt::Checked ? Qt::Unchecked : Qt::Checked,
+                                 Qt::CheckStateRole);
+                event->accept();
+                return;
+            }
+        }
+        QTableView::keyPressEvent(event);
     }
 };
 } // namespace
@@ -54,17 +143,21 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     setupAgent();
 
     const OmarchyTheme *theme = OmarchyTheme::instance();
+    // The page is the two sections over the action bar: inside, a header row
+    // is 6 px above its content; the bar itself sits 8 px under the list.
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(headerGap()); // a section header row to its content
-    layout->addLayout(buildMessageSection());
+    layout->setSpacing(actionBarGap());
+    auto *sections = new QVBoxLayout;
+    sections->setContentsMargins(0, 0, 0, 0);
+    sections->setSpacing(headerGap());
+    m_sectionsLayout = sections;
+    sections->addLayout(buildMessageSection());
 
     // The message box and the changes list share the height; where the user
-    // last put the handle between them is remembered. The handle is all that
-    // stands between the two sections, so it carries the gap between them.
+    // last put the handle between them is remembered.
     m_messageSplitter = new QSplitter(Qt::Vertical);
     m_messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
-    m_messageSplitter->setHandleWidth(sectionGap());
     m_messageSplitter->setChildrenCollapsible(false);
     m_messageSplitter->addWidget(m_message);
     QWidget *const changes = buildChangesSection();
@@ -76,10 +169,15 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
         QSettings().setValue(settings::kWindowCommitMessageSplitter, m_messageSplitter->saveState());
     });
     connect(m_message, &MessageEdit::contentHeightChanged, this, &CommitPage::fitMessage);
-    layout->addWidget(m_messageSplitter, 1);
-    layout->addLayout(buildButtonRow());
+    sections->addWidget(m_messageSplitter, 1);
+    layout->addLayout(sections, 1);
+    layout->addLayout(buildActionBar());
     m_messageSplitter->setSizes({theme->fontBase() * 7, changes->sizeHint().height()});
     m_messageSplitter->restoreState(QSettings().value(settings::kWindowCommitMessageSplitter).toByteArray());
+    // The handle is all that stands between the two sections, so it carries
+    // the gap between them — after restoreState(), which brings the handle
+    // width of whatever text size saved the state back with it.
+    m_messageSplitter->setHandleWidth(sectionGap());
 }
 
 void CommitPage::setupAgent()
@@ -160,8 +258,8 @@ void CommitPage::fitMessage(MessageEdit::Edit edit)
     m_messageSplitter->setSizes({wanted, sizes.at(1) + (current - wanted)});
 }
 
-// CHANGES, the "n / m selected" count and Refresh, then the options and the
-// file list itself.
+// CHANGES, whose title carries the count, with the unversioned-files eye and
+// Refresh at the right of the row, over the file list itself.
 QWidget *CommitPage::buildChangesSection()
 {
     auto *changes = new QWidget;
@@ -170,10 +268,25 @@ QWidget *CommitPage::buildChangesSection()
     changesLayout->setSpacing(headerGap());
     m_changesLayout = changesLayout;
 
-    auto *changesRow = sectionHeaderRow(sectionLabel(tr("Changes")));
+    m_changesLabel = sectionLabel(tr("Changes"));
+    auto *changesRow = sectionHeaderRow(m_changesLabel);
     changesRow->addStretch();
-    m_summaryLabel = dimLabel();
-    changesRow->addWidget(m_summaryLabel, 0, Qt::AlignVCenter);
+    // The eye acts on the list, Refresh reloads it: a divider tells them apart.
+    m_unversioned = iconButton(kEye, tr("U"), tr("Show unversioned files"));
+    m_unversioned->setCheckable(true);
+    m_unversioned->setChecked(true);
+    m_unversioned->setAccessibleName(tr("Show unversioned files"));
+    connect(m_unversioned, &QToolButton::toggled, this, [this](bool on) {
+        static_cast<UnversionedFilter *>(m_proxy)->setShowUnversioned(on);
+        // Hiding the unversioned files unticks them; showing them again leaves
+        // them unticked, the way a freshly read list does.
+        untickHidden();
+        onCheckedChanged(); // the title counts what the list shows
+    });
+    changesRow->addWidget(m_unversioned, 0, Qt::AlignVCenter);
+    m_changesDivider = hairline(Qt::Vertical);
+    m_changesDivider->setFixedHeight(space(18)); // applyTheme() keeps it on the text size
+    changesRow->addWidget(m_changesDivider, 0, Qt::AlignVCenter);
     auto *refreshButton = iconButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
     connect(refreshButton, &QToolButton::clicked, this, &CommitPage::refreshRequested);
     changesRow->addWidget(refreshButton, 0, Qt::AlignVCenter);
@@ -186,9 +299,10 @@ QWidget *CommitPage::buildChangesSection()
     proxy->setSortCaseSensitivity(Qt::CaseInsensitive);
     m_proxy = proxy;
 
-    m_table = new QTableView;
+    m_table = new ChangesTable;
     m_table->setObjectName(QStringLiteral("changesTable"));
     m_table->setModel(m_proxy);
+    // The model is on the table first: the setup reads the checkboxes off it.
     m_tableSetup = new ChangesTableSetup(m_table);
     connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &CommitPage::currentRowChanged);
     // Double-click: with the diff pane hidden, show it for the file (which the
@@ -204,53 +318,33 @@ QWidget *CommitPage::buildChangesSection()
     m_table->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_table, &QTableView::customContextMenuRequested, this, &CommitPage::showFileMenu);
 
-    changesLayout->addLayout(buildOptionsRow());
     changesLayout->addWidget(m_table, 1);
     return changes;
 }
 
-// Options above the list (above keeps them
-// next to the "n / m selected" count they act on).
-QLayout *CommitPage::buildOptionsRow()
+// The action bar: "Amend last commit" at the left, where it stands by the
+// Commit button it renames, and that button at the right.
+QLayout *CommitPage::buildActionBar()
 {
-    auto *optionsRow = new QHBoxLayout;
-    optionsRow->setSpacing(16);
-    m_showUnversioned = new QCheckBox(tr("Show unversioned files"));
-    m_showUnversioned->setChecked(true);
-    connect(m_showUnversioned, &QCheckBox::toggled, this, [this](bool on) {
-        auto *filter = static_cast<UnversionedFilter *>(m_proxy);
-        filter->showUnversioned = on;
-        filter->invalidate();
-        onCheckedChanged();
-    });
-    m_selectAll = new QCheckBox(tr("Select all"));
-    m_selectAll->setTristate(true);
-    connect(m_selectAll, &QCheckBox::clicked, this, [this](bool on) {
-        m_selectAll->setTristate(false);
-        m_model->setAllChecked(on);
-    });
+    m_actionBar = new QHBoxLayout;
+    m_actionBar->setContentsMargins(0, 0, 0, 0);
+    m_actionBar->setSpacing(sectionGap());
     m_amend = new QCheckBox(tr("Amend last commit"));
+    // The label is the row's to shorten (updateAmendLabel), so the long one is
+    // no floor under the page: a checkbox asks for its whole label and never
+    // less, so this one asks for nothing and is capped at what it needs.
+    m_amend->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     connect(m_amend, &QCheckBox::toggled, this, &CommitPage::onAmendToggled);
-    optionsRow->addWidget(m_selectAll);
-    optionsRow->addWidget(m_showUnversioned);
-    optionsRow->addWidget(m_amend);
-    optionsRow->addStretch();
-    return optionsRow;
-}
-
-QLayout *CommitPage::buildButtonRow()
-{
-    auto *buttonRow = new QHBoxLayout;
-    buttonRow->setSpacing(10);
-    buttonRow->addStretch();
-    m_commitButton = new QPushButton(icon(kCommit) + tr("Commit"));
+    m_actionBar->addWidget(m_amend, 1);
+    m_actionBar->addStretch();
+    m_commitButton = new QPushButton;
     m_commitButton->setDefault(true);
     m_commitButton->setCursor(Qt::PointingHandCursor);
     m_commitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
-    m_commitButton->setToolTip(tr("Commit the checked files (Ctrl+Enter)"));
     connect(m_commitButton, &QPushButton::clicked, this, &CommitPage::commit);
-    buttonRow->addWidget(m_commitButton);
-    return buttonRow;
+    updateCommitButton(); // its wording counts the checked files
+    m_actionBar->addWidget(m_commitButton);
+    return m_actionBar;
 }
 
 void CommitPage::showFileMenu(const QPoint &pos)
@@ -287,9 +381,34 @@ void CommitPage::applyTheme()
     m_tableSetup->applyTheme();
     // The gaps of the section grid are in scaled pixels, so a new text size
     // has to lay them out again.
-    layout()->setSpacing(headerGap());
+    layout()->setSpacing(actionBarGap());
+    m_sectionsLayout->setSpacing(headerGap());
     m_changesLayout->setSpacing(headerGap());
+    m_actionBar->setSpacing(sectionGap());
     m_messageSplitter->setHandleWidth(sectionGap());
+    m_changesDivider->setFixedHeight(space(18));
+    updateAmendLabel(); // the label's width moved with the font
+}
+
+void CommitPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateAmendLabel();
+}
+
+// The action bar is one row: where the page is too narrow to hold the whole
+// checkbox beside the Commit button, the label drops to its short form.
+void CommitPage::updateAmendLabel()
+{
+    const QString full = tr("Amend last commit");
+    const QFontMetrics fm(m_amend->font());
+    // What the checkbox costs beyond its text (the box and the spacing), so
+    // the shortened label is still measured against the full one.
+    const int chrome = m_amend->sizeHint().width() - fm.horizontalAdvance(m_amend->text());
+    const int wide = chrome + fm.horizontalAdvance(full) + m_actionBar->spacing() + m_commitButton->sizeHint().width();
+    m_amend->setText(width() >= wide ? full : tr("Amend"));
+    // Only the label and its box answer a click, not the empty half of the row.
+    m_amend->setMaximumWidth(m_amend->sizeHint().width());
 }
 
 FileChange CommitPage::currentChange(bool *ok) const
@@ -306,6 +425,18 @@ FileChange CommitPage::currentChange(bool *ok) const
 void CommitPage::reload()
 {
     m_model->setChanges(m_repo->status());
+    // Check marks survive a reload by path, so a checked file that has become
+    // unversioned since the last one would come back checked behind the eye.
+    untickHidden();
+}
+
+// A file nobody can see is a file nobody meant to commit: whatever ticks
+// files by path — a reload, the paths of HEAD for an amend — runs this after
+// it, so nothing the eye hides stays ticked.
+void CommitPage::untickHidden()
+{
+    if (!m_unversioned->isChecked())
+        m_model->setUnversionedChecked(false);
 }
 
 QStringList CommitPage::paths() const
@@ -361,9 +492,13 @@ void CommitPage::setScrollOffset(const QPoint &offset)
 
 void CommitPage::toggleAllChecked()
 {
-    const bool on = m_selectAll->checkState() != Qt::Checked;
-    m_selectAll->setTristate(false);
-    m_model->setAllChecked(on);
+    // The very path the check-all box in the header takes, over the same rows
+    // (the eye may be hiding some): all but the last file checked still means
+    // "check them all".
+    const bool all =
+        m_proxy->headerData(ChangesModel::Check, Qt::Horizontal, Qt::CheckStateRole).toInt() == Qt::Checked;
+    m_proxy->setHeaderData(ChangesModel::Check, Qt::Horizontal, int(all ? Qt::Unchecked : Qt::Checked),
+                           Qt::CheckStateRole);
 }
 
 void CommitPage::toggleAmend()
@@ -392,6 +527,8 @@ void CommitPage::resetAmend()
 void CommitPage::checkHeadPaths()
 {
     m_model->setPathsChecked(m_repo->headPaths(), true);
+    // HEAD may have deleted a file that is back as an unversioned one.
+    untickHidden();
 }
 
 void CommitPage::clickCommit()
@@ -424,28 +561,39 @@ void CommitPage::setMergeState(const MergeState &merge, const Commit &head)
     }
 }
 
+// The button says how many files it would commit, and ends with the key that
+// presses it. The two counts are spelled out: no translation catalogue is
+// loaded, so %n would come out as "file(s)".
 void CommitPage::updateCommitButton()
 {
     const bool amend = m_amend->isChecked();
-    m_commitButton->setText(icon(kCommit) + (amend ? tr("Amend") : m_merging ? tr("Commit merge") : tr("Commit")));
+    const int checked = m_model->checkedCount();
+    const QString what = amend           ? tr("Amend")
+                         : m_merging     ? tr("Commit merge")
+                         : checked == 0  ? tr("Commit")
+                         : checked == 1  ? tr("Commit 1 file")
+                                         : tr("Commit %1 files").arg(checked);
+    m_commitButton->setText(icon(kCommit) + what + QStringLiteral("  ⏎"));
+    // Read out as the wording alone: the glyph and the key that presses it are
+    // no part of the name of the button.
+    m_commitButton->setAccessibleName(what);
     m_commitButton->setToolTip(amend ? tr("Rewrite the last commit with the checked files (Ctrl+Enter)")
                                : m_merging ? tr("Finish the merge: commit the checked (resolved) files together with what git merged on its own (Ctrl+Enter)")
                                            : tr("Commit the checked files (Ctrl+Enter)"));
+    updateAmendLabel(); // a longer button leaves the checkbox less room
 }
 
 void CommitPage::onCheckedChanged()
 {
+    // One count for the title, the button and its wording: while the eye
+    // hides the unversioned files none of them is checked (the eye itself and
+    // every reload see to that), so what the shown files have ticked is
+    // exactly what a commit would take.
+    const int shown = m_proxy->rowCount();
     const int checked = m_model->checkedCount();
-    const int total = m_model->count();
-    m_summaryLabel->setText(tr("%1 / %2 selected").arg(checked).arg(total));
+    m_changesLabel->setText((shown == 0 ? tr("Changes") : tr("Changes · %1/%2").arg(checked).arg(shown)).toUpper());
     m_commitButton->setEnabled(checked > 0);
-    QSignalBlocker blocker(m_selectAll);
-    if (checked == 0)
-        m_selectAll->setCheckState(Qt::Unchecked);
-    else if (checked == total)
-        m_selectAll->setCheckState(Qt::Checked);
-    else
-        m_selectAll->setCheckState(Qt::PartiallyChecked);
+    updateCommitButton();
 }
 
 // Amend: the message box gets the last commit's message
@@ -555,7 +703,7 @@ void CommitPage::generateMessage()
     if (changes.isEmpty()) {
         for (int i = 0; i < m_model->count(); ++i) {
             const FileChange &c = m_model->change(i);
-            if (m_showUnversioned->isChecked() || !c.isUntracked())
+            if (m_unversioned->isChecked() || !c.isUntracked())
                 changes << c;
         }
     }

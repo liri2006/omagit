@@ -32,21 +32,19 @@ void onThemeScale(QObject *owner, const std::function<void()> &apply)
 class IconButton : public QToolButton
 {
 public:
-    // An inline one is a fixed square. A toolbar one is as wide, but takes the
-    // height of the row: the fields and buttons beside it are as tall as their
-    // text and padding make them, which is not exactly the design's 28 px.
+    // An inline one is a fixed square. A toolbar one is only fixed sideways;
+    // its height is left to the stylesheet's button padding, which is what
+    // makes the fields and text buttons beside it the height they are.
     void fit(IconButtonSize size)
     {
         const int px = int(size);
         if (size == IconButtonSize::Toolbar)
             setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Minimum);
         onThemeScale(this, [this, px, size] {
-            if (size == IconButtonSize::Toolbar) {
+            if (size == IconButtonSize::Toolbar)
                 setFixedWidth(space(px));
-                setMinimumHeight(space(px));
-            } else {
+            else
                 setFixedSize(space(px), space(px));
-            }
         });
     }
 };
@@ -172,7 +170,10 @@ QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip,
     auto *b = toolButton<IconButton>(icon(glyph, fallback).trimmed(), tip);
     b->fit(size);
     b->setObjectName(QStringLiteral("iconButton"));
-    b->setProperty("ghost", ghost); // the stylesheet tells the two apart by it
+    // The stylesheet tells the two kinds apart by these: chrome or none, and
+    // the vertical padding that puts a toolbar one on the row's height.
+    b->setProperty("ghost", ghost);
+    b->setProperty("toolbar", size == IconButtonSize::Toolbar);
     return b;
 }
 
