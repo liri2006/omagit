@@ -1,10 +1,8 @@
 #include "MiniRail.h"
-#include "BadgeButton.h"
 #include "ChangesModel.h"
 #include "OmarchyTheme.h"
 #include "UiHelpers.h"
 
-#include <QButtonGroup>
 #include <QEvent>
 #include <QFileInfo>
 #include <QKeyEvent>
@@ -270,10 +268,9 @@ QString MiniRailList::tipText(const QModelIndex &index) const
 // ---------------------------------------------------------------- rail
 
 // Every rail button spans the rail and wears a glyph for its whole label.
-template <typename Button>
-Button *MiniRail::addButton(uint glyph, const QString &fallback, const QString &tip)
+QToolButton *MiniRail::addButton(uint glyph, const QString &fallback, const QString &tip)
 {
-    auto *b = ui::toolButton<Button>(ui::icon(glyph, fallback).trimmed(), tip);
+    auto *b = ui::toolButton(ui::icon(glyph, fallback).trimmed(), tip);
     b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_glyphs.append({b, glyph, fallback});
     return b;
@@ -287,39 +284,20 @@ MiniRail::MiniRail(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
 
-    m_commitButton = addButton(ui::kCommit, QStringLiteral("C"), tr("Commit — pending changes (Ctrl+1)"));
-    m_historyButton = addButton(ui::kHistory, QStringLiteral("H"), tr("History — commits of the repository (Ctrl+2)"));
-    auto *modes = new QButtonGroup(this);
-    modes->setExclusive(true);
-    for (QToolButton *b : {m_commitButton, m_historyButton}) {
-        b->setCheckable(true);
-        modes->addButton(b);
-        layout->addWidget(b);
-    }
-    m_commitButton->setChecked(true);
-    connect(m_commitButton, &QToolButton::clicked, this, &MiniRail::commitModeRequested);
-    connect(m_historyButton, &QToolButton::clicked, this, &MiniRail::historyModeRequested);
-
+    // The hash of the commit whose files these are, with a rule under it; both
+    // only while there is one (history mode).
     m_hashLabel = new QLabel;
     m_hashLabel->setObjectName(QStringLiteral("dimLabel"));
     m_hashLabel->setAlignment(Qt::AlignCenter);
     m_hashLabel->hide();
     layout->addWidget(m_hashLabel);
-
-    layout->addWidget(ui::hairline());
+    m_hashRule = ui::hairline();
+    m_hashRule->hide();
+    layout->addWidget(m_hashRule);
 
     m_list = new MiniRailList;
     connect(m_list, &QListView::doubleClicked, this, &MiniRail::activated);
     layout->addWidget(m_list, 1);
-
-    layout->addWidget(ui::hairline());
-
-    m_fetchButton = addButton<BadgeButton>(ui::kFetch, QStringLiteral("F"));
-    m_pullButton = addButton<BadgeButton>(ui::kPull, QStringLiteral("↓"));
-    m_pushButton = addButton<BadgeButton>(ui::kPush, QStringLiteral("↑"));
-    m_mergeButton = addButton<BadgeButton>(ui::kMerge, QStringLiteral("M"));
-    for (BadgeButton *b : {m_pullButton, m_pushButton, m_fetchButton, m_mergeButton}) // same order as the toolbar
-        layout->addWidget(b);
 
     layout->addWidget(ui::hairline());
 
@@ -343,15 +321,6 @@ void MiniRail::setSource(QAbstractItemModel *model, QItemSelectionModel *selecti
         m_list->setSelectionModel(selection);
 }
 
-void MiniRail::setCommitMode(bool commit)
-{
-    QSignalBlocker a(m_commitButton), b(m_historyButton);
-    m_commitButton->setChecked(commit);
-    m_historyButton->setChecked(!commit);
-    if (commit)
-        setCommitLabel(QString(), QString());
-}
-
 void MiniRail::setCommitLabel(const QString &hash, const QString &tip)
 {
     m_hash = hash;
@@ -367,6 +336,7 @@ void MiniRail::updateHashLabel()
     m_hashLabel->setText(m_hashLabel->fontMetrics().elidedText(m_hash, Qt::ElideRight, kWidth - 2));
     m_hashLabel->setToolTip(m_hash.isEmpty() ? QString() : QStringLiteral("%1\n%2").arg(m_hash, m_hashTip));
     m_hashLabel->setVisible(!m_hash.isEmpty());
+    m_hashRule->setVisible(!m_hash.isEmpty());
 }
 
 void MiniRail::applyTheme()

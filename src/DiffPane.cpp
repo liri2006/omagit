@@ -32,7 +32,6 @@ DiffPane::DiffPane(QWidget *parent)
     rightLayout->setSpacing(8);
 
     auto *navRow = new QHBoxLayout;
-    m_navRow = navRow;
     navRow->setSpacing(8);
     m_prevButton = toolButton(icon(kArrowUp) + tr("Prev"), tr("Previous change (Shift+F8)"));
     m_nextButton = toolButton(icon(kArrowDown) + tr("Next"), tr("Next change (F8)"));
@@ -55,11 +54,6 @@ DiffPane::DiffPane(QWidget *parent)
                                   tr("Colour the diff by the file's syntax (Ctrl+L)"));
     syntaxButton->setCheckable(true);
     navRow->addWidget(syntaxButton);
-    // The diff toggle ends this row; while the pane is hidden it moves to the
-    // end of the toolbar row, which is the same top-right spot (see applyPanes).
-    m_diffToggle = toolButton(icon(kDockRight, tr("D")).trimmed(), tr("Show or hide the diff pane (Ctrl+Shift+B)"));
-    m_diffToggle->setCheckable(true);
-    navRow->addWidget(m_diffToggle);
     rightLayout->addLayout(navRow);
 
     m_diff = new DiffView;

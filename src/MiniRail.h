@@ -7,7 +7,6 @@
 #include <QString>
 #include <QWidget>
 
-class BadgeButton;
 class QAbstractItemModel;
 class QItemSelectionModel;
 class QLabel;
@@ -41,8 +40,9 @@ private:
 };
 
 // The narrow strip shown instead of the left section in the Mini layout: the
-// Commit and History buttons on top, the file miniatures in the middle, then
-// Pull, Push, Fetch and Merge (with their count badges), and Refresh.
+// file miniatures, with the hash of the commit they belong to above them (in
+// history mode) and Refresh underneath. The modes and the sync buttons live in
+// the top bar, which stays above the rail in every layout.
 class MiniRail : public QWidget
 {
     Q_OBJECT
@@ -53,21 +53,13 @@ public:
 
     // The files to show; `selection` must belong to `model`.
     void setSource(QAbstractItemModel *model, QItemSelectionModel *selection);
-    void setCommitMode(bool commit);
     // Short hash of the commit whose files are listed (history mode); empty hides it.
     void setCommitLabel(const QString &hash, const QString &tip);
     void applyTheme();
 
     MiniRailList *list() const { return m_list; }
-    // Icon-only twins of the toolbar's sync buttons; the window drives them.
-    BadgeButton *fetchButton() const { return m_fetchButton; }
-    BadgeButton *pullButton() const { return m_pullButton; }
-    BadgeButton *pushButton() const { return m_pushButton; }
-    BadgeButton *mergeButton() const { return m_mergeButton; }
 
 signals:
-    void commitModeRequested();
-    void historyModeRequested();
     void refreshRequested();
     void activated(const QModelIndex &index);
 
@@ -79,17 +71,11 @@ private:
         uint code;
         QString fallback;
     };
-    template <typename Button = QToolButton>
-    Button *addButton(uint glyph, const QString &fallback, const QString &tip = QString());
+    QToolButton *addButton(uint glyph, const QString &fallback, const QString &tip = QString());
 
-    QToolButton *m_commitButton;
-    QToolButton *m_historyButton;
     QToolButton *m_refreshButton;
-    BadgeButton *m_fetchButton;
-    BadgeButton *m_pullButton;
-    BadgeButton *m_pushButton;
-    BadgeButton *m_mergeButton;
     void updateHashLabel();
+    QWidget *m_hashRule; // the separator under the hash, shown with it
     QLabel *m_hashLabel;
     QString m_hash, m_hashTip;
     QList<RailGlyph> m_glyphs;

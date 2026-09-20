@@ -7,10 +7,10 @@ class QHBoxLayout;
 class QLabel;
 class QToolButton;
 
-// The right pane: the Prev/Next navigation row with the view options and the
-// diff toggle above, the diff view below. The window keeps the shortcuts that
-// drive it — a shortcut on a hidden widget is inactive and this pane can be
-// hidden — and re-homes the diff toggle when it is (see MainWindow::applyPanes).
+// The right pane: the Prev/Next navigation row with the view options above,
+// the diff view below. The window keeps the shortcuts that drive it — a
+// shortcut on a hidden widget is inactive and this pane can be hidden — and
+// the top bar carries the toggle that hides it.
 class DiffPane : public QWidget
 {
     Q_OBJECT
@@ -18,8 +18,6 @@ public:
     explicit DiffPane(QWidget *parent = nullptr);
 
     DiffView *view() const { return m_diff; }
-    QToolButton *diffToggle() const { return m_diffToggle; }
-    QHBoxLayout *navRow() const { return m_navRow; }
 
     // The file's status and line counts, shown after "Change n of m".
     void setSummary(const QString &summary) { m_summary = summary; }
@@ -37,13 +35,11 @@ public slots:
 
 private:
     DiffView *m_diff;
-    QHBoxLayout *m_navRow;       // the Prev/Next row (+ the diff toggle while the pane shows)
     QLabel *m_changeLabel;
     QToolButton *m_prevButton;
     QToolButton *m_nextButton;
     QToolButton *m_paneButton;   // one / two panes (Ctrl+T)
     QToolButton *m_wsButton;     // whitespace markers (Ctrl+W)
     QToolButton *m_syntaxButton; // syntax colouring (Ctrl+L)
-    QToolButton *m_diffToggle;   // top right corner, checked while the diff pane shows
     QString m_summary;
 };

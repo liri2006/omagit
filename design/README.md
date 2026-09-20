@@ -22,10 +22,11 @@ tile widths (Wide, Half, Third, Eighth).
 |---|-------|--------|
 | 1 | Kit primitives | done (`dc5abfe`) |
 | 2 | Commit page content | done |
-| 3 | Top bar restructure | next |
+| 3 | Top bar restructure | done |
 | 4 | Files-view switcher | |
 | 5 | Mini rail commit tile and popover | |
 | 6 | Agent settings popover | |
+| 7 | Stacked layouts | |
 
 ### 1. Kit primitives
 
@@ -63,14 +64,31 @@ Not part of this phase: the design's other column changes (no `Ext`, one
 
 ### 3. Top bar restructure
 
-The riskiest one: it changes the window skeleton and the width folding.
+The riskiest one: it changed the window skeleton and the width folding.
 
-- `Changes n | History` tabs centred in the top bar like a window-level mode
-  switch, clamped 16 px clear of the repo/branch and sync groups; nudged aside
-  first, labels fold to icons second. The nav row goes (38 px per pane back).
+- `src/TopBar.*` is one row above the whole body, in every layout: the
+  repository and branch chips, the `Changes n | History` tabs centred in the
+  window like a window-level mode switch (clamped 16 px clear of both groups,
+  nudged aside first, labels folding to glyphs second), the sync buttons with
+  their more menu, and the two layout toggles. The left `Toolbar` is gone;
+  DiffPane's navigation row stays where it is, less the diff toggle, which the
+  top bar now owns for good.
+- The tabs are painted `QToolButton` segments in one shared frame: the design's
+  fills, a 14 px count pill on Changes, and plain accessible names.
+- Seven folding levels, the first that fits winning: sync labels, sync buttons
+  into the menu, the repository label, the tab labels, the last two sync
+  buttons, and the branch name eliding only at the very end (72 px of it kept).
 - Refresh sits in the CHANGES header and at the end of the history filter row.
 - The repo chip is never hidden: label and chevron when there is room, a bare
   folder icon button at the narrow widths.
+- The Mini rail keeps the miniatures, the commit hash and Refresh; its mode,
+  sync and merge buttons were the top bar's twins and went with it.
+
+Not in this phase: the stacked Diff tab and the combined sync dropdown (both
+phase 7), the files-view switcher (4), the Mini commit tile and popover (5),
+the agent popover (6), the action bar's options menu, further more-menu
+commands, repository search, diff-nav restyling and renaming the keybindings
+row.
 
 ### 4. Files-view switcher
 
@@ -98,6 +116,22 @@ Self-contained, and the current one works, so it is last.
 - AGENT segmented control, MODEL rows with the CLI id and a tick, an
   `Other model…` text button that opens a field only on demand, REASONING as a
   level track, a full-width `Generate now` button.
+
+### 7. Stacked layouts
+
+The tiling end of the design (the `s` / `xs` levels of `screens.js`), left out
+of phase 3 on purpose. Depends only on phase 3, so it can be pulled forward.
+
+- Below the stacking width the splitter gives way to tabs: `Changes n | Diff |
+  History` in the top bar, the Diff tab showing the Mini rail beside the diff;
+  the layout toggles hide there.
+- Pull and Push fold into one sync dropdown carrying both counts (`↓2 ↑1`), its
+  menu listing Pull, Push, Fetch and Merge…; More gains Refresh, Open
+  repository…, Clone… and Keybindings.
+- The action bar's options `…` menu (Select all, Show unversioned files, Amend
+  last commit, Generate message) and the full-width Commit button.
+- Switching by window width, scaled with the text size like every other design
+  pixel.
 
 Not in any phase yet: a search prompt in the repo menu (it exists in Figma,
 but is new functionality in the app).

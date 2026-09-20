@@ -40,14 +40,14 @@ history with a branch graph, and plugs into the Nautilus context menu as
   levels; *Other…* takes any model by name. The agent runs without tools or a saved session
   (`claude -p --tools ""`, `codex exec --ephemeral --sandbox read-only`); the choice lives
   under `[agent]` in `~/.config/omagit/omagit.conf`.
-- **Branch dropdown**: the branch name above the message is a button; clicking it lists the
+- **Branch dropdown**: the branch name in the top bar is a button; clicking it lists the
   local and the remote branches (the current one ticked) and picking one checks it out. A
   search field at the top has the keyboard right away: typing narrows the list, Up/Down move
   the highlight, Return picks the highlighted (else the first) match, Escape closes. A
   remote branch gets a local branch of the same name tracking it (or switches to that local
   branch if it already exists); local changes are carried over, and if git would lose them
   it refuses and says why.
-- **Repository dropdown** in the footer: the repository's name (or Ctrl+R) lists the repositories opened
+- **Repository dropdown** in the top bar: the repository's name (or Ctrl+R) lists the repositories opened
   lately (the last 15, checked = the current one) and *Open…* (Ctrl+O) picks a folder anywhere
   inside another repository. Everything — changes, history, branch, Pull/Push counts, the
   working-tree watch — follows the switch. Started outside a repository without a path,
@@ -64,8 +64,8 @@ history with a branch graph, and plugs into the Nautilus context menu as
   repositories with a filter. GitHub credentials are managed by `gh`; clones from this tab
   save the GitHub credential helper in the new repository so later fetches, pulls and
   pushes use the same login.
-- **Pull, Push and Fetch** in the toolbar above the left section (Ctrl+P / Ctrl+Shift+P / Ctrl+F), in
-  both modes and on the Mini rail. The Pull button carries a badge with the number of commits waiting on the
+- **Pull, Push and Fetch** in the top bar (Ctrl+P / Ctrl+Shift+P / Ctrl+F), in
+  both modes and in every layout. The Pull button carries a badge with the number of commits waiting on the
   upstream, the Push button the number not pushed yet; a walking-dots badge shows while
   the count is being refreshed and a new number pops in when it changes. To keep the Pull
   count current Omagit fetches by itself: shortly after start, every 3 minutes while the
@@ -87,7 +87,7 @@ history with a branch graph, and plugs into the Nautilus context menu as
   credential helper (libsecret and friends) keeps it, without one it is used once and
   forgotten — nothing is written by Omagit. Only what you start asks: the automatic fetches
   stay silent and back off as before.
-- **Merge** (the toolbar button after Fetch, Ctrl+Shift+M, also on the Mini rail): a merge view
+- **Merge** (the top bar's button after Fetch, Ctrl+Shift+M): a merge view
   with the branch to merge on the left and the branch it goes into on the right — the current
   branch to begin with, the main line (or the branch committed to most recently) on the other
   side — each a searchable dropdown, and a swap button between them to merge the other way
@@ -112,23 +112,29 @@ history with a branch graph, and plugs into the Nautilus context menu as
   or SHA (Ctrl+S); commits load 500 at a time as you scroll. Selecting a commit shows its
   details and the files it touched; selecting a file shows the diff against the parent in
   the same diff pane. Right-click a commit to copy its SHA or message.
-- The toolbar adapts to the width of the left section: labels give way to icons, and icons
-  to a *more* menu (Fetch folds first, Pull last), so the section can be dragged as narrow
-  as you like; the diff pane can be dragged just as narrow. The toolbar's first button is
-  the Docked/Mini toggle; Refresh is the small icon at the right of the *CHANGES* row (and
-  next to *All branches* in History), F5 or Ctrl+Shift+R works everywhere.
+- **Top bar**: one row above the whole window, in every layout — the repository and the
+  branch chip on the left, the **Changes *n* | History** tabs centred in the window (the
+  count is what the changes list shows, whichever tab is on), and Pull, Push, Fetch, Merge
+  with the two layout toggles on the right. A narrower window folds it in order: the sync
+  labels give way to icons, then Fetch and Merge move into a *more* menu (which wears an
+  accent dot while what it holds carries a count), then the repository label gives way to a
+  bare folder icon, then the tab labels to their glyphs, then the last two sync buttons
+  follow into the menu, and only when nothing else is left does the branch name elide. The
+  tabs keep 16 px clear of both groups, and the repository chip and the toggles are never
+  hidden. Refresh is the small icon at the right of the *CHANGES* row (and next to
+  *All branches* in History), F5 or Ctrl+Shift+R works everywhere.
 - The *CHANGES* title carries the count (*CHANGES · 5/7*: checked / listed) and the button says
   what it will take (*Commit 5 files*). The box in the table's header checks or unchecks every
   listed file, the eye beside Refresh shows or hides the unversioned files — hidden files are
   never checked, so they are never committed — and *Amend last commit* sits at the left of the
   bottom bar, next to the button it renames.
-- **Docked / Mini** layouts (the toolbar's first button or Ctrl+B; the choice is
+- **Docked / Mini** layouts (the first of the top bar's two toggles or Ctrl+B; the choice is
   remembered). *Docked* keeps the left section (commit dialog or history) next to the diff
   pane. *Mini* shrinks it to a narrow rail of file miniatures (extension tile, status letter,
   dimmed when not part of the commit) so the diff gets the whole window; hovering a miniature
   pops up its name and folder right away, Space or Ctrl+click toggles it for the commit.
-  The button in the window's top right corner (Ctrl+Shift+B) hides the diff pane so the
-  left section fills the window; double-clicking a file brings it back for that file
+  The second toggle, in the window's top right corner (Ctrl+Shift+B), hides the diff pane so
+  the left section fills the window; double-clicking a file brings it back for that file
   (with the pane showing, a double-click opens the file in its own program instead).
   Right-clicking a file offers *Open with …*, naming the program the desktop would use
   for it (from `xdg-mime`).
@@ -179,7 +185,10 @@ Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the 
 
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;
-`--screenshot-after <ms>` sets the delay, e.g. to catch a running fetch; `--screenshot-menu
+`--screenshot-after <ms>` sets the delay, e.g. to catch a running fetch; `--screenshot-size
+945x612` gives the window a fixed size first, so a picture does not depend on the desktop it
+was taken on — two positive numbers, only together with `--screenshot`, and anything else is
+a usage error; `--screenshot-menu
 branch|repo|agent|keybindings|merge|login` opens that panel first and includes it in the picture, `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message),
@@ -206,7 +215,8 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 - `mergedialog` (`tests/mergedialog_test.cpp`) drives the merge view: swapping the
   branches, the verdicts and the layout that must not jump while one is checked.
 - `ui` (`tests/ui_test.cpp`) covers the logic behind the widgets: the history graph's
-  lane layout, the changes list's check marks, the toolbar's overflow, the keybindings
+  lane layout, the changes list's check marks, the top bar's seven folding levels (with the
+  tab clamp, the more menu and the count pill) and the one window it sits in, the keybindings
   filter, `colors.toml` parsing with its fallbacks, the wording of the merge verdict, and
   the sign-in dialog — including one whole round trip through git itself, where
   `git credential fill` asks the built binary, which asks the dialog (no network involved;
@@ -221,9 +231,9 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/RemoteSync.*` | Fetch / pull / push, the ahead/behind counts, automatic fetching with backoff, git-dir watch |
 | `src/AskPass.*` | Omagit as its own askpass helper: the socket git's and ssh's prompts arrive on, what they mean, one sign-in per operation, and the client side of `--askpass` |
 | `src/BadgeButton.*` | Tool button with a count badge, busy dots and a pop-in animation |
-| `src/Toolbar.*` | Width-adaptive button row: labels → icons → "more" menu |
+| `src/TopBar.*` | The window's top row: repository and branch chips, the painted Changes / History tab segments, the sync buttons with their "more" menu, the layout toggles — and the seven folding levels that fit them into the width |
 | `src/TickMenu.*` | Menu whose checked entries carry an accent tick at the right edge instead of a checkbox (branch, repository, "more" and diff menus) |
-| `src/BranchMenu.*` | The searchable branch dropdown (footer branch button, both sides of the merge view) |
+| `src/BranchMenu.*` | The searchable branch dropdown (the top bar's branch chip, both sides of the merge view) |
 | `src/MergeDialog.*` | The merge view: source/destination pickers with swap, the merge-tree verdict, merge and abort |
 | `src/LoginDialog.*` | The sign-in: username and password for an https host, an ssh key's passphrase, and whether git will remember it |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
@@ -232,13 +242,13 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/ChangesModel.*` | Table model for the changes list (also the files of a commit) |
 | `src/HistoryModel.*` | Commit list model with incremental lane-graph layout |
 | `src/HistoryView.*` | History view: filter, commit table with graph and ref chips, details, files |
-| `src/MainWindow.*` | Window shell: modes and sync buttons, Docked/Mini layouts, the pages and the diff pane, branches, merging, repositories and the working-tree watch |
+| `src/MainWindow.*` | Window shell: the top bar above the body, modes and sync operations, Docked/Mini layouts, the pages and the diff pane, branches, merging, repositories and the working-tree watch |
 | `src/CommitPage.*` | The commit dialog page: message box with the coding-agent flow, changes list with its context menu, options and the Commit button |
 | `src/DiffPane.*` | The right pane: Prev/Next and the two-pane / whitespace / syntax toggles above the diff view, with their remembered settings |
-| `src/Footer.*` | The footer bar: layout toggle, repository and branch dropdowns, the path or the latest message, keybindings button |
+| `src/Footer.*` | The footer bar: the repository path or the latest message, and the keybindings button |
 | `src/UiHelpers.*` | The shell's Nerd Font glyphs and the small widget factories the sections share (section and dim labels, tool / small / dropdown buttons, hairline, menu headers) |
 | `src/DesktopExec.*` | A file's default application, read from its desktop entry, and launching it detached |
-| `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips |
+| `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips, the commit's hash in history mode, and Refresh |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
 | `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |
 | `nautilus/omagit.py` | Nautilus "Open in Omagit" menu provider |

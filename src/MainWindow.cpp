@@ -16,11 +16,10 @@
 #include "OmarchyTheme.h"
 #include "Settings.h"
 #include "TickMenu.h"
-#include "Toolbar.h"
+#include "TopBar.h"
 #include "UiHelpers.h"
 
 #include <QAction>
-#include <QButtonGroup>
 #include <QDir>
 #include <QDialog>
 #include <QFileInfo>
@@ -121,71 +120,49 @@ void MainWindow::buildUi()
 {
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
-    rootLayout->setContentsMargins(14, 12, 14, 8);
+    rootLayout->setContentsMargins(14, 8, 14, 8);
     rootLayout->setSpacing(kBodySpacing);
 
-    // ---- Left section: toolbar above (commit dialog | history)
+    // ---- The top bar: the repository and branch chips, the page tabs, the
+    // sync buttons and the layout toggles. It stands above the whole body, so
+    // it is there in every layout, and folds itself as the window narrows.
+    m_topBar = new TopBar;
+    rootLayout->addWidget(m_topBar);
+    connect(m_topBar, &TopBar::commitModeRequested, this, [this] { setMode(CommitMode); });
+    connect(m_topBar, &TopBar::historyModeRequested, this, [this] { setMode(HistoryMode); });
+    connect(m_topBar->layoutButton(), &QToolButton::clicked, this, [this](bool mini) {
+        setPaneLayout(mini ? PaneLayout::Mini : PaneLayout::Docked);
+    });
+    connect(m_topBar->diffToggle(), &QToolButton::clicked, this, [this](bool on) { setDiffPaneVisible(on); });
+    // Repository and branch selectors stay available in both modes.
+    connect(m_topBar->repoButton(), &QToolButton::clicked, this, &MainWindow::showRepoMenu);
+    connect(m_topBar->branchButton(), &QToolButton::clicked, this, &MainWindow::showBranchMenu);
+
+    // ---- Left section: the commit dialog or the history
     auto *left = new QWidget;
     m_left = left;
-    // The pane may be dragged as narrow as the user likes: the toolbar folds
-    // its buttons away, everything else just gets cut off at the edge.
+    // The pane may be dragged as narrow as the user likes: everything in it
+    // just gets cut off at the edge.
     left->setMinimumWidth(1);
     auto *leftLayout = new QVBoxLayout(left);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(kBodySpacing);
 
-    // The toolbar: Commit, History | Pull, Push, Fetch.
-    // Labels give way to icons, then to a "more" menu, as the pane narrows.
-    m_toolbar = new Toolbar;
-    m_commitModeButton = toolButton(QString(), tr("Pending changes and commit dialog (Ctrl+1)"));
-    m_historyModeButton = toolButton(QString(), tr("Commit history of the repository (Ctrl+2)"));
-    auto *modes = new QButtonGroup(this);
-    modes->setExclusive(true);
-    for (QToolButton *b : {m_commitModeButton, m_historyModeButton}) {
-        b->setCheckable(true);
-        modes->addButton(b);
-    }
-    m_commitModeButton->setChecked(true);
-    m_toolbar->addButton(m_commitModeButton, icon(kCommit) + tr("Commit"), icon(kCommit, tr("C")).trimmed(), tr("Commit"));
-    m_toolbar->addButton(m_historyModeButton, icon(kHistory) + tr("History"), icon(kHistory, tr("H")).trimmed(), tr("History"));
-    connect(m_commitModeButton, &QToolButton::clicked, this, [this] { setMode(CommitMode); });
-    connect(m_historyModeButton, &QToolButton::clicked, this, [this] { setMode(HistoryMode); });
-
     // Pull / Push / Fetch act on the whole repository, so they are the same
     // in both modes. The Pull badge is the number of commits waiting on the
-    // upstream, the Push badge the number not pushed yet. Buttons fold into
-    // the more menu from the right, so Pull is the last of the three to go
-    // and Fetch (which happens by itself anyway) the first.
-    m_toolbar->addSeparator();
-    SyncButtons bar{toolButton<BadgeButton>(QString()), toolButton<BadgeButton>(QString()), toolButton<BadgeButton>(QString())};
-    m_toolbar->addButton(bar.pull, icon(kPull) + tr("Pull"), icon(kPull, QStringLiteral("↓")).trimmed(), tr("Pull"));
-    m_toolbar->addButton(bar.push, icon(kPush) + tr("Push"), icon(kPush, QStringLiteral("↑")).trimmed(), tr("Push"));
-    m_toolbar->addButton(bar.fetch, icon(kFetch) + tr("Fetch"), icon(kFetch, tr("F")).trimmed(), tr("Fetch"));
-    m_syncButtons << bar;
+    // upstream, the Push badge the number not pushed yet.
+    m_syncButtons = SyncButtons{m_topBar->fetchButton(), m_topBar->pullButton(), m_topBar->pushButton()};
     connect(m_sync, &RemoteSync::stateChanged, this, &MainWindow::updateSyncButtons);
     connect(m_sync, &RemoteSync::finished, this, &MainWindow::onSyncFinished);
     // git or ssh asked the app (its own askpass helper) for a login: the
     // dialog answers, RemoteSync hands the answer back to the waiting git.
     connect(m_sync->askPass(), &AskPass::requestReceived, this, &MainWindow::onAskPassRequest);
     // Merge opens the merge view; its badge says when a merge waits with conflicts.
-    m_toolbar->addSeparator();
-    auto *mergeButton = toolButton<BadgeButton>(QString());
-    m_toolbar->addButton(mergeButton, icon(kMerge) + tr("Merge"), icon(kMerge, tr("M")).trimmed(), tr("Merge"));
-    m_mergeButtons << mergeButton;
-    m_toolbarRow = new QHBoxLayout;
-    m_toolbarRow->setSpacing(kBodySpacing);
-    m_toolbarRow->addWidget(m_toolbar, 1);
-    leftLayout->addLayout(m_toolbarRow);
+    m_mergeButton = m_topBar->mergeButton();
 
-    // The footer (added to the window at the end): the layout toggle, the
-    // repository and branch selectors, the path and messages, the keybindings.
+    // The footer (added to the window at the end): the path and messages, the
+    // keybindings.
     m_footer = new Footer;
-    connect(m_footer->layoutButton(), &QToolButton::clicked, this, [this](bool mini) {
-        setPaneLayout(mini ? PaneLayout::Mini : PaneLayout::Docked);
-    });
-    // Repository and branch selectors stay available in both modes.
-    connect(m_footer->repoButton(), &QToolButton::clicked, this, &MainWindow::showRepoMenu);
-    connect(m_footer->branchButton(), &QToolButton::clicked, this, &MainWindow::showBranchMenu);
     connect(m_footer->keybindingsButton(), &QToolButton::clicked, this, &MainWindow::showKeybindings);
 
     m_stack = new QStackedWidget;
@@ -211,10 +188,19 @@ void MainWindow::buildUi()
     });
     m_stack->addWidget(m_history);
     leftLayout->addWidget(m_stack, 1);
+    // The tab's count is the changes list's, in both modes: whatever the proxy
+    // lists, however the list came to change.
+    updateChangesCount();
+    QSortFilterProxyModel *const changes = m_commitPage->proxy();
+    connect(changes, &QAbstractItemModel::rowsInserted, this, &MainWindow::updateChangesCount);
+    connect(changes, &QAbstractItemModel::rowsRemoved, this, &MainWindow::updateChangesCount);
+    connect(changes, &QAbstractItemModel::modelReset, this, &MainWindow::updateChangesCount);
+    // The eye's filter change is a layout change, not rows coming and going:
+    // without this the count would stand still while the list itself moves.
+    connect(changes, &QAbstractItemModel::layoutChanged, this, &MainWindow::updateChangesCount);
 
-    // ---- Right pane: diff view with navigation toolbar
+    // ---- Right pane: diff view with its navigation row
     m_diffPane = new DiffPane;
-    connect(m_diffPane->diffToggle(), &QToolButton::clicked, this, [this](bool on) { setDiffPaneVisible(on); });
 
     auto *splitter = new QSplitter(Qt::Horizontal);
     m_splitter = splitter;
@@ -233,23 +219,16 @@ void MainWindow::buildUi()
     // ---- Mini rail: replaces the left section in the Mini layout
     m_rail = new MiniRail;
     m_rail->setSource(m_commitPage->proxy(), m_commitPage->table()->selectionModel());
-    connect(m_rail, &MiniRail::commitModeRequested, this, [this] { setMode(CommitMode); });
-    connect(m_rail, &MiniRail::historyModeRequested, this, [this] { setMode(HistoryMode); });
     connect(m_rail, &MiniRail::refreshRequested, this, &MainWindow::refresh);
     connect(m_rail, &MiniRail::activated, this, [this] {
         if (m_mode == CommitMode)
             openInEditor();
     });
-    m_syncButtons << SyncButtons{m_rail->fetchButton(), m_rail->pullButton(), m_rail->pushButton()};
-    for (const SyncButtons &set : std::as_const(m_syncButtons)) {
-        connect(set.fetch, &QToolButton::clicked, m_sync, &RemoteSync::fetch);
-        connect(set.pull, &QToolButton::clicked, m_sync, &RemoteSync::pull);
-        connect(set.push, &QToolButton::clicked, m_sync, &RemoteSync::push);
-    }
+    connect(m_syncButtons.fetch, &QToolButton::clicked, m_sync, &RemoteSync::fetch);
+    connect(m_syncButtons.pull, &QToolButton::clicked, m_sync, &RemoteSync::pull);
+    connect(m_syncButtons.push, &QToolButton::clicked, m_sync, &RemoteSync::push);
     updateSyncButtons();
-    m_mergeButtons << m_rail->mergeButton();
-    for (BadgeButton *b : std::as_const(m_mergeButtons))
-        connect(b, &QToolButton::clicked, this, &MainWindow::showMergeDialog);
+    connect(m_mergeButton, &QToolButton::clicked, this, &MainWindow::showMergeDialog);
     updateMergeButtons(MergeState());
 
     auto *body = new QHBoxLayout;
@@ -309,9 +288,9 @@ QList<MainWindow::Binding> MainWindow::bindings()
     };
     QList<Binding> list;
 
-    // The application. The view shortcuts live on the window, not on the
-    // toolbar buttons: a hidden button's shortcut is inactive, and the
-    // toolbar is gone in the Mini layout.
+    // The application. The view shortcuts live on the window, not on the top
+    // bar's buttons: a hidden button's shortcut is inactive, and a narrow
+    // window folds half of them into the more menu.
     list << Binding{{QKeySequence(Qt::CTRL | Qt::Key_K)}, {}, tr("Keybindings"), {},
                     [this] { showKeybindings(); }, {}, nullptr, false}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_1)}, {}, tr("Commit view"), {}, [this] { setMode(CommitMode); }}
@@ -444,15 +423,11 @@ void MainWindow::setMode(Mode mode)
 {
     m_mode = mode;
     m_stack->setCurrentWidget(mode == CommitMode ? static_cast<QWidget *>(m_commitPage) : m_history);
-    {
-        QSignalBlocker a(m_commitModeButton), b(m_historyModeButton);
-        m_commitModeButton->setChecked(mode == CommitMode);
-        m_historyModeButton->setChecked(mode == HistoryMode);
-    }
-    m_rail->setCommitMode(mode == CommitMode);
-    if (mode == CommitMode)
+    m_topBar->setCommitMode(mode == CommitMode); // it blocks its own segments
+    if (mode == CommitMode) {
+        m_rail->setCommitLabel(QString(), QString()); // the hash belonged to a commit of the history
         m_rail->setSource(m_commitPage->proxy(), m_commitPage->table()->selectionModel());
-    else
+    } else
         m_rail->setSource(m_history->filesTable()->model(), m_history->filesTable()->selectionModel());
     if (mode == HistoryMode) {
         if (m_historyDirty) {
@@ -500,16 +475,9 @@ void MainWindow::applyPanes()
     m_rail->setVisible(mini);
     m_diffPane->setVisible(m_diffVisible);
     m_commitPage->setDiffPaneVisible(m_diffVisible);
-    // The toggle keeps its top-right spot: the end of the diff pane's nav row
-    // while the pane shows, the end of the toolbar row while it is hidden.
-    QToolButton *const diffToggle = m_diffPane->diffToggle();
-    QHBoxLayout *home = m_diffVisible ? m_diffPane->navRow() : m_toolbarRow;
-    if (home->indexOf(diffToggle) < 0) {
-        (m_diffVisible ? m_toolbarRow : m_diffPane->navRow())->removeWidget(diffToggle);
-        home->addWidget(diffToggle);
-        diffToggle->show();
-    }
-    QToolButton *const layoutButton = m_footer->layoutButton();
+    // Both toggles live in the top bar's right corner, whatever the layout.
+    QToolButton *const diffToggle = m_topBar->diffToggle();
+    QToolButton *const layoutButton = m_topBar->layoutButton();
     {
         QSignalBlocker a(layoutButton), b(diffToggle);
         layoutButton->setChecked(mini);
@@ -570,11 +538,13 @@ void MainWindow::applyTheme()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
     m_diffPane->applyTheme();
-    m_toolbar->applyTheme();
+    m_topBar->applyTheme();
     m_commitPage->applyTheme();
-    m_footer->applyTheme();
     m_history->applyTheme();
     m_rail->applyTheme();
+    // The layout toggle's glyph says which layout is on, so it is the window's
+    // to put back after the top bar has re-fetched the glyphs it owns itself.
+    applyPanes();
     // The captions of every section, wherever they were built.
     for (QLabel *l : findChildren<QLabel *>()) {
         if (l->objectName() == QLatin1String("sectionLabel") || l->objectName() == QLatin1String("dimLabel"))
@@ -611,12 +581,12 @@ void MainWindow::updateHeader()
 {
     const Commit head = m_repo->headCommit();
     const MergeState merge = m_repo->mergeState();
-    QString branch = icon(kBranch) + m_repo->branch() + chevron();
+    QString branch = m_repo->branch();
     if (m_repo->amending() && head.isValid())
         branch += tr("   ·   amending %1").arg(head.shortHash);
     if (merge.inProgress)
         branch += tr("   ·   merging %1").arg(merge.source);
-    m_footer->branchButton()->setText(branch);
+    m_topBar->setBranchLabel(branch);
     updateMergeButtons(merge);
     m_commitPage->setMergeState(merge, head);
     m_sync->refreshState();
@@ -902,21 +872,20 @@ void MainWindow::updateSyncButtons()
     const SyncTips tips = syncTips(s, op, fetches, m_sync->pushPublishes(), m_sync->pushArgs());
 
     const QColor red = theme->color(QStringLiteral("red"));
-    for (const SyncButtons &b : std::as_const(m_syncButtons)) {
-        b.fetch->setEnabled(m_sync->canFetch());
-        b.fetch->setToolTip(tips.fetch);
-        b.fetch->setMark(m_sync->lastFetch().isValid() && !m_sync->lastFetchOk() ? QStringLiteral("!") : QString(), red);
-        b.pull->setEnabled(m_sync->canPull());
-        b.pull->setToolTip(tips.pull);
-        b.pull->setBusy(op == RemoteSync::Fetch || op == RemoteSync::Pull);
-        b.pull->setCount(s.hasUpstream() ? s.behind : 0);
-        b.pull->setMark(s.upstreamGone ? QStringLiteral("!") : QString(), red);
-        b.push->setEnabled(m_sync->canPush());
-        b.push->setToolTip(tips.push);
-        b.push->setBusy(op == RemoteSync::Push);
-        b.push->setCount(s.hasUpstream() ? s.ahead : 0);
-    }
-    m_footer->branchButton()->setToolTip(tips.upstream);
+    const SyncButtons &b = m_syncButtons;
+    b.fetch->setEnabled(m_sync->canFetch());
+    b.fetch->setToolTip(tips.fetch);
+    b.fetch->setMark(m_sync->lastFetch().isValid() && !m_sync->lastFetchOk() ? QStringLiteral("!") : QString(), red);
+    b.pull->setEnabled(m_sync->canPull());
+    b.pull->setToolTip(tips.pull);
+    b.pull->setBusy(op == RemoteSync::Fetch || op == RemoteSync::Pull);
+    b.pull->setCount(s.hasUpstream() ? s.behind : 0);
+    b.pull->setMark(s.upstreamGone ? QStringLiteral("!") : QString(), red);
+    b.push->setEnabled(m_sync->canPush());
+    b.push->setToolTip(tips.push);
+    b.push->setBusy(op == RemoteSync::Push);
+    b.push->setCount(s.hasUpstream() ? s.ahead : 0);
+    m_topBar->branchButton()->setToolTip(tips.upstream);
 }
 
 void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, const QString &message)
@@ -1001,7 +970,7 @@ void MainWindow::showBranchMenu()
                                               : tr("Create the local branch %1 tracking %2 and switch to it").arg(local, name);
     });
     connect(&menu, &BranchMenu::picked, this, &MainWindow::checkoutBranch);
-    menu.popupAt(m_footer->branchButton(), true);
+    menu.popupAt(m_topBar->branchButton(), false); // the chip is at the top of the window: the list hangs below it
 }
 
 void MainWindow::checkoutBranch(const QString &name)
@@ -1060,10 +1029,16 @@ void MainWindow::updateMergeButtons(const MergeState &merge)
     } else {
         tip = tr("Merge another branch into this one — with a look at what it would do first (Ctrl+Shift+M)");
     }
-    for (BadgeButton *b : std::as_const(m_mergeButtons)) {
-        b->setToolTip(tip);
-        b->setMark(merge.inProgress ? QStringLiteral("!") : QString(), theme->color(QStringLiteral("red")));
-    }
+    m_mergeButton->setToolTip(tip);
+    m_mergeButton->setMark(merge.inProgress ? QStringLiteral("!") : QString(), theme->color(QStringLiteral("red")));
+}
+
+// Only the count is read and only the tab is told: the list itself, the
+// current row and the diff stay exactly as the change that triggered this
+// left them.
+void MainWindow::updateChangesCount()
+{
+    m_topBar->setChangesCount(m_commitPage->proxy()->rowCount());
 }
 
 // ---------------------------------------------------------------------------
@@ -1120,8 +1095,8 @@ void MainWindow::showRepoMenu()
     QAction *clone = menu.addAction(icon(kFetch) + tr("Clone…"));
     clone->setToolTip(tr("Download a repository from a URL or GitHub (Ctrl+Shift+O)"));
     connect(clone, &QAction::triggered, this, &MainWindow::showCloneDialog);
-    const int menuY = -menu.sizeHint().height();
-    menu.exec(m_footer->repoButton()->mapToGlobal(QPoint(0, menuY)));
+    QToolButton *const anchor = m_topBar->repoButton();
+    menu.exec(anchor->mapToGlobal(QPoint(0, anchor->height())));
 }
 
 void MainWindow::showCloneDialog()
@@ -1213,8 +1188,8 @@ void MainWindow::updateRepoLabels()
 {
     const QString name = QDir(m_repo->root()).dirName();
     setWindowTitle(QStringLiteral("Omagit — %1").arg(name));
-    m_footer->repoButton()->setText(icon(kFolder) + name + chevron());
-    m_footer->repoButton()->setToolTip(tr("%1\nClick or Ctrl+R for the repositories opened lately, Ctrl+O to open another one")
+    m_topBar->setRepositoryName(name);
+    m_topBar->repoButton()->setToolTip(tr("%1\nClick or Ctrl+R for the repositories opened lately, Ctrl+O to open another one")
                                            .arg(m_repo->root()));
     m_footer->setIdleText(tildePath(m_repo->root()));
 }

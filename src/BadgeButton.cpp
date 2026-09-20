@@ -8,12 +8,6 @@
 namespace {
 // How far the badge hangs over the top-right corner of the button's border.
 constexpr int kBadgeInset = 3;
-// The room sizeHint() keeps free beside the label. badgeSize() is wider than
-// this as soon as the badge carries a digit (15px at the default theme font,
-// 21 for two digits, 34 for "999+"), so a badge does cover the end of the
-// label; widening every Pull and Push button to fit would move the whole
-// toolbar, which is a call of its own.
-constexpr int kBadgeReserve = 14;
 } // namespace
 
 BadgeButton::BadgeButton(QWidget *parent)

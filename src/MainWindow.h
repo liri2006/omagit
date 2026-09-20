@@ -15,14 +15,12 @@ class BadgeButton;
 class CommitPage;
 class DiffPane;
 class Footer;
-class Toolbar;
+class TopBar;
 class HistoryView;
 class MiniRail;
 class QFileSystemWatcher;
-class QHBoxLayout;
 class QSplitter;
 class QStackedWidget;
-class QToolButton;
 
 class MainWindow : public QMainWindow
 {
@@ -169,6 +167,9 @@ private:
     void watchWorkingTree();
     void watchChangedFiles(); // the files in the changes list, for edits made in place
     void updateRepoLabels();
+    // The count in the Changes tab: the rows the changes list shows, in both
+    // modes. Reads the proxy and nothing else.
+    void updateChangesCount();
     void updateMergeButtons(const MergeState &merge);
     static void rememberRepository(const QString &root);
     // The footer's message; `ms` > 0 brings the repository path back after that long.
@@ -183,18 +184,15 @@ private:
     Footer *m_footer;
     HistoryView *m_history;
     QStackedWidget *m_stack;
-    Toolbar *m_toolbar;
+    TopBar *m_topBar;
     QSplitter *m_splitter;
     QWidget *m_left;
     MiniRail *m_rail;
     QFileSystemWatcher *m_watcher; // the working tree root, the index and the changed files
     QString m_indexFile;
-    QToolButton *m_commitModeButton;
-    QToolButton *m_historyModeButton;
-    QHBoxLayout *m_toolbarRow;   // the toolbar (+ the diff toggle while the diff pane is hidden)
     bool m_diffVisible = true;
-    QList<SyncButtons> m_syncButtons; // the toolbar's and the Mini rail's
-    QList<BadgeButton *> m_mergeButtons; // the toolbar's and the Mini rail's, marked while a merge waits
+    SyncButtons m_syncButtons;     // the top bar's
+    BadgeButton *m_mergeButton;    // the top bar's, marked while a merge waits
     QString m_initialSelection;
     QString m_shownDiffKey;    // what the diff pane shows, to skip re-setting an identical document
     bool m_refreshing = false; // the model reset momentarily leaves no row current

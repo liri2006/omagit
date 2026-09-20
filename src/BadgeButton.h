@@ -14,6 +14,13 @@ class BadgeButton : public QToolButton
 public:
     explicit BadgeButton(QWidget *parent = nullptr);
 
+    // The room sizeHint() keeps free beside the label. badgeSize() is wider than
+    // this as soon as the badge carries a digit (15px at the default theme font,
+    // 21 for two digits, 34 for "999+"), so a badge does cover the end of the
+    // label; widening every Pull and Push button to fit would move the whole
+    // toolbar, which is a call of its own.
+    static constexpr int kBadgeReserve = 14;
+
     void setCount(int count); // < 1 hides the badge
     int count() const { return m_count; }
     // A text badge in a colour of its own, e.g. "!" in red; empty clears it.

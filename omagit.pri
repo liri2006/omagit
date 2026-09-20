@@ -31,7 +31,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/HistoryView.cpp \
     $$PWD/src/MiniRail.cpp \
     $$PWD/src/BadgeButton.cpp \
-    $$PWD/src/Toolbar.cpp \
+    $$PWD/src/TopBar.cpp \
     $$PWD/src/TickMenu.cpp \
     $$PWD/src/BranchMenu.cpp \
     $$PWD/src/MergeDialog.cpp \
@@ -57,7 +57,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/MiniRail.h \
     $$PWD/src/PaneLayout.h \
     $$PWD/src/BadgeButton.h \
-    $$PWD/src/Toolbar.h \
+    $$PWD/src/TopBar.h \
     $$PWD/src/TickMenu.h \
     $$PWD/src/BranchMenu.h \
     $$PWD/src/MergeDialog.h \

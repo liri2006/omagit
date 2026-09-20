@@ -14,6 +14,7 @@
 #include <QKeySequence>
 #include <qpa/qwindowsysteminterface.h>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QScrollBar>
 #include <QTimer>
@@ -40,6 +41,13 @@ bool askPassPrompt(int argc, char *argv[], QString *prompt)
         return false;
     *prompt = QString::fromLocal8Bit(argv[1]);
     return true;
+}
+
+// A flag that was spelt wrong: say so where the shell will see it and stop.
+int usageError(const QString &message)
+{
+    fprintf(stderr, "%s\n", qPrintable(message));
+    return 2;
 }
 
 } // namespace
@@ -89,12 +97,32 @@ int main(int argc, char *argv[])
     // Handled before the QApplication above; here so --help mentions it.
     QCommandLineOption askPassOpt(QStringLiteral("askpass"), QStringLiteral("Ask the running Omagit for the given credential prompt and print the answer (what git and ssh run)."), QStringLiteral("prompt"));
     parser.addOption(askPassOpt);
+    QCommandLineOption screenshotSizeOpt(QStringLiteral("screenshot-size"), QStringLiteral("Window size for the --screenshot, as WxH (for testing; the size is not remembered)."), QStringLiteral("WxH"));
+    parser.addOption(screenshotSizeOpt);
     QCommandLineOption screenshotKeysOpt(QStringLiteral("screenshot-keys"), QStringLiteral("Comma-separated keys (m,a,Down,Return) sent to the focused widget once the --screenshot-menu dropdown is open, or to the window; @objectName[:vbar] or @ClassName[:vbar] focuses that (first visible) widget or its vertical scrollbar first (for testing)."), QStringLiteral("keys"));
     parser.addOption(screenshotKeysOpt);
     parser.process(app);
 
     const QStringList args = parser.positionalArguments();
     const QString start = args.isEmpty() ? QDir::currentPath() : args.first();
+
+    // A fixed window size for the screenshots, so a picture does not depend on
+    // the desktop it was taken on. Checked before anything is opened: a
+    // misspelt size is a usage error, not a window of some other size.
+    QSize screenshotSize;
+    if (parser.isSet(screenshotSizeOpt)) {
+        if (!parser.isSet(screenshotOpt))
+            return usageError(QStringLiteral("--screenshot-size only makes sense with --screenshot."));
+        const QString value = parser.value(screenshotSizeOpt);
+        static const QRegularExpression form(QStringLiteral("^(\\d+)x(\\d+)$"));
+        const QRegularExpressionMatch parts = form.match(value);
+        bool okWidth = false, okHeight = false;
+        const int width = parts.hasMatch() ? parts.captured(1).toInt(&okWidth) : 0;
+        const int height = parts.hasMatch() ? parts.captured(2).toInt(&okHeight) : 0;
+        if (!okWidth || !okHeight || width <= 0 || height <= 0)
+            return usageError(QStringLiteral("--screenshot-size takes two positive numbers, as in 945x612 — not \"%1\".").arg(value));
+        screenshotSize = QSize(width, height);
+    }
 
     OmarchyTheme theme;
     theme.apply(app);
@@ -136,6 +164,9 @@ int main(int argc, char *argv[])
         window.setMode(MainWindow::HistoryMode);
     if (parser.isSet(noFetchOpt))
         window.setAutoFetchEnabled(false);
+    // After the restored geometry and the layout flags, before the first show.
+    if (screenshotSize.isValid())
+        window.resize(screenshotSize);
     window.show();
     if (parser.isSet(amendOpt))
         QTimer::singleShot(0, &window, [&window] { window.setAmend(true); });

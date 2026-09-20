@@ -4,6 +4,7 @@
 // changes model's check marks, the toolbar's overflow, the keybindings filter,
 // the theme's colors.toml parsing and the merge verdict's wording — and, with
 // git itself but no network, the way a fetch signs in.
+#include "../src/BadgeButton.h"
 #include "../src/BranchMenu.h"
 #include "../src/ChangesModel.h"
 #include "../src/CommitPage.h"
@@ -12,12 +13,14 @@
 #include "../src/AskPass.h"
 #include "../src/KeybindingsPanel.h"
 #include "../src/LoginDialog.h"
+#include "../src/MainWindow.h"
 #include "../src/MergeDialog.h"
 #include "../src/MessageEdit.h"
+#include "../src/MiniRail.h"
 #include "../src/OmarchyTheme.h"
 #include "../src/RemoteSync.h"
 #include "../src/Settings.h"
-#include "../src/Toolbar.h"
+#include "../src/TopBar.h"
 #include "../src/UiHelpers.h"
 
 #include <QApplication>
@@ -33,6 +36,7 @@
 #include <QListView>
 #include <QMouseEvent>
 #include <QListWidget>
+#include <QMenu>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -447,13 +451,156 @@ QLabel *cloneLabel(const QDialog &dialog, const QString &accessibleName)
     return nullptr;
 }
 
-// The buttons of a toolbar that are on screen, in the order they were added.
+// The buttons of a row that are on screen, in the order they stand in.
 QList<bool> visible(const QList<QToolButton *> &buttons)
 {
     QList<bool> out;
     for (const QToolButton *b : buttons)
         out << b->isVisible();
     return out;
+}
+
+// A top bar in a host of its own, placed by hand so a resize of the bar is
+// the bar's width and nothing else's. The names are long enough for every
+// fold level to show up between the widest and the narrowest width.
+struct BarFixture
+{
+    std::unique_ptr<QWidget> host;
+    TopBar *bar = nullptr;
+
+    // Pull, Push, Fetch, Merge: the order they fold away in, from the right.
+    QList<QToolButton *> sync() const
+    {
+        return {bar->pullButton(), bar->pushButton(), bar->fetchButton(), bar->mergeButton()};
+    }
+    // The frame the two segments share.
+    QWidget *tabs() const { return bar->changesTab()->parentWidget(); }
+    QRect rectOf(QWidget *w) const { return QRect(w->mapTo(bar, QPoint(0, 0)), w->size()); }
+
+    int levelAt(int width) const
+    {
+        bar->resize(width, bar->sizeHint().height());
+        QCoreApplication::processEvents();
+        return bar->foldLevel();
+    }
+    // The widest width the bar folds to `level` at, or -1 if it never does.
+    int widthForLevel(int level) const
+    {
+        for (int width = bar->sizeHint().width(); width >= bar->minimumSizeHint().width(); --width)
+            if (levelAt(width) == level)
+                return width;
+        return -1;
+    }
+};
+
+BarFixture topBar(const QString &repository = QStringLiteral("omagit-workspace"),
+                  const QString &branch = QStringLiteral("feature/askpass-login-dialog"), int count = 7)
+{
+    BarFixture f;
+    f.host.reset(new QWidget);
+    f.host->resize(1600, 200);
+    f.bar = new TopBar(f.host.get());
+    f.bar->setRepositoryName(repository);
+    f.bar->setBranchLabel(branch);
+    f.bar->setChangesCount(count);
+    f.bar->move(0, 0);
+    f.bar->resize(f.bar->sizeHint());
+    f.host->show();
+    return f;
+}
+
+// The whole window on a scratch repository of its own, built the way the
+// application builds it: one commit, a file changed since and an unversioned
+// one beside it.
+struct WindowFixture
+{
+    std::unique_ptr<QTemporaryDir> dir;
+    std::unique_ptr<QTemporaryDir> tools;
+    std::unique_ptr<GitRepo> repo;
+    std::unique_ptr<MainWindow> window;
+
+    TopBar *bar() const { return window->findChild<TopBar *>(); }
+    CommitPage *page() const { return window->findChild<CommitPage *>(); }
+    MiniRail *rail() const { return window->findChild<MiniRail *>(); }
+};
+
+WindowFixture mainWindow()
+{
+    WindowFixture f;
+    f.dir.reset(new QTemporaryDir);
+    f.tools.reset(new QTemporaryDir);
+    const QString path = f.dir->path();
+    const QString gitBinary = QStandardPaths::findExecutable(QStringLiteral("git"));
+    if (!f.dir->isValid() || !f.tools->isValid() || gitBinary.isEmpty())
+        return f;
+    // A PATH with nothing on it but git: the window's commit page asks the
+    // coding-agent CLIs for their models as it is built, and no such process
+    // belongs in a test.
+    if (!QFile::link(gitBinary, QDir(f.tools->path()).filePath(QStringLiteral("git"))))
+        return f;
+    if (!git(path, {"init", "-q", "-b", "main"}))
+        return f;
+    writeFixture(QDir(path).filePath(QStringLiteral("a.txt")), "a\n");
+    if (!git(path, {"add", "-A"}) || !git(path, {"commit", "-q", "-m", "first"}, 1))
+        return f;
+    writeFixture(QDir(path).filePath(QStringLiteral("a.txt")), "a changed\n");
+    writeFixture(QDir(path).filePath(QStringLiteral("u1.txt")), "u1\n");
+    f.repo.reset(new GitRepo(path));
+    const QByteArray env = qgetenv("PATH");
+    qputenv("PATH", f.tools->path().toUtf8());
+    f.window.reset(new MainWindow(f.repo.get()));
+    qputenv("PATH", env);
+    f.window->setAutoFetchEnabled(false);
+    f.window->resize(1200, 800);
+    f.window->show();
+    return f;
+}
+
+// What a screen reader is told about the row, in the order it reads in. None
+// of it depends on what the controls are wearing at the width of the moment.
+QStringList barNames(TopBar *bar)
+{
+    QStringList out;
+    for (const QWidget *w : QList<const QWidget *>{bar->repoButton(), bar->branchButton(), bar->changesTab(),
+                                                   bar->historyTab(), bar->pullButton(), bar->pushButton(),
+                                                   bar->fetchButton(), bar->mergeButton(), bar->moreButton(),
+                                                   bar->layoutButton(), bar->diffToggle()})
+        out << w->accessibleName();
+    return out;
+}
+
+// The names the default fixture's bar carries, at every level.
+const QStringList kBarNames{QStringLiteral("omagit-workspace"),
+                            QStringLiteral("feature/askpass-login-dialog"),
+                            QStringLiteral("Changes"),
+                            QStringLiteral("History"),
+                            QStringLiteral("Pull"),
+                            QStringLiteral("Push"),
+                            QStringLiteral("Fetch"),
+                            QStringLiteral("Merge"),
+                            QStringLiteral("More"),
+                            QStringLiteral("Mini layout"),
+                            QStringLiteral("Diff pane")};
+
+// A sync button wearing its glyph alone, and the more button: the design's
+// 28 px square with the badge's reserve beside it.
+int iconFormWidth()
+{
+    return ui::space(28) + BadgeButton::kBadgeReserve;
+}
+
+// What a top bar measures at the text size of the moment, spelled out so a
+// mismatch names itself.
+QStringList barMetrics(TopBar *bar)
+{
+    const auto entry = [](const char *name, int value) { return QStringLiteral("%1=%2").arg(QLatin1String(name)).arg(value); };
+    return {entry("hint", bar->sizeHint().width()),
+            entry("hintHeight", bar->sizeHint().height()),
+            entry("min", bar->minimumSizeHint().width()),
+            entry("minHeight", bar->minimumSizeHint().height()),
+            entry("changesTab", bar->changesTab()->sizeHint().width()),
+            entry("historyTab", bar->historyTab()->sizeHint().width()),
+            entry("tabs", bar->changesTab()->parentWidget()->sizeHint().width())};
 }
 
 } // namespace
@@ -912,77 +1059,537 @@ esac
                         < ChangesModel::statusRank(FileChange::Untracked));
     }
 
-    // --- Toolbar ------------------------------------------------------------
+    // --- TopBar -------------------------------------------------------------
 
-    void buttonsFoldIntoTheMoreMenuFromTheRight()
+    // The row folds in seven steps as the window narrows, in the order the
+    // design names: the sync labels, then the sync buttons, then the
+    // repository label, then the tab labels, and the branch name last.
+    void theTopBarFoldsInSevenStepsAsItNarrows()
     {
-        Toolbar bar;
-        auto *leading = ui::toolButton(QStringLiteral("L"));
-        bar.setLeading(leading);
-        QList<QToolButton *> buttons;
-        QWidget *separator = nullptr;
-        const QStringList names{QStringLiteral("Fetch"), QStringLiteral("Pull"), QStringLiteral("Push"),
-                                QStringLiteral("Merge")};
-        for (int i = 0; i < names.size(); ++i) {
-            auto *button = ui::toolButton(names.at(i));
-            buttons << button;
-            bar.addButton(button, names.at(i), names.at(i).left(1), names.at(i));
-            if (i != 1)
-                continue;
-            // The separator between Pull and Push: whatever addSeparator() adds.
-            const QList<QWidget *> before = bar.findChildren<QWidget *>();
-            bar.addSeparator();
-            for (QWidget *child : bar.findChildren<QWidget *>())
-                if (!before.contains(child))
-                    separator = child;
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+
+        const int wide = bar->sizeHint().width();
+        QCOMPARE(f.levelAt(wide + 200), 0);
+        QCOMPARE(f.levelAt(wide), 0);     // the size hint is exactly what level 0 takes
+        QVERIFY(f.levelAt(wide - 1) > 0); // one pixel under it, something folds
+
+        // Every level shows up, in order, as the bar narrows...
+        QList<int> seen;
+        QHash<int, int> widest; // level -> the widest width it appears at
+        for (int width = wide; width >= bar->minimumSizeHint().width(); --width) {
+            const int level = f.levelAt(width);
+            QVERIFY2(seen.isEmpty() || level >= seen.last(), "the bar unfolded while it narrowed");
+            if (seen.isEmpty() || level != seen.last()) {
+                seen << level;
+                widest[level] = width;
+            }
         }
-        QVERIFY(separator);
-        bar.resize(bar.sizeHint());
-        bar.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&bar));
+        QCOMPARE(seen, QList<int>({0, 1, 2, 3, 4, 5, 6}));
+        // ...and one pixel wider than a level starts is the level before it.
+        for (int level = 1; level <= 6; ++level)
+            QCOMPARE(f.levelAt(widest.value(level) + 1), level - 1);
 
-        const int wide = bar.sizeHint().width();
-        bar.resize(wide + 40, bar.sizeHint().height());
-        QCoreApplication::processEvents();
-        QCOMPARE(visible(buttons), QList<bool>({true, true, true, true}));
-        for (int i = 0; i < buttons.size(); ++i)
-            QCOMPARE(buttons.at(i)->text(), names.at(i)); // full labels while there is room
-        QVERIFY(separator->isVisible());
+        // What each level shows. The repository chip and the two toggles are
+        // there at every one of them.
+        const QHash<int, QList<bool>> syncShown{
+            {0, {true, true, true, true}},    {1, {true, true, true, true}},  {2, {true, true, false, false}},
+            {3, {true, true, false, false}},  {4, {true, true, false, false}}, {5, {false, false, false, false}},
+            {6, {false, false, false, false}}};
+        QList<int> repoWidths, tabWidths, branchWidths;
+        for (int level = 0; level <= 6; ++level) {
+            QCOMPARE(f.levelAt(widest.value(level, wide)), level);
+            QCOMPARE(visible(f.sync()), syncShown.value(level));
+            QCOMPARE(bar->moreButton()->isVisible(), level >= 2);
+            QVERIFY(bar->repoButton()->isVisible());
+            QVERIFY(bar->layoutButton()->isVisible());
+            QVERIFY(bar->diffToggle()->isVisible());
+            // Only the widest level spells the sync buttons out.
+            QCOMPARE(bar->pullButton()->text().contains(QLatin1String("Pull")), level == 0);
+            repoWidths << f.rectOf(bar->repoButton()).width();
+            tabWidths << f.rectOf(f.tabs()).width();
+            branchWidths << f.rectOf(bar->branchButton()).width();
+        }
+        QVERIFY(repoWidths.at(2) > repoWidths.at(3)); // the repository label goes at level 3
+        for (int level = 3; level <= 6; ++level)
+            QCOMPARE(repoWidths.at(level), ui::space(28)); // and the bare folder is 28 px wide
+        QVERIFY(tabWidths.at(3) > tabWidths.at(4));   // the tab labels go at level 4
+        QCOMPARE(tabWidths.at(5), tabWidths.at(4));
+        QCOMPARE(tabWidths.at(6), tabWidths.at(4));
+        QVERIFY(branchWidths.at(6) <= branchWidths.at(5)); // the last level is never the wider one
 
-        // Shrinking hides the buttons from the right, never from the middle.
-        int hiddenAt = -1;
-        for (int width = wide + 40; width >= bar.minimumSizeHint().width(); width -= 8) {
-            bar.resize(width, bar.sizeHint().height());
+        // At its narrowest the branch name is elided — and only it: the glyph
+        // and the chevron stay where they were.
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        const QString elided = bar->branchButton()->text();
+        QVERIFY2(elided.contains(QChar(0x2026)), qPrintable(elided));
+        QVERIFY(elided.startsWith(ui::icon(ui::kBranch, QStringLiteral("b"))));
+        QVERIFY(elided.endsWith(ui::chevron()));
+
+        // And the room coming back spells everything out again.
+        QCOMPARE(f.levelAt(wide), 0);
+        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolder) + QStringLiteral("omagit-workspace") + ui::chevron());
+        QCOMPARE(bar->branchButton()->text(),
+                 ui::icon(ui::kBranch) + QStringLiteral("feature/askpass-login-dialog") + ui::chevron());
+    }
+
+    // The tabs follow the middle of the whole bar and stop 16 px clear of
+    // either group; the groups themselves stand against their own edges.
+    void theTopBarCentresTheTabsBetweenItsGroups()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+
+        const int wide = bar->sizeHint().width() + 400;
+        QCOMPARE(f.levelAt(wide), 0);
+        const QRect tabs = f.rectOf(f.tabs());
+        QVERIFY2(qAbs(tabs.x() + tabs.width() / 2.0 - wide / 2.0) <= 1.0, "the tabs are not in the middle of the bar");
+
+        // The left group against the left edge, the right group against the
+        // right one, with the design's gaps inside them.
+        const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
+        QCOMPARE(repo.x(), 0);
+        QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(4));
+        QCOMPARE(f.rectOf(bar->diffToggle()).x() + bar->diffToggle()->width(), wide);
+        QCOMPARE(f.rectOf(bar->diffToggle()).x() - (f.rectOf(bar->layoutButton()).x() + bar->layoutButton()->width()),
+                 ui::space(4));
+        QCOMPARE(f.rectOf(bar->pushButton()).x() - (f.rectOf(bar->pullButton()).x() + bar->pullButton()->width()),
+                 ui::space(6));
+
+        // At the narrowest width the middle is taken, so the clamp decides:
+        // the tabs sit 16 px off both groups at once.
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        const QRect tight = f.rectOf(f.tabs());
+        QCOMPARE(tight.x(), f.rectOf(bar->branchButton()).x() + bar->branchButton()->width() + ui::space(16));
+        QCOMPARE(tight.x() + tight.width() + ui::space(16), f.rectOf(bar->moreButton()).x());
+    }
+
+    // A short branch name is never elided, and the widths of the two chips do
+    // not become a minimum the window has to honour.
+    void theTopBarKeepsAShortBranchWholeAtEveryWidth()
+    {
+        BarFixture f = topBar(QStringLiteral("omagit"), QStringLiteral("main"), 3);
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+        const QString canonical = ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron();
+
+        // A name this short is under the allowance the last level keeps, so
+        // eliding would buy nothing and the level before it already fits.
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 5);
+        QCOMPARE(bar->branchButton()->text(), canonical);
+        QVERIFY(bar->minimumSizeHint().width() < bar->sizeHint().width());
+
+        // Folding and unfolding again, several times over, leaves the
+        // canonical text — never a shortened one shortened once more.
+        for (int i = 0; i < 3; ++i) {
+            f.levelAt(bar->minimumSizeHint().width());
+            f.levelAt(bar->sizeHint().width());
+        }
+        QCOMPARE(bar->branchButton()->text(), canonical);
+        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolder) + QStringLiteral("omagit") + ui::chevron());
+
+        // However long the branch name, the last level keeps 72 px of it at
+        // most, so the minimum hardly moves.
+        BarFixture longName = topBar(QStringLiteral("omagit"), QString(120, QLatin1Char('x')), 3);
+        QVERIFY(longName.bar->minimumSizeHint().width() - bar->minimumSizeHint().width() <= ui::space(72));
+    }
+
+    // The two tabs are one exclusive switch: they ask the window for a mode
+    // instead of changing it, carry the changes count and nothing else.
+    void theTopBarTabsCarryTheCountAndAskForTheMode()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+
+        QCOMPARE(bar->changesTab()->accessibleName(), QStringLiteral("Changes"));
+        QCOMPARE(bar->historyTab()->accessibleName(), QStringLiteral("History"));
+        QVERIFY(bar->changesTab()->toolTip().contains(QLatin1String("Ctrl+1")));
+        QVERIFY(bar->historyTab()->toolTip().contains(QLatin1String("Ctrl+2")));
+
+        // The pill: gone at nothing to commit, wider with more digits, and
+        // never on the History tab.
+        const int history = bar->historyTab()->sizeHint().width();
+        const int seven = bar->changesTab()->sizeHint().width();
+        bar->setChangesCount(0);
+        const int none = bar->changesTab()->sizeHint().width();
+        bar->setChangesCount(128);
+        QCOMPARE(bar->changesCount(), 128);
+        const int many = bar->changesTab()->sizeHint().width();
+        QVERIFY(none < seven);
+        QVERIFY(seven < many);
+        QCOMPARE(bar->historyTab()->sizeHint().width(), history);
+        bar->setChangesCount(-4); // no such thing as a negative count
+        QCOMPARE(bar->changesCount(), 0);
+
+        QSignalSpy commit(bar, &TopBar::commitModeRequested), past(bar, &TopBar::historyModeRequested);
+        QTest::mouseClick(bar->historyTab(), Qt::LeftButton);
+        QCOMPARE(past.count(), 1);
+        QVERIFY(bar->historyTab()->isChecked());
+        QVERIFY(!bar->changesTab()->isChecked());
+        // The window putting the state back asks for nothing.
+        bar->setCommitMode(true);
+        QVERIFY(bar->changesTab()->isChecked());
+        QVERIFY(!bar->historyTab()->isChecked());
+        QCOMPARE(commit.count(), 0);
+        QCOMPARE(past.count(), 1);
+        QTest::mouseClick(bar->changesTab(), Qt::LeftButton);
+        QCOMPARE(commit.count(), 1);
+    }
+
+    // The more menu is exactly the buttons folding put in it, in the order
+    // they stand in the row, with their counts spelled out.
+    void theTopBarMoreMenuCarriesTheFoldedSyncButtons()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+        bar->pullButton()->setCount(2);
+        bar->pushButton()->setCount(1);
+        bar->fetchButton()->setCount(4);
+        bar->fetchButton()->setToolTip(QStringLiteral("Fetch from all remotes (Ctrl+F)"));
+        bar->mergeButton()->setEnabled(false);
+
+        // What the menu holds once it has filled itself, the way a click on
+        // the more button fills it.
+        const auto entries = [bar] {
+            QMenu *menu = bar->moreButton()->menu();
+            menu->popup(QPoint(0, 0));
             QCoreApplication::processEvents();
-            const QList<bool> shown = visible(buttons);
-            bool seenHidden = false;
-            for (int i = 0; i < shown.size(); ++i) {
-                if (!shown.at(i))
-                    seenHidden = true;
-                else
-                    QVERIFY2(!seenHidden, "a button folded away while a later one stayed");
-            }
-            if (seenHidden && hiddenAt < 0)
-                hiddenAt = width;
-            if (seenHidden) {
-                QVERIFY(bar.findChild<QToolButton *>()); // the more button takes over
-                if (!shown.at(2)) // Push and Merge gone: the separator has nothing to separate
-                    QVERIFY(!separator->isVisible());
-            }
-            QVERIFY(leading->isVisible()); // the layout switcher never folds away
+            const QList<QAction *> actions = menu->actions();
+            menu->hide();
+            return actions;
+        };
+        // The accent dot BadgeButton paints for a folded count; the button
+        // keeps no getter for it, so it is read off its own pixels.
+        const auto hasDot = [](BadgeButton *button) {
+            const QImage shot = button->grab().toImage();
+            const QRgb accent = OmarchyTheme::instance()->accent().rgb() | 0xff000000;
+            for (int y = 0; y < shot.height(); ++y)
+                for (int x = 0; x < shot.width(); ++x)
+                    if ((shot.pixel(x, y) | 0xff000000) == accent)
+                        return true;
+            return false;
+        };
+
+        // Wide: nothing is folded, so there is no menu and no button either.
+        QCOMPARE(f.levelAt(bar->sizeHint().width()), 0);
+        QVERIFY(!bar->moreButton()->isVisible());
+        QCOMPARE(entries().size(), 0);
+
+        // Narrow enough for Fetch and Merge to fold.
+        QVERIFY(f.widthForLevel(2) > 0);
+        QCOMPARE(f.levelAt(f.widthForLevel(2)), 2);
+        QList<QAction *> actions = entries();
+        QCOMPARE(actions.size(), 2);
+        QVERIFY2(actions.at(0)->text().endsWith(QStringLiteral("Fetch  (4)")), qPrintable(actions.at(0)->text()));
+        QVERIFY(actions.at(0)->text().startsWith(ui::icon(ui::kFetch, QStringLiteral("F")).trimmed()));
+        QCOMPARE(actions.at(0)->toolTip(), QStringLiteral("Fetch from all remotes (Ctrl+F)"));
+        QVERIFY(actions.at(0)->isEnabled());
+        QVERIFY2(actions.at(1)->text().endsWith(QStringLiteral("Merge")), qPrintable(actions.at(1)->text()));
+        QVERIFY(!actions.at(1)->isEnabled()); // as disabled as the button it stands for
+
+        // An entry is the button's own click: whatever the window connected
+        // to it happens.
+        QSignalSpy fetched(bar->fetchButton(), &QToolButton::clicked);
+        actions.at(0)->trigger();
+        QCOMPARE(fetched.count(), 1);
+
+        // All four fold at the narrowest levels, in the same order.
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        actions = entries();
+        QCOMPARE(actions.size(), 4);
+        QStringList labels;
+        for (const QAction *a : std::as_const(actions))
+            labels << a->text().section(QStringLiteral("  "), 1, 1);
+        QCOMPARE(labels, QStringList({QStringLiteral("Pull"), QStringLiteral("Push"), QStringLiteral("Fetch"),
+                                      QStringLiteral("Merge")}));
+
+        // The dot stands for the counts in the menu — the explicit folded set,
+        // never what happens to be on screen. With the whole bar hidden every
+        // button is invisible, and the dot still only counts those two.
+        QCOMPARE(f.levelAt(f.widthForLevel(2)), 2);
+        bar->fetchButton()->setCount(0);
+        bar->mergeButton()->setCount(0);
+        f.host->hide();
+        QVERIFY2(!hasDot(bar->moreButton()), "the dot counted a button that is still on the row");
+        bar->fetchButton()->setCount(3);
+        QVERIFY(hasDot(bar->moreButton()));
+    }
+
+    // A Nerd Font glyph's ink hangs over the advance its metrics report, so a
+    // tab segment gives it a box of the design's width at the least — and
+    // measures itself on that very box, labelled and folded alike.
+    void theTopBarTabGlyphsGetABoxOfTheirOwn()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+
+        const OmarchyTheme *theme = OmarchyTheme::instance();
+        const QFontMetrics plain(theme->uiFont());
+        QFont boldFont = theme->uiFont();
+        boldFont.setBold(true);
+        const QFontMetrics bold(boldFont);
+        QFont pillFont = theme->captionFont();
+        pillFont.setBold(true);
+        // The count pill: never narrower than it is tall.
+        const int pill = qMax(ui::space(14),
+                              QFontMetrics(pillFont).horizontalAdvance(QStringLiteral("7")) + 2 * ui::space(4));
+        const auto box = [&plain](uint glyph, const QString &fallback) {
+            return qMax(plain.horizontalAdvance(ui::icon(glyph, fallback).trimmed()), ui::space(14));
+        };
+        const int changesBox = box(ui::kCommit, QStringLiteral("C"));
+        const int historyBox = box(ui::kHistory, QStringLiteral("H"));
+        const int pad = 2 * ui::space(12);
+
+        // Spelled out: padding, the glyph's box, the label and the pill, with
+        // the design's gap between them. The label is measured bold, the
+        // weight it wears while selected.
+        QCOMPARE(f.levelAt(bar->sizeHint().width()), 0);
+        QCOMPARE(bar->changesTab()->sizeHint().width(),
+                 pad + changesBox + ui::space(6) + bold.horizontalAdvance(QStringLiteral("Changes")) + ui::space(6)
+                     + pill);
+        QCOMPARE(bar->historyTab()->sizeHint().width(),
+                 pad + historyBox + ui::space(6) + bold.horizontalAdvance(QStringLiteral("History")));
+
+        // Folded: the labels go, the box stays exactly as wide.
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        QCOMPARE(bar->changesTab()->sizeHint().width(), pad + changesBox + ui::space(6) + pill);
+        QCOMPARE(bar->historyTab()->sizeHint().width(), pad + historyBox);
+        // And the box is the design's width, not what the glyph happens to
+        // advance by — otherwise the clock would be drawn half outside it.
+        QCOMPARE(historyBox, ui::space(14));
+    }
+
+    // The icon form of a sync button is the design's square with the badge's
+    // reserve beside it, not the size hint of a text button around a glyph —
+    // and that width is what the levels are folded on.
+    void theTopBarSyncButtonsFoldToTheDesignsSquare()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+
+        // Level 0 spells them out; level 1 is the icon form of all four.
+        const int wide = bar->sizeHint().width();
+        QCOMPARE(f.levelAt(wide), 0);
+        QList<int> labelled;
+        for (QToolButton *b : f.sync())
+            labelled << f.rectOf(b).width();
+        const int labelledHeight = f.rectOf(bar->pullButton()).height();
+
+        int saved = 0;
+        QCOMPARE(f.levelAt(wide - 1), 1);
+        for (int i = 0; i < f.sync().size(); ++i) {
+            QCOMPARE(f.rectOf(f.sync().at(i)).width(), iconFormWidth());
+            saved += labelled.at(i) - iconFormWidth();
         }
-        QVERIFY2(hiddenAt > 0, "nothing ever folded away");
+        QVERIFY2(saved > 0, "the icon form is no narrower than the labelled one");
+        // Both forms are one height: the compact padding only takes from the
+        // sides, so the icons line up with the chips and the tabs.
+        QCOMPARE(f.rectOf(bar->pullButton()).height(), labelledHeight);
+        QCOMPARE(f.rectOf(bar->moreButton()).height(), labelledHeight);
 
-        // At its narrowest only the leading button and the more menu are left.
-        bar.resize(bar.minimumSizeHint().width(), bar.sizeHint().height());
-        QCoreApplication::processEvents();
-        QCOMPARE(visible(buttons), QList<bool>({false, false, false, false}));
+        // The thresholds are those widths and nothing else: level 1 stops
+        // fitting exactly where the four labels' extra width runs out, and
+        // level 2 trades Fetch and Merge for the more button, which is the
+        // same square again.
+        QCOMPARE(f.levelAt(wide - saved), 1);
+        QCOMPARE(f.levelAt(wide - saved - 1), 2);
+        QCOMPARE(f.rectOf(bar->moreButton()).width(), iconFormWidth());
+        const int levelTwo = wide - saved - iconFormWidth() - ui::space(6);
+        QCOMPARE(f.levelAt(levelTwo), 2);
+        QCOMPARE(f.levelAt(levelTwo - 1), 3);
+    }
 
-        // And they all come back when the room does.
-        bar.resize(wide + 40, bar.sizeHint().height());
-        QCoreApplication::processEvents();
-        QCOMPARE(visible(buttons), QList<bool>({true, true, true, true}));
-        QVERIFY(separator->isVisible());
+    // What the bar is called stays what it is at every width: the names are
+    // the canonical text, never the folded or elided one. And the widths the
+    // levels are weighed on are measured on probes nobody ever sees.
+    void theTopBarNamesItsControlsWhateverItIsWearing()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+
+        for (int level = 0; level <= 6; ++level) {
+            QCOMPARE(f.levelAt(f.widthForLevel(level)), level);
+            QCOMPARE(barNames(bar), kBarNames);
+        }
+        bar->setChangesCount(42); // a remeasure changes nothing about them
+        settle();
+        QCOMPARE(barNames(bar), kBarNames);
+
+        // The probes are the bar's own children, outside its layout and its
+        // placement, and showing the bar leaves them behind.
+        QList<QToolButton *> probes;
+        for (QObject *child : bar->children())
+            if (auto *b = qobject_cast<QToolButton *>(child))
+                probes << b;
+        QCOMPARE(probes.size(), 6); // the two chips' and one per sync button
+        for (QToolButton *b : std::as_const(probes))
+            QVERIFY2(!b->isVisible(), qPrintable(b->objectName()));
+        // A probe's text follows the label it stands for and nothing else: a
+        // remeasure that changes no label leaves every one of them as it was,
+        // so the accessibility bridge hears of no name that is not news.
+        const auto probeTexts = [&probes] {
+            QStringList out;
+            for (const QToolButton *b : std::as_const(probes))
+                out << b->text();
+            return out;
+        };
+        const QStringList measured = probeTexts();
+        QVERIFY(!measured.contains(QString()));
+        bar->setChangesCount(7);
+        settle();
+        QCOMPARE(probeTexts(), measured);
+        QCOMPARE(bar->layout()->count(), 2); // the row and the hairline
+
+        // A resize that stays inside one level leaves every live text alone:
+        // no candidate a measurement tried on ever reaches the screen.
+        const auto texts = [bar] {
+            QStringList out;
+            for (const QToolButton *b : QList<const QToolButton *>{bar->repoButton(), bar->branchButton(),
+                                                                   bar->pullButton(), bar->pushButton(),
+                                                                   bar->fetchButton(), bar->mergeButton(),
+                                                                   bar->moreButton()})
+                out << b->text();
+            return out;
+        };
+        const int widest = f.widthForLevel(2);
+        QCOMPARE(f.levelAt(widest), 2);
+        const QStringList atTwo = texts();
+        int narrowest = widest;
+        for (int width = widest - 1; width >= bar->minimumSizeHint().width(); --width) {
+            if (f.levelAt(width) != 2)
+                break;
+            narrowest = width;
+            QCOMPARE(texts(), atTwo);
+        }
+        QVERIFY2(narrowest < widest, "level 2 is one width wide");
+    }
+
+    // --- MainWindow ---------------------------------------------------------
+
+    // One top bar, above everything, in every layout — and the controls the
+    // Mini rail used to double are gone from it.
+    void theWindowPutsOneTopBarAboveTheBody()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+
+        QCOMPARE(f.window->findChildren<TopBar *>().size(), 1);
+        QLayout *root = f.window->centralWidget()->layout();
+        QCOMPARE(root->itemAt(0)->widget(), static_cast<QWidget *>(f.bar()));
+        QVERIFY(f.bar()->isVisible());
+
+        f.window->setPaneLayout(PaneLayout::Mini, false);
+        settle();
+        QVERIFY(f.bar()->isVisible());
+        QVERIFY(f.bar()->layoutButton()->isChecked());
+        // The rail is the miniatures and Refresh; its sync buttons moved out.
+        QVERIFY(f.rail()->findChildren<BadgeButton *>().isEmpty());
+
+        f.window->setDiffPaneVisible(false, false);
+        settle();
+        QVERIFY(f.bar()->isVisible());
+        QCOMPARE(f.window->paneLayout(), PaneLayout::Docked); // hiding the diff leaves Mini
+        QVERIFY(!f.bar()->diffToggle()->isChecked());
+        f.window->setDiffPaneVisible(true, false);
+        settle();
+
+        // The tab counts what the changes list shows, and switches the page.
+        QVERIFY(f.page()->proxy()->rowCount() > 0);
+        QCOMPARE(f.bar()->changesCount(), f.page()->proxy()->rowCount());
+        QTest::mouseClick(f.bar()->historyTab(), Qt::LeftButton);
+        settle();
+        QCOMPARE(f.window->mode(), MainWindow::HistoryMode);
+        QVERIFY(!f.page()->isVisible());
+        QTest::mouseClick(f.bar()->changesTab(), Qt::LeftButton);
+        settle();
+        QCOMPARE(f.window->mode(), MainWindow::CommitMode);
+        QVERIFY(f.page()->isVisible());
+    }
+
+    // The count follows the proxy's own notifications, and the update does
+    // nothing else: it writes to no model and leaves the current row alone.
+    void theTabCountFollowsTheChangesProxyWithoutWritingToIt()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        QSortFilterProxyModel *const proxy = f.page()->proxy();
+        QAbstractItemModel *const source = proxy->sourceModel();
+        QSignalSpy dataChanged(source, &QAbstractItemModel::dataChanged);
+        QSignalSpy layoutChanged(source, &QAbstractItemModel::layoutChanged);
+        QSignalSpy modelReset(source, &QAbstractItemModel::modelReset);
+
+        // Two snapshots as close around the callback as the signals allow:
+        // the first is the last thing the structural change does before it,
+        // the second the first thing after it — so the change's own effects
+        // are not laid at the top bar's door.
+        struct Snapshot {
+            int dataChanged = -1, layoutChanged = -1, reset = -1;
+            QString current;
+        };
+        Snapshot before, after;
+        const auto take = [&](Snapshot &s) {
+            s.dataChanged = dataChanged.count();
+            s.layoutChanged = layoutChanged.count();
+            s.reset = modelReset.count();
+            s.current = f.page()->table()->currentIndex().data(ChangesModel::PathRole).toString();
+        };
+        // The eye's filter change reaches the proxy as a layout change; both
+        // connections are made after the window's, so `after` is taken once
+        // the window's own slot has run.
+        QObject::connect(proxy, &QAbstractItemModel::layoutAboutToBeChanged, f.window.get(), [&] { take(before); });
+        QObject::connect(proxy, &QAbstractItemModel::layoutChanged, f.window.get(), [&] { take(after); });
+
+        // The eye hides the unversioned files: rows leave the proxy without
+        // the source model hearing a thing about it.
+        QToolButton *eye = nullptr;
+        for (QToolButton *b : f.page()->findChildren<QToolButton *>(QStringLiteral("iconButton")))
+            if (b->isCheckable())
+                eye = b;
+        QVERIFY(eye);
+        const int listed = proxy->rowCount();
+        f.page()->selectPath(QStringLiteral("a.txt")); // a versioned row: the eye leaves it listed
+        settle();
+        eye->click();
+        settle();
+        QVERIFY(proxy->rowCount() < listed);
+        QCOMPARE(f.bar()->changesCount(), proxy->rowCount());
+        QCOMPARE(after.dataChanged, before.dataChanged);
+        QCOMPARE(after.layoutChanged, before.layoutChanged);
+        QCOMPARE(after.reset, before.reset);
+        QCOMPARE(after.current, before.current);
+        QVERIFY(!after.current.isEmpty());
+
+        // And back: the rows come again, and so does the count.
+        eye->click();
+        settle();
+        QCOMPARE(f.bar()->changesCount(), listed);
+        QCOMPARE(f.bar()->changesCount(), proxy->rowCount());
+
+        // A whole reload of the list is a reset, and the count follows that too.
+        writeFixture(QDir(f.repo->root()).filePath(QStringLiteral("c.txt")), "c\n");
+        f.page()->reload();
+        settle();
+        QCOMPARE(f.bar()->changesCount(), proxy->rowCount());
+        QCOMPARE(f.bar()->changesCount(), listed + 1);
     }
 
     // --- UiHelpers: the kit primitives --------------------------------------
@@ -2414,6 +3021,71 @@ esac
             QCOMPARE(live.toolbarButton->height(), live.textButton->height());
 
             live.host.reset(); // the controls go before the theme they follow
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
+    }
+
+    // The same live change, for the top bar: one bar built at 12 and left
+    // standing has to measure, fold and spell itself out like a bar built
+    // fresh at every size the desktop moves to.
+    void theTopBarFollowsALiveTextSizeChange()
+    {
+        QTemporaryDir dir, home, noPath;
+        QVERIFY(dir.isValid() && home.isValid() && noPath.isValid());
+        const QString toml = QDir(dir.path()).filePath(QStringLiteral("shell.toml"));
+        QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            ScopedEnv emptyPath("PATH", noPath.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+
+            // TopBar::applyTheme() on every change is what MainWindow does.
+            BarFixture live = topBar();
+            QObject::connect(&theme, &OmarchyTheme::changed, live.bar, [bar = live.bar] { bar->applyTheme(); });
+            QVERIFY(QTest::qWaitForWindowExposed(live.host.get()));
+            settle();
+
+            const auto matchesAFreshBar = [&live] {
+                BarFixture fresh = topBar();
+                QVERIFY(QTest::qWaitForWindowExposed(fresh.host.get()));
+                settle();
+                QCOMPARE(barMetrics(live.bar), barMetrics(fresh.bar));
+                // ...and both fold at the same width, wherever that is.
+                for (const int width : {760, 430})
+                    QCOMPARE(live.levelAt(width), fresh.levelAt(width));
+                // The icon form is the design's square at whatever text size
+                // this is, and the names never follow the folding at all.
+                QCOMPARE(live.levelAt(live.widthForLevel(2)), 2);
+                for (QToolButton *b : {live.bar->pullButton(), live.bar->pushButton(), live.bar->moreButton()})
+                    QCOMPARE(live.rectOf(b).width(), iconFormWidth());
+                QCOMPARE(barNames(live.bar), kBarNames);
+                QCOMPARE(barNames(fresh.bar), kBarNames);
+                live.levelAt(live.bar->sizeHint().width());
+            };
+
+            const QStringList atTwelve = barMetrics(live.bar);
+            matchesAFreshBar();
+
+            // The desktop's text size goes up under the live bar.
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 16\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 16, 10000);
+            settle();
+            matchesAFreshBar();
+            QVERIFY(barMetrics(live.bar) != atTwelve); // the measurements did move
+
+            // ...and back down to where it started.
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 12, 10000);
+            settle();
+            matchesAFreshBar();
+            QCOMPARE(barMetrics(live.bar), atTwelve);
+
+            live.host.reset(); // the bar goes before the theme it follows
         }
         g_theme.reset(new OmarchyTheme);
         g_theme->apply(*qApp);
