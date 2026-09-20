@@ -36,7 +36,7 @@ Footer::Footer(QWidget *parent)
     m_statusTimer->setSingleShot(true);
     connect(m_statusTimer, &QTimer::timeout, this, [this] { m_statusLabel->setText(m_idleText); });
     footer->addWidget(m_statusLabel, 1);
-    m_keybindingsButton = smallButton(kInfo, tr("i"), tr("Keybindings (Ctrl+K)"));
+    m_keybindingsButton = toolButton(icon(kInfo, tr("i")).trimmed(), tr("Keybindings (Ctrl+K)"));
     m_keybindingsButton->setObjectName(QStringLiteral("keybindingsButton"));
     m_keybindingsButton->setAccessibleName(tr("Keybindings"));
     footer->addWidget(m_keybindingsButton);

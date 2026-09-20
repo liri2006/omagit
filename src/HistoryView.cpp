@@ -216,8 +216,7 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_allRefs = toolButton(icon(kBranch) + tr("All branches"), tr("Show the commits of every branch and tag, not just the current branch"));
     m_allRefs->setCheckable(true);
     filterRow->addWidget(m_allRefs);
-    auto *refreshButton = toolButton(icon(kRefresh, tr("R")).trimmed(), tr("Re-read the repository (F5)"));
-    refreshButton->setObjectName(QStringLiteral("smallButton"));
+    auto *refreshButton = iconButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"), IconButtonSize::Toolbar, false);
     connect(refreshButton, &QToolButton::clicked, this, &HistoryView::refreshRequested);
     filterRow->addWidget(refreshButton);
     layout->addLayout(filterRow);

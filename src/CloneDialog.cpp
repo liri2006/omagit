@@ -203,7 +203,8 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     m_count = ui::dimLabel();
     m_count->setTextFormat(Qt::PlainText);
     m_count->setAccessibleName(tr("Repository count"));
-    m_refresh = ui::smallButton(ui::kRefresh, QStringLiteral("↻"), tr("Refresh the list"));
+    m_refresh = ui::iconButton(ui::kRefresh, QStringLiteral("↻"), tr("Refresh the list"),
+                               ui::IconButtonSize::Toolbar, false);
     m_refresh->setAccessibleName(tr("Refresh"));
     accountRow->addWidget(m_account, 1);
     accountRow->addWidget(m_count);

@@ -56,14 +56,15 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     const OmarchyTheme *theme = OmarchyTheme::instance();
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(headerGap()); // a section header row to its content
     layout->addLayout(buildMessageSection());
 
     // The message box and the changes list share the height; where the user
-    // last put the handle between them is remembered.
+    // last put the handle between them is remembered. The handle is all that
+    // stands between the two sections, so it carries the gap between them.
     m_messageSplitter = new QSplitter(Qt::Vertical);
     m_messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
-    m_messageSplitter->setHandleWidth(8);
+    m_messageSplitter->setHandleWidth(sectionGap());
     m_messageSplitter->setChildrenCollapsible(false);
     m_messageSplitter->addWidget(m_message);
     QWidget *const changes = buildChangesSection();
@@ -106,12 +107,11 @@ void CommitPage::setupAgent()
 // corner.
 QLayout *CommitPage::buildMessageSection()
 {
-    auto *messageRow = new QHBoxLayout;
-    messageRow->addWidget(sectionLabel(tr("Message")));
+    auto *messageRow = sectionHeaderRow(sectionLabel(tr("Message")));
     messageRow->addStretch();
-    m_agentButton = smallButton(kCog, tr("⚙"), tr("Which coding agent writes the commit message, with which model and reasoning level"));
+    m_agentButton = iconButton(kCog, tr("⚙"), tr("Which coding agent writes the commit message, with which model and reasoning level"));
     connect(m_agentButton, &QToolButton::clicked, this, &CommitPage::showAgentMenu);
-    messageRow->addWidget(m_agentButton);
+    messageRow->addWidget(m_agentButton, 0, Qt::AlignVCenter);
 
     m_message = new MessageEdit;
     m_message->setPlaceholderText(tr("Commit message"));
@@ -167,17 +167,16 @@ QWidget *CommitPage::buildChangesSection()
     auto *changes = new QWidget;
     auto *changesLayout = new QVBoxLayout(changes);
     changesLayout->setContentsMargins(0, 0, 0, 0);
-    changesLayout->setSpacing(8);
+    changesLayout->setSpacing(headerGap());
+    m_changesLayout = changesLayout;
 
-    auto *changesRow = new QHBoxLayout;
-    changesRow->addWidget(sectionLabel(tr("Changes")));
+    auto *changesRow = sectionHeaderRow(sectionLabel(tr("Changes")));
     changesRow->addStretch();
     m_summaryLabel = dimLabel();
-    changesRow->addWidget(m_summaryLabel);
-    changesRow->addSpacing(4);
-    auto *refreshButton = smallButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
+    changesRow->addWidget(m_summaryLabel, 0, Qt::AlignVCenter);
+    auto *refreshButton = iconButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
     connect(refreshButton, &QToolButton::clicked, this, &CommitPage::refreshRequested);
-    changesRow->addWidget(refreshButton);
+    changesRow->addWidget(refreshButton, 0, Qt::AlignVCenter);
     changesLayout->addLayout(changesRow);
 
     m_model = new ChangesModel(this);
@@ -286,6 +285,11 @@ void CommitPage::applyTheme()
     m_message->setMinimumHeight(theme->fontBase() * 3);
     m_message->applyTheme();
     m_tableSetup->applyTheme();
+    // The gaps of the section grid are in scaled pixels, so a new text size
+    // has to lay them out again.
+    layout()->setSpacing(headerGap());
+    m_changesLayout->setSpacing(headerGap());
+    m_messageSplitter->setHandleWidth(sectionGap());
 }
 
 FileChange CommitPage::currentChange(bool *ok) const

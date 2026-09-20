@@ -1,5 +1,6 @@
 #include "KeybindingsPanel.h"
 #include "OmarchyTheme.h"
+#include "UiHelpers.h"
 
 #include <QAbstractListModel>
 #include <QEvent>
@@ -18,14 +19,9 @@
 
 #include <algorithm>
 
-namespace {
+using ui::space;
 
-// The shell's spacing scale: its pixel values are meant for a 12 px base
-// font and grow with it (Style.space() in omarchy-shell).
-int space(int px)
-{
-    return qMax(1, qRound(px * OmarchyTheme::instance()->fontBase() / 12.0));
-}
+namespace {
 
 struct Binding {
     QString keys;

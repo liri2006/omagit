@@ -7,15 +7,49 @@
 #include <QDir>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
 #include <QTableView>
+#include <QVBoxLayout>
 #include <QWidgetAction>
 
 namespace ui {
 namespace {
+
+// Runs `apply` now and once more on every theme change: whatever was measured
+// in space() pixels has to follow a live text-size change.
+void onThemeScale(QObject *owner, const std::function<void()> &apply)
+{
+    apply();
+    QObject::connect(OmarchyTheme::instance(), &OmarchyTheme::changed, owner, apply);
+}
+
+// The square of iconButton(), which re-fits itself with the base font.
+class IconButton : public QToolButton
+{
+public:
+    // An inline one is a fixed square. A toolbar one is as wide, but takes the
+    // height of the row: the fields and buttons beside it are as tall as their
+    // text and padding make them, which is not exactly the design's 28 px.
+    void fit(IconButtonSize size)
+    {
+        const int px = int(size);
+        if (size == IconButtonSize::Toolbar)
+            setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Minimum);
+        onThemeScale(this, [this, px, size] {
+            if (size == IconButtonSize::Toolbar) {
+                setFixedWidth(space(px));
+                setMinimumHeight(space(px));
+            } else {
+                setFixedSize(space(px), space(px));
+            }
+        });
+    }
+};
 
 // A separator that re-colours itself on a theme change: every section of the
 // window holds one or more, and none of them wants its own applyTheme().
@@ -64,6 +98,15 @@ private:
 };
 
 } // namespace
+
+int space(int px)
+{
+    return qMax(1, qRound(px * OmarchyTheme::instance()->fontBase() / 12.0));
+}
+
+int headerRowHeight() { return space(24); }
+int headerGap() { return space(6); }
+int sectionGap() { return space(16); }
 
 QString icon(uint cp, const QString &fallback)
 {
@@ -124,11 +167,85 @@ QLabel *dimLabel(const QString &text)
     return l;
 }
 
-QToolButton *smallButton(uint glyph, const QString &fallback, const QString &tip)
+QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip, IconButtonSize size, bool ghost)
 {
-    auto *b = toolButton(icon(glyph, fallback).trimmed(), tip);
-    b->setObjectName(QStringLiteral("smallButton"));
+    auto *b = toolButton<IconButton>(icon(glyph, fallback).trimmed(), tip);
+    b->fit(size);
+    b->setObjectName(QStringLiteral("iconButton"));
+    b->setProperty("ghost", ghost); // the stylesheet tells the two apart by it
     return b;
+}
+
+QLineEdit *promptField(const QString &placeholder)
+{
+    auto *field = new QLineEdit;
+    field->setObjectName(QStringLiteral("promptField"));
+    field->setPlaceholderText(placeholder);
+    field->setFrame(false);
+    onThemeScale(field, [field] {
+        field->setFixedHeight(space(28));
+        // The prompt reads like a menu entry waiting to be typed over, so its
+        // placeholder is as dim as the magnifier beside it.
+        QPalette pal = field->palette();
+        pal.setColor(QPalette::PlaceholderText, OmarchyTheme::instance()->mutedText());
+        field->setPalette(pal);
+    });
+    return field;
+}
+
+QWidget *promptBox(QLineEdit *field)
+{
+    auto *box = new QWidget;
+    auto *rows = new QVBoxLayout(box);
+    rows->setContentsMargins(0, 0, 0, 0);
+    rows->setSpacing(0);
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    // The magnifier stands where a menu entry's text starts, and the typed
+    // text 22 px after it, the way the design puts an entry's icon and label.
+    QLabel *magnifier = nullptr;
+    const QString glyph = icon(kMagnify).trimmed();
+    if (!glyph.isEmpty()) {
+        magnifier = new QLabel(glyph);
+        magnifier->setObjectName(QStringLiteral("promptIcon"));
+        magnifier->setAlignment(Qt::AlignCenter);
+        row->addWidget(magnifier);
+    }
+    row->addWidget(field, 1);
+    rows->addLayout(row);
+
+    auto *hairRow = new QHBoxLayout;
+    hairRow->addWidget(hairline());
+    rows->addLayout(hairRow);
+
+    onThemeScale(box, [row, hairRow, magnifier] {
+        row->setContentsMargins(space(14), 0, space(14), space(3));
+        row->setSpacing(space(8));
+        if (magnifier)
+            magnifier->setFixedWidth(space(14));
+        // Inset like the menu's own separators, and the same 2 px of air
+        // under it before the first entry.
+        hairRow->setContentsMargins(space(4), 0, space(4), space(2));
+    });
+    return box;
+}
+
+QHBoxLayout *sectionHeaderRow(QLabel *label)
+{
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    // A strut of no width holds the row at the design's 24 px, so the label
+    // and the icon buttons the caller adds share one line.
+    auto *strut = new QSpacerItem(0, headerRowHeight(), QSizePolicy::Fixed, QSizePolicy::Fixed);
+    row->addItem(strut);
+    row->addWidget(label, 0, Qt::AlignVCenter);
+    onThemeScale(row, [row, strut] {
+        row->setSpacing(headerGap());
+        strut->changeSize(0, headerRowHeight(), QSizePolicy::Fixed, QSizePolicy::Fixed);
+        row->invalidate();
+    });
+    return row;
 }
 
 QToolButton *dropdownButton(const QString &objectName)

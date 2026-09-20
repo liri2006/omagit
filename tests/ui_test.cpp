@@ -4,6 +4,7 @@
 // changes model's check marks, the toolbar's overflow, the keybindings filter,
 // the theme's colors.toml parsing and the merge verdict's wording — and, with
 // git itself but no network, the way a fetch signs in.
+#include "../src/BranchMenu.h"
 #include "../src/ChangesModel.h"
 #include "../src/CommitPage.h"
 #include "../src/CloneDialog.h"
@@ -38,6 +39,7 @@
 #include <QSettings>
 #include <QSignalSpy>
 #include <QSplitter>
+#include <QSplitterHandle>
 #include <QStackedWidget>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -776,6 +778,98 @@ esac
         QVERIFY(separator->isVisible());
     }
 
+    // --- UiHelpers: the kit primitives --------------------------------------
+
+    // Both sizes are squares of scaled pixels, and the stylesheet can tell a
+    // ghost one from a button with chrome by its own property.
+    void iconButtonsAreSquaresOfTheDesignsSizes()
+    {
+        std::unique_ptr<QToolButton> inline_(ui::iconButton(ui::kCog, QStringLiteral("⚙"), QStringLiteral("Agent")));
+        QCOMPARE(inline_->objectName(), QString("iconButton"));
+        QCOMPARE(inline_->property("ghost").toBool(), true);
+        QCOMPARE(inline_->size(), QSize(ui::space(24), ui::space(24)));
+        QCOMPARE(inline_->minimumSize(), inline_->maximumSize()); // fixed, so the glyph stays centred
+
+        std::unique_ptr<QToolButton> toolbar(ui::iconButton(ui::kRefresh, QStringLiteral("R"), QStringLiteral("Refresh"),
+                                                            ui::IconButtonSize::Toolbar, false));
+        // Toolbar ones take the height of their row, never less than the design's.
+        QCOMPARE(toolbar->minimumWidth(), ui::space(28));
+        QCOMPARE(toolbar->maximumWidth(), ui::space(28));
+        QCOMPARE(toolbar->minimumHeight(), ui::space(28));
+        QVERIFY(toolbar->maximumHeight() > ui::space(28));
+        QCOMPARE(toolbar->property("ghost").toBool(), false);
+    }
+
+    // The popup prompt carries no box of its own — the popup's accent frame
+    // is the focus cue — and its magnifier is a widget, not a prefix of the
+    // placeholder, so it stays while something is typed.
+    void promptFieldIsBorderlessAndKeepsItsMagnifier()
+    {
+        QLineEdit *field = ui::promptField(QStringLiteral("Search branches…"));
+        std::unique_ptr<QWidget> box(ui::promptBox(field));
+        QCOMPARE(field->objectName(), QString("promptField"));
+        QCOMPARE(field->placeholderText(), QString("Search branches…"));
+        QVERIFY(!field->hasFrame());
+        QCOMPARE(field->height(), ui::space(28));
+        QCOMPARE(box->findChild<QLineEdit *>(QStringLiteral("promptField")), field);
+        // The magnifier, if the font has one...
+        if (!ui::icon(ui::kMagnify).isEmpty())
+            QVERIFY(box->findChild<QLabel *>(QStringLiteral("promptIcon")));
+        // ...and the hairline under the row, which is part of the box so the
+        // filtering below it can never take it away.
+        QWidget *hair = nullptr;
+        for (QWidget *child : box->findChildren<QWidget *>())
+            if (child != field && !qobject_cast<QLabel *>(child))
+                hair = child;
+        QVERIFY(hair);
+        QCOMPARE(hair->height(), 1);
+    }
+
+    // Typing in the prompt narrows the entries and leaves the headers of the
+    // sections that still have one.
+    void branchMenuFiltersThroughThePromptField()
+    {
+        BranchMenu menu;
+        BranchList branches;
+        branches.local = {QStringLiteral("main"), QStringLiteral("feature/tiling")};
+        branches.remote = {QStringLiteral("origin/main")};
+        menu.setBranches(branches, QStringLiteral("main"), true, BranchMenu::TipFunction());
+
+        auto *field = menu.findChild<QLineEdit *>(QStringLiteral("promptField"));
+        QVERIFY(field);
+        const auto shown = [&menu](const QString &name) {
+            for (QAction *a : menu.actions())
+                if (a->text() == name)
+                    return a->isVisible();
+            return false;
+        };
+        field->setText(QStringLiteral("tiling"));
+        QVERIFY(shown(QStringLiteral("feature/tiling")));
+        QVERIFY(!shown(QStringLiteral("main")));
+        QVERIFY(!shown(QStringLiteral("origin/main")));
+        QVERIFY(!shown(QStringLiteral("No matching branch")));
+        // The line between the sections goes with them: alone under the
+        // prompt's own hairline it would draw that line twice.
+        const auto separatorShown = [&menu] {
+            for (QAction *a : menu.actions())
+                if (a->isSeparator())
+                    return a->isVisible();
+            return false;
+        };
+        QVERIFY(!separatorShown());
+        field->setText(QStringLiteral("origin"));
+        QVERIFY(shown(QStringLiteral("origin/main")));
+        QVERIFY(!separatorShown());
+        field->setText(QStringLiteral("main"));
+        QVERIFY(separatorShown());
+        field->setText(QStringLiteral("nothing here"));
+        QVERIFY(shown(QStringLiteral("No matching branch")));
+        QVERIFY(!separatorShown());
+        field->clear();
+        QVERIFY(shown(QStringLiteral("main")) && shown(QStringLiteral("feature/tiling")));
+        QVERIFY(separatorShown());
+    }
+
     // --- KeybindingsPanel ---------------------------------------------------
 
     void keybindingsFilterMatchesTheSpelledOutKeys()
@@ -912,6 +1006,16 @@ esac
         auto *message = page.findChild<MessageEdit *>();
         QVERIFY(splitter);
         QVERIFY(message);
+        // The section grid: the handle between the message and the changes is
+        // the 16 px the design puts between two sections (the stylesheet's
+        // 8 px handle must not win), and the header rows carry 24 px squares.
+        QCOMPARE(splitter->handleWidth(), ui::sectionGap());
+        QCOMPARE(splitter->handle(1)->height(), ui::sectionGap());
+        const QList<QToolButton *> squares = page.findChildren<QToolButton *>(QStringLiteral("iconButton"));
+        QCOMPARE(squares.size(), 2); // the agent cog and Refresh
+        for (const QToolButton *square : squares)
+            QCOMPARE(square->size(), QSize(ui::space(24), ui::space(24)));
+
         const auto pane = [splitter] { return splitter->sizes().at(0); };
         const int initial = pane();
         const int total = splitter->sizes().at(0) + splitter->sizes().at(1);
@@ -1698,7 +1802,36 @@ esac
     }
 
     // --- OmarchyTheme -------------------------------------------------------
-    // Last: it points OmarchyTheme::instance() at a theme of its own.
+    // Last: the two of them point OmarchyTheme::instance() at a theme of
+    // their own, and put the desktop's back when they are done.
+
+    // Every measurement of the kit is in 12 px-base pixels and grows with the
+    // desktop's text size.
+    void spacingFollowsTheBaseFontSize()
+    {
+        QCOMPARE(ui::space(12), OmarchyTheme::instance()->fontBase());
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 18\n"));
+        qputenv("OMAGIT_THEME_DIR", dir.path().toUtf8());
+        {
+            // The scratch home keeps the desktop's own shell.toml, which would
+            // be read after the theme's, out of the way.
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 18);
+            QCOMPARE(ui::space(12), 18);
+            QCOMPARE(ui::space(24), 36);
+            QCOMPARE(ui::headerRowHeight(), 36);
+            QCOMPARE(ui::headerGap(), 9);
+            QCOMPARE(ui::sectionGap(), 24);
+            QCOMPARE(ui::space(1), 2);
+            QCOMPARE(ui::space(0), 1); // never nothing at all
+        }
+        qunsetenv("OMAGIT_THEME_DIR");
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+    }
 
     void themeReadsColorsTomlAndFallsBack()
     {

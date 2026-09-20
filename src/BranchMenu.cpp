@@ -2,7 +2,6 @@
 #include "UiHelpers.h"
 
 #include <QAction>
-#include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QTimer>
@@ -27,7 +26,8 @@ public:
         m_sections.clear();
         m_noMatch = nullptr;
     }
-    void addHeader(QAction *header) { m_sections.append(Section{header, {}}); }
+    // `separator` is the line the menu draws above the section, if it has one.
+    void addHeader(QAction *header, QAction *separator = nullptr) { m_sections.append(Section{header, separator, {}}); }
     void addEntry(QAction *action, const QString &name)
     {
         m_entries.append(Entry{action, name});
@@ -41,9 +41,16 @@ public:
         const QString text = m_edit->text().trimmed();
         for (const Entry &e : std::as_const(m_entries))
             e.action->setVisible(e.name.contains(text, Qt::CaseInsensitive));
+        // A section's separator only has something to separate while a section
+        // above it is showing too; left alone it would double the prompt's line.
+        bool above = false;
         for (const Section &s : std::as_const(m_sections)) {
             const bool any = std::any_of(s.entries.cbegin(), s.entries.cend(), [](QAction *a) { return a->isVisible(); });
-            setVisible(s.header, any || text.isEmpty());
+            const bool shown = any || text.isEmpty();
+            setVisible(s.header, shown);
+            if (s.separator)
+                s.separator->setVisible(shown && above);
+            above = above || shown;
         }
         const QList<QAction *> shown = visible();
         if (m_noMatch)
@@ -92,6 +99,7 @@ private:
     };
     struct Section {
         QAction *header;
+        QAction *separator;
         QList<QAction *> entries;
     };
     // QMenu leaves the widget of a hidden QWidgetAction where it was, so it is hidden by hand.
@@ -121,15 +129,12 @@ BranchMenu::BranchMenu(QWidget *parent)
     : TickMenu(parent)
 {
     setToolTipsVisible(true);
-    m_search = new QLineEdit;
-    m_search->setPlaceholderText(ui::icon(ui::kMagnify) + tr("Search branches"));
+    m_search = ui::promptField(tr("Search branches…"));
     m_search->setToolTip(tr("Type to narrow the list; Up/Down and Return pick a branch"));
-    auto *box = new QWidget;
-    auto *boxLayout = new QHBoxLayout(box);
-    boxLayout->setContentsMargins(8, 4, 8, 6);
-    boxLayout->addWidget(m_search);
+    // The hairline under the prompt is part of its box, so it stays put while
+    // the filter hides and shows the entries below it.
     auto *searchAction = new QWidgetAction(this);
-    searchAction->setDefaultWidget(box);
+    searchAction->setDefaultWidget(ui::promptBox(m_search));
     addAction(searchAction);
     m_filter = new Filter(this, m_search);
 }
@@ -156,8 +161,8 @@ void BranchMenu::setBranches(const BranchList &branches, const QString &checked,
     for (const QString &name : branches.local)
         add(name, false);
     if (remote && !branches.remote.isEmpty()) {
-        addSeparator();
-        m_filter->addHeader(ui::addMenuHeader(this, tr("Remote")));
+        QAction *const separator = addSeparator();
+        m_filter->addHeader(ui::addMenuHeader(this, tr("Remote")), separator);
         for (const QString &name : branches.remote)
             add(name, true);
     }

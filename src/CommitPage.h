@@ -123,6 +123,7 @@ private:
     ChangesTableSetup *m_tableSetup;
     MessageEdit *m_message;      // the commit message, with the generate button in its corner
     QSplitter *m_messageSplitter; // the message over the changes list, the heights it grows in
+    QLayout *m_changesLayout;     // CHANGES: its header row over the list, a scaled gap apart
     bool m_messageSizedByHand = false; // the user dragged the handle this session
     int m_messageRestHeight = -1;      // the pane's height before any text grew it
     QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning

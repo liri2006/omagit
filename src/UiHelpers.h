@@ -9,7 +9,9 @@
 class QAction;
 class QDateTime;
 class QFont;
+class QHBoxLayout;
 class QLabel;
+class QLineEdit;
 class QMenu;
 class QTableView;
 class QWidget;
@@ -17,6 +19,16 @@ class QWidget;
 // The small widget helpers the window's sections share: the Nerd Font glyphs
 // of the shell, the label factories and the borderless buttons of its chrome.
 namespace ui {
+
+// The shell's spacing scale: the design's pixel values are meant for a 12 px
+// base font and grow with it (Style.space() in omarchy-shell).
+int space(int px);
+
+// The design's grid for a section: a 24 px header row, its content 6 px below
+// it, and 16 px to the next section.
+int headerRowHeight();
+int headerGap();
+int sectionGap();
 
 // Nerd Font (Material Design) glyphs used by the shell; empty if the font lacks them.
 QString icon(uint cp, const QString &fallback = QString());
@@ -61,8 +73,25 @@ Button *toolButton(const QString &text, const QString &tip = QString())
     return b;
 }
 
-// Icon-only button with less padding, for a row of labels.
-QToolButton *smallButton(uint glyph, const QString &fallback, const QString &tip);
+// Icon-only buttons: Inline is a 24 px square for a section header row, Toolbar
+// is 28 px wide and as tall as the fields and buttons of the row it sits in.
+enum class IconButtonSize { Inline = 24, Toolbar = 28 };
+
+// A centred glyph in a square that follows the text size. Ghost ones carry no
+// chrome until the pointer is on them; the others look like any other button.
+QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip,
+                        IconButtonSize size = IconButtonSize::Inline, bool ghost = true);
+
+// The search prompt of a popup, in the Omarchy menu look: no box of its own —
+// the popup's accent frame is the focus cue — with a magnifier that stays put
+// while typing. promptBox() is the row it lives in, hairline included, ready
+// for a QWidgetAction.
+QLineEdit *promptField(const QString &placeholder);
+QWidget *promptBox(QLineEdit *field);
+
+// A section's header row: the label, and whatever the caller adds after a
+// stretch, on one 24 px line.
+QHBoxLayout *sectionHeaderRow(QLabel *label);
 
 // A borderless button that reads like a label and drops a menu down on click.
 QToolButton *dropdownButton(const QString &objectName);

@@ -571,6 +571,8 @@ QString OmarchyTheme::buildStyleSheet() const
         {QStringLiteral("family"), m_mono.family()},
         {QStringLiteral("base"), QString::number(m_fontBase)},
         {QStringLiteral("heading"), QString::number(headingFont().pixelSize())},
+        // The design's 14 px glyph, on the same scale as ui::space().
+        {QStringLiteral("icon"), QString::number(qMax(1, qRound(m_fontBase * 14 / 12.0)))},
         {QStringLiteral("big"), QString::number(qRound(m_fontBase * 1.5))},
     };
 
@@ -632,7 +634,15 @@ QPushButton:default:hover { background: %fill18%; }
 QPushButton:disabled, QToolButton:disabled { color: %disabled%; background: transparent; border-color: %hair20%; }
 QPushButton:focus, QToolButton:focus { border-color: %bd25%; background: %fill8%; }
 QToolButton::menu-indicator { image: none; width: 0; height: 0; }
-QToolButton#smallButton { padding: 1px 5px; }
+/* The icon squares of the chrome: the glyph is centred by the fixed size
+   ui::iconButton() gives them, so all a rule has to drop is the padding.
+   Ghost ones carry no chrome of their own until the pointer is on them. */
+QToolButton#iconButton { padding: 0; }
+QToolButton#iconButton[ghost="true"] { background: transparent; border: 1px solid transparent; }
+QToolButton#iconButton[ghost="true"]:hover { background: %fill8%; border-color: %bd25%; }
+QToolButton#iconButton[ghost="true"]:pressed { background: %fill22%; border-color: %bd25%; }
+QToolButton#iconButton[ghost="true"]:checked { background: %fill18%; color: %acc%; border-color: %fill18%; }
+QToolButton#iconButton[ghost="true"]:disabled { background: transparent; border-color: transparent; }
 QToolButton#cornerButton { background: transparent; border: 1px solid transparent; padding: 1px 3px; color: %dim%; }
 QToolButton#cornerButton:hover { background: %fill8%; border-color: %bd25%; color: %fg%; }
 QToolButton#cornerButton:pressed { background: %fill22%; }
@@ -681,7 +691,13 @@ QMenu::indicator:checked { background: %acc%; border-color: %acc%; image: url(:/
 TickMenu::item { padding-right: %tickpad%px; }
 TickMenu::item:checked { color: %acc%; }
 TickMenu::indicator { width: 0; height: 0; margin: 0; border: none; background: none; image: none; }
-TickMenu QLineEdit { margin: 0; }
+/* The search prompt of a popup wears the menu's own look: no box, because the
+   popup's accent frame already says where the keyboard is, and a dim
+   magnifier in front of the text. */
+QLineEdit#promptField, QLineEdit#promptField:hover, QLineEdit#promptField:focus {
+    background: transparent; border: none; padding: 0;
+}
+QLabel#promptIcon { color: %dim%; font-size: %icon%px; }
 QDialog#keybindingsPanel { background: %bg%; border: 2px solid %acc%; }
 QLineEdit#keybindingsSearch, QLineEdit#keybindingsSearch:hover, QLineEdit#keybindingsSearch:focus {
     background: transparent; border: none; padding: 0; font-size: %heading%px; font-weight: 500;
