@@ -40,6 +40,12 @@ constexpr uint kCodeTags = 0xF0174;
 constexpr uint kFetch = 0xF0162, kPull = 0xF0120, kPush = 0xF011D, kDockRight = 0xF10AB, kMerge = 0xF062D;
 // md-chevron_down, md-folder, md-folder_open
 constexpr uint kChevron = 0xF0140, kFolder = 0xF024B, kFolderOpen = 0xF0770, kMagnify = 0xF0349;
+// md-chevron_right and md-folder_outline: the collapsed branch and the folder
+// of a directory row in the tree presentation of the changes list.
+constexpr uint kChevronRight = 0xF0142, kFolderOutline = 0xF0256;
+// md-format_list_bulleted, md-file_tree, md-table: the three files-view
+// buttons at the right of the CHANGES row.
+constexpr uint kFormatListBulleted = 0xF0279, kFileTree = 0xF0645, kTable = 0xF04EB;
 // md-creation (the sparkle of "generate"), md-cog, md-robot
 constexpr uint kSparkle = 0xF0674, kCog = 0xF0493, kRobot = 0xF06A9;
 // md-information: the keybindings button in the footer.

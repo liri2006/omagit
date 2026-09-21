@@ -1,4 +1,5 @@
 #include "AskPass.h"
+#include "CommitPage.h"
 #include "GitRepo.h"
 #include "MainWindow.h"
 #include "CloneDialog.h"
@@ -101,6 +102,8 @@ int main(int argc, char *argv[])
     parser.addOption(screenshotSizeOpt);
     QCommandLineOption screenshotKeysOpt(QStringLiteral("screenshot-keys"), QStringLiteral("Comma-separated keys (m,a,Down,Return) sent to the focused widget once the --screenshot-menu dropdown is open, or to the window; @objectName[:vbar] or @ClassName[:vbar] focuses that (first visible) widget or its vertical scrollbar first (for testing)."), QStringLiteral("keys"));
     parser.addOption(screenshotKeysOpt);
+    QCommandLineOption filesViewOpt(QStringLiteral("files-view"), QStringLiteral("How the commit dialog lists its files for this run: compact, tree or table (for testing; the choice is not remembered)."), QStringLiteral("compact|tree|table"));
+    parser.addOption(filesViewOpt);
     parser.process(app);
 
     const QStringList args = parser.positionalArguments();
@@ -122,6 +125,17 @@ int main(int argc, char *argv[])
         if (!okWidth || !okHeight || width <= 0 || height <= 0)
             return usageError(QStringLiteral("--screenshot-size takes two positive numbers, as in 945x612 — not \"%1\".").arg(value));
         screenshotSize = QSize(width, height);
+    }
+
+    // Likewise checked before a repository is opened: a files view nobody
+    // recognises is a usage error, not a quiet fall back to the table.
+    QString filesView;
+    if (parser.isSet(filesViewOpt)) {
+        filesView = parser.value(filesViewOpt);
+        bool known = false;
+        CommitPage::viewFromKey(filesView, &known);
+        if (!known)
+            return usageError(QStringLiteral("--files-view takes compact, tree or table — not \"%1\".").arg(filesView));
     }
 
     OmarchyTheme theme;
@@ -164,6 +178,10 @@ int main(int argc, char *argv[])
         window.setMode(MainWindow::HistoryMode);
     if (parser.isSet(noFetchOpt))
         window.setAutoFetchEnabled(false);
+    // Whatever page the flags above asked for: the override only changes how
+    // the commit dialog lists its files, never which page is on.
+    if (!filesView.isEmpty())
+        window.setFilesView(filesView);
     // After the restored geometry and the layout flags, before the first show.
     if (screenshotSize.isValid())
         window.resize(screenshotSize);

@@ -2,6 +2,7 @@
 #include "OmarchyTheme.h"
 #include "UiHelpers.h"
 
+#include <QAbstractItemView>
 #include <QColor>
 #include <QLocale>
 #include <QFont>
@@ -10,6 +11,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
+#include <QStyleOptionHeader>
 #include <QStyledItemDelegate>
 #include <QTableView>
 
@@ -186,12 +188,14 @@ void ChangesModel::setUnversionedChecked(bool checked)
     setChecked([](const FileChange &c) { return c.isUntracked(); }, checked);
 }
 
-void ChangesModel::setPathsChecked(const QStringList &paths, bool checked)
+void ChangesModel::setPathsChecked(const QStringList &paths, bool checked, PathMatch match)
 {
     const QSet<QString> set(paths.begin(), paths.end());
     setChecked(
-        [&set](const FileChange &c) {
-            return set.contains(c.path) || (!c.oldPath.isEmpty() && set.contains(c.oldPath));
+        [&set, match](const FileChange &c) {
+            if (set.contains(c.path))
+                return true;
+            return match == MatchRenameSources && !c.oldPath.isEmpty() && set.contains(c.oldPath);
         },
         checked);
 }
@@ -210,6 +214,20 @@ int ChangesModel::statusRank(FileChange::Kind kind)
     case FileChange::Untracked: return 8;
     }
     return 7;
+}
+
+QChar ChangesModel::statusLetter(FileChange::Kind kind)
+{
+    switch (kind) {
+    case FileChange::Modified: return QLatin1Char('M');
+    case FileChange::Added: return QLatin1Char('A');
+    case FileChange::Deleted: return QLatin1Char('D');
+    case FileChange::Renamed: return QLatin1Char('R');
+    case FileChange::Copied: return QLatin1Char('C');
+    case FileChange::TypeChanged: return QLatin1Char('T');
+    case FileChange::Unmerged: return QLatin1Char('!');
+    default: return QLatin1Char('?');
+    }
 }
 
 int ChangesModel::rowCount(const QModelIndex &parent) const
@@ -360,12 +378,34 @@ Qt::ItemFlags ChangesModel::flags(const QModelIndex &index) const
 
 // ---------------------------------------------------------------------------
 
-ChangesHeader::ChangesHeader(QTableView *table)
-    : QHeaderView(Qt::Horizontal, table), m_table(table)
+ChangesHeader::ChangesHeader(QAbstractItemView *view)
+    : QHeaderView(Qt::Horizontal, view), m_view(view)
 {
-    // A table only makes the header it builds itself clickable, and a column
+    // A view only makes the header it builds itself clickable, and a column
     // is sorted by clicking its section.
     setSectionsClickable(true);
+}
+
+// Qt fills the style option of a section before it paints it, labels and all:
+// substituting the text there leaves the borders, the fonts and the sort
+// handling exactly as they were, and costs the shared model nothing.
+void ChangesHeader::setSectionText(int section, const QString &text)
+{
+    if (text.isEmpty() ? !m_sectionText.contains(section) : m_sectionText.value(section) == text)
+        return;
+    if (text.isEmpty())
+        m_sectionText.remove(section);
+    else
+        m_sectionText.insert(section, text);
+    updateSection(section);
+}
+
+void ChangesHeader::initStyleOptionForIndex(QStyleOptionHeader *option, int logicalIndex) const
+{
+    QHeaderView::initStyleOptionForIndex(option, logicalIndex);
+    const auto it = m_sectionText.constFind(logicalIndex);
+    if (it != m_sectionText.constEnd())
+        option->text = *it;
 }
 
 QVariant ChangesHeader::checkState() const
@@ -383,10 +423,10 @@ bool ChangesHeader::isCheckSection(const QPoint &pos) const
 QRect ChangesHeader::checkRect(const QRect &section) const
 {
     QStyleOptionViewItem item;
-    item.initFrom(m_table);
+    item.initFrom(m_view);
     item.rect = section;
     item.features |= QStyleOptionViewItem::HasCheckIndicator;
-    return m_table->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &item, m_table);
+    return m_view->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &item, m_view);
 }
 
 QRect ChangesHeader::checkSectionRect() const
@@ -402,7 +442,7 @@ void ChangesHeader::paintSection(QPainter *painter, const QRect &rect, int logic
     if (!state.isValid())
         return;
     QStyleOptionViewItem box;
-    box.initFrom(m_table);
+    box.initFrom(m_view);
     box.features |= QStyleOptionViewItem::HasCheckIndicator;
     box.rect = checkRect(rect);
     box.state = QStyle::State_Enabled
@@ -411,7 +451,7 @@ void ChangesHeader::paintSection(QPainter *painter, const QRect &rect, int logic
                                                    : QStyle::State_Off);
     if (m_checkHovered)
         box.state |= QStyle::State_MouseOver; // the rows' boxes light up under the pointer too
-    m_table->style()->drawPrimitive(QStyle::PE_IndicatorItemViewItemCheck, &box, painter, m_table);
+    m_view->style()->drawPrimitive(QStyle::PE_IndicatorItemViewItemCheck, &box, painter, m_view);
 }
 
 void ChangesHeader::toggleAll()
@@ -517,7 +557,7 @@ ChangesTableSetup::ChangesTableSetup(QTableView *table)
     table->setTextElideMode(Qt::ElideMiddle);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->sortByColumn(ChangesModel::Status, Qt::AscendingOrder); // modified first, untracked last
-    ui::onHeaderResize(table, [this] { fitPathColumn(); });
+    ui::onHeaderResize(table, [this] { fitStretchColumn(); });
     applyTheme();
 }
 
@@ -539,14 +579,91 @@ void ChangesTableSetup::applyTheme()
         m_table->horizontalHeader()->setMinimumSectionSize(qMin(kNumberColumn, ui::space(kCheckColumn)));
         m_table->setColumnWidth(ChangesModel::Check, ui::space(kCheckColumn));
     }
+    // A new text size moves the compact widths too, and Name has to be fitted
+    // again around them — without touching the table widths put away for the
+    // return to the full presentation.
+    if (m_compact) {
+        applyCompactWidths();
+        fitStretchColumn();
+    }
     m_table->viewport()->update();
 }
 
-void ChangesTableSetup::fitPathColumn()
+void ChangesTableSetup::fitStretchColumn()
 {
+    const int stretch = m_compact ? int(ChangesModel::Name) : int(ChangesModel::Path);
     int others = 0;
     for (int c = 0; c < ChangesModel::ColumnCount; ++c)
-        if (c != ChangesModel::Path)
+        if (c != stretch && !m_table->isColumnHidden(c))
             others += m_table->columnWidth(c);
-    ui::fitStretchColumn(m_table, ChangesModel::Path, others);
+    ui::fitStretchColumn(m_table, stretch, others);
+}
+
+void ChangesTableSetup::setCompactDelegates(QAbstractItemDelegate *name, QAbstractItemDelegate *status)
+{
+    m_compactName = name;
+    m_compactStatus = status;
+}
+
+void ChangesTableSetup::setCompact(bool on)
+{
+    if (m_compact == on)
+        return;
+    m_compact = on;
+    if (on)
+        enterCompact();
+    else
+        leaveCompact();
+    fitStretchColumn();
+    m_table->viewport()->update();
+}
+
+// The columns the user sized are put away before anything is hidden, so the
+// table comes back exactly as it was left — whatever happened in between,
+// including a text-size change.
+void ChangesTableSetup::enterCompact()
+{
+    QHeaderView *header = m_table->horizontalHeader();
+    m_savedWidths.clear();
+    m_savedModes.clear();
+    for (int c = 0; c < ChangesModel::ColumnCount; ++c) {
+        m_savedWidths << m_table->columnWidth(c);
+        m_savedModes << header->sectionResizeMode(c);
+    }
+    for (const int c : {int(ChangesModel::Path), int(ChangesModel::Extension), int(ChangesModel::Size),
+                        int(ChangesModel::LinesAdded), int(ChangesModel::LinesRemoved)})
+        m_table->setColumnHidden(c, true);
+    header->setSectionResizeMode(ChangesModel::Status, QHeaderView::Fixed);
+    applyCompactWidths();
+    if (m_compactName)
+        m_table->setItemDelegateForColumn(ChangesModel::Name, m_compactName);
+    if (m_compactStatus)
+        m_table->setItemDelegateForColumn(ChangesModel::Status, m_compactStatus);
+    if (auto *changes = qobject_cast<ChangesHeader *>(header))
+        changes->setSectionText(ChangesModel::Status, tr("St"));
+}
+
+void ChangesTableSetup::leaveCompact()
+{
+    QHeaderView *header = m_table->horizontalHeader();
+    if (auto *changes = qobject_cast<ChangesHeader *>(header))
+        changes->setSectionText(ChangesModel::Status, QString());
+    m_table->setItemDelegateForColumn(ChangesModel::Name, nullptr);
+    m_table->setItemDelegateForColumn(ChangesModel::Status, nullptr);
+    for (int c = 0; c < ChangesModel::ColumnCount; ++c) {
+        m_table->setColumnHidden(c, false);
+        if (c < m_savedModes.size())
+            header->setSectionResizeMode(c, m_savedModes.at(c));
+        if (c < m_savedWidths.size())
+            m_table->setColumnWidth(c, m_savedWidths.at(c));
+    }
+    // The checkbox column is the design's, never the user's: it follows the
+    // text size of the moment rather than the width it had before.
+    if (hasChecks())
+        m_table->setColumnWidth(ChangesModel::Check, ui::space(kCheckColumn));
+}
+
+void ChangesTableSetup::applyCompactWidths()
+{
+    m_table->setColumnWidth(ChangesModel::Status, ui::space(kCheckColumn));
 }

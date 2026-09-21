@@ -44,6 +44,9 @@ public:
     void setAmend(bool on);
     // Automatic fetching keeps the Pull count current; off leaves the network alone.
     void setAutoFetchEnabled(bool on);
+    // The --files-view override: the commit page lists its files as `key`
+    // ("compact", "tree" or "table") spells it, for this run only.
+    void setFilesView(const QString &key);
     // Shows the repository containing `path` instead of the current one
     // (false, after a message, if there is none).
     bool openRepository(const QString &path);

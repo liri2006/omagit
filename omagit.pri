@@ -27,6 +27,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/DiffView.cpp \
     $$PWD/src/SyntaxHighlighter.cpp \
     $$PWD/src/ChangesModel.cpp \
+    $$PWD/src/ChangesTreeModel.cpp \
     $$PWD/src/HistoryModel.cpp \
     $$PWD/src/HistoryView.cpp \
     $$PWD/src/MiniRail.cpp \
@@ -52,6 +53,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/DiffView.h \
     $$PWD/src/SyntaxHighlighter.h \
     $$PWD/src/ChangesModel.h \
+    $$PWD/src/ChangesTreeModel.h \
     $$PWD/src/HistoryModel.h \
     $$PWD/src/HistoryView.h \
     $$PWD/src/MiniRail.h \

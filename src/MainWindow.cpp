@@ -499,6 +499,14 @@ void MainWindow::setAutoFetchEnabled(bool on)
     m_sync->setAutoFetchInterval(on ? autoFetchSecondsSetting() : 0);
 }
 
+// --files-view: this run lists the pending files the given way, whatever the
+// settings say, and leaves the saved choice alone. main() has already checked
+// the spelling; anything else would land on the table.
+void MainWindow::setFilesView(const QString &key)
+{
+    m_commitPage->setFilesViewOverride(CommitPage::viewFromKey(key, nullptr));
+}
+
 void MainWindow::changeEvent(QEvent *event)
 {
     QMainWindow::changeEvent(event);

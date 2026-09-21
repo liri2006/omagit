@@ -1,4 +1,5 @@
 #include "CommitPage.h"
+#include "ChangesTreeModel.h"
 #include "DesktopExec.h"
 #include "MessageEdit.h"
 #include "OmarchyTheme.h"
@@ -7,26 +8,35 @@
 #include "UiHelpers.h"
 
 #include <QAction>
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QDir>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QPushButton>
+#include <QScopedValueRollback>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
+#include <QStackedWidget>
+#include <QStyledItemDelegate>
 #include <QTableView>
 #include <QTimer>
 #include <QToolButton>
+#include <QTreeView>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <functional>
 
 using namespace ui;
 
@@ -83,7 +93,9 @@ public:
         paths.reserve(rowCount());
         for (int row = 0, rows = rowCount(); row < rows; ++row)
             paths << index(row, ChangesModel::Check).data(ChangesModel::PathRole).toString();
-        source->setPathsChecked(paths, value.toInt() == Qt::Checked); // exactly the rows on show
+        // Exactly the rows on show: a rename source that happens to spell a
+        // filtered-out file's path is not one of them.
+        source->setPathsChecked(paths, value.toInt() == Qt::Checked, ChangesModel::CurrentPathsOnly);
         return true;
     }
 
@@ -135,6 +147,355 @@ protected:
         QTableView::keyPressEvent(event);
     }
 };
+
+// ---- The tree and compact presentations ------------------------------------
+
+// The design's geometry of a file list, in the pixels of a 12 px font — every
+// one of them goes through space(), so the tree follows the text size like
+// everything else. A level of the tree is 14 px, and the whole of it is
+// painted in the Name column: the checkbox column stays one straight line,
+// however deep a row sits.
+constexpr int kNarrowColumn = 30; // the checkbox and the status pill
+constexpr int kLevel = 14;
+constexpr int kChevronX = 6, kChevronGlyph = 12;
+constexpr int kFolderX = 20, kFolderGlyph = 14;
+constexpr int kDirNameX = 38, kFileNameX = 8;
+constexpr int kNameInset = 10;    // the compact table's Name cell
+constexpr int kSuffixGap = 8, kSuffixText = 11;
+constexpr int kPillSize = 16, kPillText = 10;
+
+// Where a directory's chevron and folder sit in its Name cell, measured from
+// the cell's left edge. Painting and the click that opens the branch share
+// it, so a row can never open somewhere other than where it says it will.
+QRect branchRect(const QRect &cell, int depth)
+{
+    const int left = cell.left() + space(kChevronX + kLevel * depth);
+    const int right = cell.left() + space(kFolderX + kLevel * depth) + space(kFolderGlyph);
+    return QRect(left, cell.top(), right - left, cell.height());
+}
+
+// One Nerd Font glyph, `px` design pixels tall, at the left of `box`.
+void paintGlyph(QPainter *painter, const QRect &box, uint code, const QString &fallback, int px,
+                const QColor &colour)
+{
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    const QString glyph = theme->glyph(code);
+    QFont font = theme->uiFont();
+    font.setPixelSize(space(px));
+    painter->setFont(font);
+    painter->setPen(colour);
+    painter->drawText(box, Qt::AlignLeft | Qt::AlignVCenter, glyph.isEmpty() ? fallback : glyph);
+}
+
+// A name with a dim, smaller note after it: the file count of a folded
+// directory, the folder of a compact row. The name is what the row is about,
+// so it takes the width it needs and the note lives on what is left; both are
+// elided rather than spilling into the column beside them.
+void paintNameWithSuffix(QPainter *painter, const QRect &box, const QString &name, const QFont &nameFont,
+                         const QColor &nameColour, const QString &suffix)
+{
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    const QFontMetrics nameMetrics(nameFont);
+    // Measured, not guessed at: where the name ends is where the note begins.
+    // Text that fits is drawn as it is — asking for it to be elided into
+    // exactly its own width can still cost it a character.
+    const int width = nameMetrics.horizontalAdvance(name);
+    const int room = qMin(width, box.width());
+    painter->setFont(nameFont);
+    painter->setPen(nameColour);
+    painter->drawText(QRect(box.left(), box.top(), room, box.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                      width <= room ? name : nameMetrics.elidedText(name, Qt::ElideMiddle, room));
+    if (suffix.isEmpty())
+        return;
+    const int left = box.left() + room + space(kSuffixGap);
+    const int rest = box.right() + 1 - left;
+    if (rest <= 0)
+        return;
+    QFont small = theme->uiFont();
+    small.setPixelSize(space(kSuffixText));
+    const QFontMetrics smallMetrics(small);
+    const int suffixWidth = smallMetrics.horizontalAdvance(suffix);
+    painter->setFont(small);
+    painter->setPen(theme->mutedText());
+    painter->drawText(QRect(left, box.top(), rest, box.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                      suffixWidth <= rest ? suffix : smallMetrics.elidedText(suffix, Qt::ElideRight, rest));
+}
+
+// The status colour of a row, as the model gives it.
+QColor statusColour(const QModelIndex &index)
+{
+    const QColor colour = index.data(Qt::ForegroundRole).value<QColor>();
+    return colour.isValid() ? colour : OmarchyTheme::instance()->text();
+}
+
+// The kit's status pill: a 16 px square with square corners, its status
+// colour at 18 % for the fill and the status letter in it.
+void paintStatusPill(QPainter *painter, const QRect &cell, const QModelIndex &index)
+{
+    const QVariant kind = index.data(ChangesModel::KindRole);
+    if (!kind.isValid())
+        return; // a directory row has no status of its own
+    const QColor colour = statusColour(index);
+    const int side = space(kPillSize);
+    QRect pill(0, 0, side, side);
+    pill.moveCenter(cell.center());
+    QColor fill = colour;
+    fill.setAlphaF(0.18);
+    painter->fillRect(pill, fill);
+    QFont font = OmarchyTheme::instance()->uiFont();
+    font.setPixelSize(space(kPillText));
+    font.setBold(true);
+    painter->setFont(font);
+    painter->setPen(colour);
+    painter->drawText(pill, Qt::AlignCenter,
+                      QString(ChangesModel::statusLetter(FileChange::Kind(kind.toInt()))));
+}
+
+// Everything a delegate of these two presentations has in common: it paints
+// the cell itself, so the base class is only ever asked for the selection and
+// hover background, and every row is the shared list height.
+class PresentationDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QSize size = QStyledItemDelegate::sizeHint(option, index);
+        size.setHeight(tableRowHeight());
+        return size;
+    }
+
+protected:
+    // The font the row itself asks for — bold for a conflicted file — which
+    // the option the view hands the delegate has not got: only
+    // initStyleOption() resolves Qt::FontRole over it. Everything these
+    // delegates paint and measure by hand goes through this rather than
+    // through option.font.
+    QFont rowFont(const QStyleOptionViewItem &option, const QModelIndex &index) const
+    {
+        QStyleOptionViewItem resolved = option;
+        initStyleOption(&resolved, index); // the override below clears the text only
+        return resolved.font;
+    }
+
+    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->text.clear();
+    }
+};
+
+// The narrow status column of the tree and of the compact table.
+class StatusPillDelegate : public PresentationDelegate
+{
+public:
+    using PresentationDelegate::PresentationDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);
+        painter->save();
+        paintStatusPill(painter, option.rect, index);
+        painter->restore();
+    }
+};
+
+// The checkbox column: the themed 14 px indicator the table has always had,
+// and nothing else — no text, and no depth, however deep the row sits.
+class CheckColumnDelegate : public PresentationDelegate
+{
+public:
+    using PresentationDelegate::PresentationDelegate;
+};
+
+// The Name column of the compact table: the file name, then the dim, smaller
+// folder it is in. A file in the root of the repository has neither the
+// suffix nor the gap before it.
+class CompactNameDelegate : public PresentationDelegate
+{
+public:
+    using PresentationDelegate::PresentationDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);
+        const QString path = index.data(ChangesModel::PathRole).toString();
+        const int separator = path.lastIndexOf(QLatin1Char('/'));
+        const QString folder = separator < 0 ? QString() : path.left(separator) + QLatin1Char('/');
+        const QRect box = option.rect.adjusted(space(kNameInset), 0, -space(kNameInset), 0);
+        painter->save();
+        paintNameWithSuffix(painter, box, index.data(Qt::DisplayRole).toString(), rowFont(option, index),
+                            option.state & QStyle::State_Selected ? OmarchyTheme::instance()->accent()
+                                                                  : statusColour(index),
+                            folder);
+        painter->restore();
+    }
+};
+
+// The Name column of the tree, which carries the whole depth geometry: the
+// chevron and the folder of a directory, the file names under them, and the
+// "N files" a folded directory says instead of showing them.
+class TreeNameDelegate : public PresentationDelegate
+{
+public:
+    TreeNameDelegate(QTreeView *tree, ChangesTreeModel *model)
+        : PresentationDelegate(tree), m_tree(tree), m_model(model)
+    {
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);
+        const OmarchyTheme *theme = OmarchyTheme::instance();
+        const bool selected = option.state & QStyle::State_Selected;
+        const int depth = m_model->depth(index);
+        const QRect cell = option.rect;
+        const QFont font = rowFont(option, index);
+        painter->save();
+        if (m_model->isDirectory(index)) {
+            const QModelIndex branch = index.siblingAtColumn(ChangesTreeModel::Check);
+            const bool open = m_tree->isExpanded(branch);
+            const QColor dim = theme->mutedText();
+            paintGlyph(painter,
+                       QRect(cell.left() + space(kChevronX + kLevel * depth), cell.top(),
+                             space(kFolderX - kChevronX), cell.height()),
+                       open ? kChevron : kChevronRight, open ? QStringLiteral("▾") : QStringLiteral("▸"),
+                       kChevronGlyph, dim);
+            paintGlyph(painter,
+                       QRect(cell.left() + space(kFolderX + kLevel * depth), cell.top(),
+                             space(kDirNameX - kFolderX), cell.height()),
+                       kFolderOutline, QStringLiteral("/"), kFolderGlyph, dim);
+            const int left = cell.left() + space(kDirNameX + kLevel * depth);
+            const int files = m_model->fileCount(index);
+            // A folded directory says how many files it is keeping from view;
+            // an open one has them all on screen already.
+            const QString count = open ? QString()
+                : files == 1          ? tr("1 file")
+                                      : tr("%1 files").arg(files);
+            paintNameWithSuffix(painter, QRect(left, cell.top(), cell.right() + 1 - left, cell.height()),
+                                index.data(Qt::DisplayRole).toString(), font,
+                                selected ? theme->accent() : theme->text(), count);
+        } else {
+            const int left = cell.left() + space(kFileNameX + kLevel * depth);
+            paintNameWithSuffix(painter, QRect(left, cell.top(), cell.right() + 1 - left, cell.height()),
+                                index.data(Qt::DisplayRole).toString(), font,
+                                selected ? theme->accent() : statusColour(index), QString());
+        }
+        painter->restore();
+    }
+
+private:
+    QTreeView *m_tree;
+    ChangesTreeModel *m_model;
+};
+
+// The tree presentation of the changes list. Its indentation is zero and it
+// has no root decoration, so Qt contributes no branch geometry of its own:
+// the Name delegate paints every pixel of the depth, and the checkbox column
+// is a straight line at whatever level a row sits.
+class ChangesTree : public QTreeView
+{
+public:
+    explicit ChangesTree(QWidget *parent = nullptr)
+        : QTreeView(parent)
+    {
+        setObjectName(QStringLiteral("changesTree"));
+        setIndentation(0);
+        setRootIsDecorated(false);
+        setExpandsOnDoubleClick(true);
+        setItemsExpandable(true);
+        setUniformRowHeights(true);
+        setAllColumnsShowFocus(true);
+        setSelectionBehavior(SelectRows);
+        setSelectionMode(SingleSelection);
+        setEditTriggers(NoEditTriggers);
+        setFrameShape(QFrame::NoFrame);
+        setWordWrap(false);
+        setTextElideMode(Qt::ElideMiddle);
+    }
+
+    // The rows have to exist before anybody measures a scroll range against
+    // them: a layout still queued would clamp a restored offset to the tree
+    // as it was before its branches were opened again.
+    void layoutNow() { executeDelayedItemsLayout(); }
+
+    // A new text size is a new row height, which the cached uniform one would
+    // otherwise keep at the old value.
+    void refreshRowHeights()
+    {
+        setUniformRowHeights(false);
+        doItemsLayout();
+        setUniformRowHeights(true);
+        doItemsLayout();
+    }
+
+protected:
+    // The list's own Space, as the table has it: the current cell may sit in
+    // any column, so the key goes to the row's box — a file's or a whole
+    // directory's.
+    void keyPressEvent(QKeyEvent *event) override
+    {
+        if (event->key() == Qt::Key_Space && event->modifiers() == Qt::NoModifier && currentIndex().isValid()) {
+            const QModelIndex box = currentIndex().siblingAtColumn(ChangesTreeModel::Check);
+            const QVariant check = box.data(Qt::CheckStateRole);
+            if (check.isValid()) {
+                model()->setData(box, check.toInt() == Qt::Checked ? Qt::Unchecked : Qt::Checked,
+                                 Qt::CheckStateRole);
+                event->accept();
+                return;
+            }
+        }
+        QTreeView::keyPressEvent(event);
+    }
+
+    // A left click on the chevron or the folder opens the branch and does
+    // nothing else — the checkbox beside it is where check marks are made.
+    // Any other button is Qt's: a right click there is the file menu's.
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        const QModelIndex branch = branchOf(event);
+        if (branch.isValid()) {
+            setExpanded(branch, !isExpanded(branch));
+            event->accept();
+            return;
+        }
+        QTreeView::mousePressEvent(event);
+    }
+
+    // The press above already opened the branch; letting Qt's expand-on-
+    // double-click have it too would close it again in the same gesture.
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        if (branchOf(event).isValid()) {
+            event->accept();
+            return;
+        }
+        QTreeView::mouseDoubleClickEvent(event);
+    }
+
+private:
+    // The branch a left click of `event` is on; nothing at all for the other
+    // buttons, which never open or close a directory.
+    QModelIndex branchOf(const QMouseEvent *event) const
+    {
+        if (event->button() != Qt::LeftButton)
+            return {};
+        return branchAt(event->position().toPoint());
+    }
+
+    // The directory whose chevron-and-folder rectangle `pos` is in, if any.
+    QModelIndex branchAt(const QPoint &pos) const
+    {
+        auto *tree = qobject_cast<ChangesTreeModel *>(model());
+        const QModelIndex index = indexAt(pos);
+        if (!tree || !index.isValid() || index.column() != ChangesTreeModel::Name || !tree->isDirectory(index))
+            return {};
+        if (!branchRect(visualRect(index), tree->depth(index)).contains(pos))
+            return {};
+        return index.siblingAtColumn(ChangesTreeModel::Check);
+    }
+};
 } // namespace
 
 CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
@@ -178,6 +539,10 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     // the gap between them — after restoreState(), which brings the handle
     // width of whatever text size saved the state back with it.
     m_messageSplitter->setHandleWidth(sectionGap());
+
+    // How the last run left the files listed; anything unreadable, or nothing
+    // at all, is the table. Reading a choice back never writes it again.
+    setFilesView(viewFromKey(QSettings().value(settings::kWindowFilesView).toString(), nullptr), false);
 }
 
 void CommitPage::setupAgent()
@@ -271,26 +636,6 @@ QWidget *CommitPage::buildChangesSection()
     m_changesLabel = sectionLabel(tr("Changes"));
     auto *changesRow = sectionHeaderRow(m_changesLabel);
     changesRow->addStretch();
-    // The eye acts on the list, Refresh reloads it: a divider tells them apart.
-    m_unversioned = iconButton(kEye, tr("U"), tr("Show unversioned files"));
-    m_unversioned->setCheckable(true);
-    m_unversioned->setChecked(true);
-    m_unversioned->setAccessibleName(tr("Show unversioned files"));
-    connect(m_unversioned, &QToolButton::toggled, this, [this](bool on) {
-        static_cast<UnversionedFilter *>(m_proxy)->setShowUnversioned(on);
-        // Hiding the unversioned files unticks them; showing them again leaves
-        // them unticked, the way a freshly read list does.
-        untickHidden();
-        onCheckedChanged(); // the title counts what the list shows
-    });
-    changesRow->addWidget(m_unversioned, 0, Qt::AlignVCenter);
-    m_changesDivider = hairline(Qt::Vertical);
-    m_changesDivider->setFixedHeight(space(18)); // applyTheme() keeps it on the text size
-    changesRow->addWidget(m_changesDivider, 0, Qt::AlignVCenter);
-    auto *refreshButton = iconButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
-    connect(refreshButton, &QToolButton::clicked, this, &CommitPage::refreshRequested);
-    changesRow->addWidget(refreshButton, 0, Qt::AlignVCenter);
-    changesLayout->addLayout(changesRow);
 
     m_model = new ChangesModel(this);
     auto *proxy = new UnversionedFilter(this);
@@ -299,12 +644,18 @@ QWidget *CommitPage::buildChangesSection()
     proxy->setSortCaseSensitivity(Qt::CaseInsensitive);
     m_proxy = proxy;
 
+    changesRow->addLayout(buildChangesTools());
+    changesLayout->addLayout(changesRow);
+
     m_table = new ChangesTable;
     m_table->setObjectName(QStringLiteral("changesTable"));
     m_table->setModel(m_proxy);
     // The model is on the table first: the setup reads the checkboxes off it.
     m_tableSetup = new ChangesTableSetup(m_table);
+    m_tableSetup->setCompactDelegates(new CompactNameDelegate(m_table), new StatusPillDelegate(m_table));
     connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &CommitPage::currentRowChanged);
+    connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
+            &CommitPage::onTableCurrentChanged);
     // Double-click: with the diff pane hidden, show it for the file (which the
     // click already made current); otherwise open the file in its own program.
     connect(m_table, &QTableView::doubleClicked, this, [this] {
@@ -316,10 +667,157 @@ QWidget *CommitPage::buildChangesSection()
     connect(m_model, &ChangesModel::checkedChanged, this, &CommitPage::onCheckedChanged);
     // File actions apply to the clicked row, independent of checked files.
     m_table->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(m_table, &QTableView::customContextMenuRequested, this, &CommitPage::showFileMenu);
+    connect(m_table, &QTableView::customContextMenuRequested, this,
+            [this](const QPoint &pos) { showFileMenu(m_table, m_table->indexAt(pos), pos); });
 
-    changesLayout->addWidget(m_table, 1);
+    // Both presentations live in the list's slot at once: switching is a
+    // change of what is on show, never a new model or a new selection.
+    m_listStack = new QStackedWidget;
+    m_listStack->addWidget(m_table);
+    m_listStack->addWidget(buildChangesTree());
+    changesLayout->addWidget(m_listStack, 1);
     return changes;
+}
+
+// title, stretch, compact, tree, table, divider, eye, divider, Refresh — in a
+// layout of its own, with the design's 2 / 6 / 7 px gaps as spacers, so the
+// section row's own spacing is not added on top of them.
+QHBoxLayout *CommitPage::buildChangesTools()
+{
+    m_changesTools = new QHBoxLayout;
+    m_changesTools->setContentsMargins(0, 0, 0, 0);
+    m_changesTools->setSpacing(0);
+    const auto gap = [this](int px) {
+        auto *spacer = new QSpacerItem(space(px), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+        m_toolSpacers.append({spacer, px});
+        m_changesTools->addItem(spacer);
+    };
+    const auto add = [this](QToolButton *button) {
+        m_changesTools->addWidget(button, 0, Qt::AlignVCenter);
+    };
+
+    // How the files are listed: one of the three is always selected, and
+    // picking the one already on changes nothing.
+    m_viewButtons = new QButtonGroup(this);
+    m_viewButtons->setExclusive(true);
+    const auto switcher = [this, add, gap](FilesView view, uint glyph, const QString &fallback,
+                                           const QString &name) {
+        if (view != FilesView::Compact)
+            gap(2); // the first of the three needs nothing before it
+        QToolButton *button = iconButton(glyph, fallback, name);
+        button->setCheckable(true);
+        button->setAccessibleName(name);
+        m_viewButtons->addButton(button, int(view));
+        add(button);
+        return button;
+    };
+    m_compactButton = switcher(FilesView::Compact, kFormatListBulleted, tr("C"), tr("Compact list"));
+    m_treeButton = switcher(FilesView::Tree, kFileTree, tr("T"), tr("Tree"));
+    m_tableButton = switcher(FilesView::Table, kTable, tr("L"), tr("Table"));
+    connect(m_viewButtons, &QButtonGroup::idToggled, this, [this](int id, bool on) {
+        if (on && int(m_filesView) != id)
+            setFilesView(FilesView(id));
+    });
+
+    // The eye acts on the list, Refresh reloads it: a divider tells them apart.
+    gap(6);
+    m_toolsDivider = hairline(Qt::Vertical);
+    m_toolsDivider->setFixedHeight(space(18)); // applyTheme() keeps it on the text size
+    m_changesTools->addWidget(m_toolsDivider, 0, Qt::AlignVCenter);
+    gap(7);
+    m_unversioned = iconButton(kEye, tr("U"), tr("Show unversioned files"));
+    m_unversioned->setCheckable(true);
+    m_unversioned->setChecked(true);
+    m_unversioned->setAccessibleName(tr("Show unversioned files"));
+    connect(m_unversioned, &QToolButton::toggled, this, [this](bool on) {
+        static_cast<UnversionedFilter *>(m_proxy)->setShowUnversioned(on);
+        // Hiding the unversioned files unticks them; showing them again leaves
+        // them unticked, the way a freshly read list does.
+        untickHidden();
+        onCheckedChanged(); // the title counts what the list shows
+    });
+    add(m_unversioned);
+    gap(6);
+    m_changesDivider = hairline(Qt::Vertical);
+    m_changesDivider->setFixedHeight(space(18));
+    m_changesTools->addWidget(m_changesDivider, 0, Qt::AlignVCenter);
+    gap(7);
+    auto *refreshButton = iconButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
+    connect(refreshButton, &QToolButton::clicked, this, &CommitPage::refreshRequested);
+    add(refreshButton);
+    return m_changesTools;
+}
+
+// The tree over the same proxy: three columns, the two narrow ones fixed at
+// the design's 30 px and Name taking the rest.
+QWidget *CommitPage::buildChangesTree()
+{
+    m_treeModel = new ChangesTreeModel(m_proxy, this);
+    auto *tree = new ChangesTree;
+    m_tree = tree;
+    tree->setModel(m_treeModel);
+    // Before the columns: a view hands its section settings to the header it
+    // has at the time.
+    tree->setHeader(new ChangesHeader(tree));
+    QHeaderView *header = tree->header();
+    // setHeader() turns the sections' clicks off with the sorting a tree does
+    // not do for itself; the header needs them for check-all and for routing
+    // a sort to the flat list below.
+    header->setSectionsClickable(true);
+    header->setSectionsMovable(false);
+    header->setHighlightSections(false);
+    header->setStretchLastSection(false);
+    header->setSectionResizeMode(ChangesTreeModel::Check, QHeaderView::Fixed);
+    header->setSectionResizeMode(ChangesTreeModel::Name, QHeaderView::Stretch);
+    header->setSectionResizeMode(ChangesTreeModel::Status, QHeaderView::Fixed);
+    tree->setItemDelegateForColumn(ChangesTreeModel::Check, new CheckColumnDelegate(tree));
+    tree->setItemDelegateForColumn(ChangesTreeModel::Name, new TreeNameDelegate(tree, m_treeModel));
+    tree->setItemDelegateForColumn(ChangesTreeModel::Status, new StatusPillDelegate(tree));
+    applyTreeMetrics(); // the design's widths, before anything is laid out
+
+    // Sorting is the flat list's: Name and St route to the columns the table
+    // sorts by, and the order the proxy settles on is the order the tree's
+    // files are rebuilt in. Check is a column of checkboxes and sorts nothing
+    // — the header answers a click on it with check-all and never gets here.
+    connect(header, &QHeaderView::sectionClicked, this, [this](int section) {
+        const int flat = section == ChangesTreeModel::Name     ? int(ChangesModel::Name)
+                         : section == ChangesTreeModel::Status ? int(ChangesModel::Status)
+                                                               : -1;
+        if (flat < 0)
+            return;
+        // Through the table, not the proxy: the table's header is where the
+        // sort of the flat list is kept, so a sort made from the tree is the
+        // one the table's own sections go on toggling afterwards.
+        const QHeaderView *flatHeader = m_table->horizontalHeader();
+        const bool again = flatHeader->sortIndicatorSection() == flat
+            && flatHeader->sortIndicatorOrder() == Qt::AscendingOrder;
+        m_table->sortByColumn(flat, again ? Qt::DescendingOrder : Qt::AscendingOrder);
+    });
+
+    // A rebuild throws the rows away and makes them again: the collapsed set
+    // and the row the keyboard was on are put back the moment they exist,
+    // before whatever caused the rebuild has returned.
+    connect(m_treeModel, &QAbstractItemModel::modelAboutToBeReset, this, [this] {
+        rememberTreeCurrent(m_tree->currentIndex());
+        m_restoringTree = true; // the view's own current-row churn is nobody's choice
+    });
+    connect(m_treeModel, &ChangesTreeModel::reloaded, this, &CommitPage::restoreTreeState);
+    connect(tree, &QTreeView::expanded, this, [this](const QModelIndex &index) { onTreeExpanded(index, true); });
+    connect(tree, &QTreeView::collapsed, this, [this](const QModelIndex &index) { onTreeExpanded(index, false); });
+    connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this, &CommitPage::onTreeCurrentChanged);
+    connect(tree, &QTreeView::doubleClicked, this, [this](const QModelIndex &index) {
+        // A directory only opens and closes; that is Qt's own double-click.
+        if (m_treeModel->isDirectory(index))
+            return;
+        if (m_diffPaneVisible)
+            emit openRequested();
+        else
+            emit showDiffPaneRequested();
+    });
+    tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(tree, &QTreeView::customContextMenuRequested, this,
+            [this](const QPoint &pos) { showFileMenu(m_tree, m_tree->indexAt(pos), pos); });
+    return tree;
 }
 
 // The action bar: "Amend last commit" at the left, where it stands by the
@@ -347,16 +845,226 @@ QLayout *CommitPage::buildActionBar()
     return m_actionBar;
 }
 
-void CommitPage::showFileMenu(const QPoint &pos)
+QTreeView *CommitPage::tree() const
 {
-    const QModelIndex index = m_table->indexAt(pos);
+    return m_tree;
+}
+
+QAbstractItemView *CommitPage::activeListView() const
+{
+    return m_filesView == FilesView::Tree ? static_cast<QAbstractItemView *>(m_tree) : m_table;
+}
+
+QString CommitPage::viewKey(FilesView view)
+{
+    switch (view) {
+    case FilesView::Compact: return QStringLiteral("compact");
+    case FilesView::Tree: return QStringLiteral("tree");
+    case FilesView::Table: break;
+    }
+    return QStringLiteral("table");
+}
+
+CommitPage::FilesView CommitPage::viewFromKey(const QString &key, bool *ok)
+{
+    if (ok)
+        *ok = true;
+    if (key == QLatin1String("compact"))
+        return FilesView::Compact;
+    if (key == QLatin1String("tree"))
+        return FilesView::Tree;
+    if (key == QLatin1String("table"))
+        return FilesView::Table;
+    if (ok)
+        *ok = false;
+    return FilesView::Table; // a saved value nobody recognises is the table
+}
+
+// Switching is a change of presentation and nothing besides: the same proxy,
+// the same selection model, the same check marks and the same current file —
+// which the list coming forward simply scrolls to.
+void CommitPage::setFilesView(FilesView view, bool persist)
+{
+    QToolButton *const button = view == FilesView::Compact ? m_compactButton
+        : view == FilesView::Tree                          ? m_treeButton
+                                                           : m_tableButton;
+    {
+        // The group clears whichever was on. Its signals are held back over
+        // the press, so a switch made from here is not announced back into
+        // this same call with a persistence of the group's own choosing.
+        const QSignalBlocker quiet(m_viewButtons);
+        button->setChecked(true);
+    }
+    // Picking the presentation already on is nothing at all: not a saved
+    // choice, not a reveal, not a focus change.
+    if (m_filesView == view)
+        return;
+    if (persist && !m_filesViewLocked)
+        QSettings().setValue(settings::kWindowFilesView, viewKey(view));
+    const bool hadFocus = m_table->hasFocus() || m_tree->hasFocus();
+    m_filesView = view;
+    m_tableSetup->setCompact(view == FilesView::Compact);
+    m_listStack->setCurrentWidget(view == FilesView::Tree ? static_cast<QWidget *>(m_tree) : m_table);
+    const QString path = currentPath();
+    if (view == FilesView::Tree) {
+        static_cast<ChangesTree *>(m_tree)->layoutNow();
+        // Nothing is made current that was not current already: a list with
+        // no file in it stays that way.
+        if (!path.isEmpty())
+            revealInTree(path, true);
+    } else if (m_table->currentIndex().isValid()) {
+        m_table->scrollTo(m_table->currentIndex(), QAbstractItemView::EnsureVisible);
+    }
+    if (hadFocus)
+        activeListView()->setFocus();
+}
+
+void CommitPage::setFilesViewOverride(FilesView view)
+{
+    m_filesViewLocked = true; // nothing this run does writes window/filesView
+    setFilesView(view, false);
+}
+
+QString CommitPage::currentPath() const
+{
+    const QModelIndex current = m_table->currentIndex();
+    return current.isValid() ? current.data(ChangesModel::PathRole).toString() : QString();
+}
+
+// A file in the tree becomes the canonical current file, which is what drives
+// the diff and the file actions; a directory is a place in the tree and
+// leaves the canonical file — and the diff — where they are.
+void CommitPage::onTreeCurrentChanged(const QModelIndex &index)
+{
+    if (m_restoringTree)
+        return;
+    rememberTreeCurrent(index);
+    if (m_syncingCurrent || !index.isValid() || m_treeModel->isDirectory(index))
+        return;
+    const QModelIndex flat = m_treeModel->mapToSource(index.siblingAtColumn(ChangesTreeModel::Check));
+    // The file, not the row: moving between the columns of one file is no
+    // change of file, and must not make the window read its diff again.
+    if (!flat.isValid() || currentPath() == m_treeCurrentPath)
+        return;
+    QScopedValueRollback<bool> guard(m_syncingCurrent, true);
+    m_syncedCanonicalPath = m_treeCurrentPath;
+    m_table->selectRow(flat.row());
+}
+
+void CommitPage::rememberTreeCurrent(const QModelIndex &index)
+{
+    m_treeCurrentPath = m_treeModel->path(index);
+    m_treeCurrentIsDirectory = m_treeModel->isDirectory(index);
+}
+
+// The other way round, wherever the change came from — the table, the Mini
+// rail, selectPath() or the selection a refresh restores.
+void CommitPage::onTableCurrentChanged(const QModelIndex &current)
+{
+    if (m_syncingCurrent || m_restoringTree)
+        return;
+    const QString path = current.isValid() ? current.data(ChangesModel::PathRole).toString() : QString();
+    // Against the file the tree was last put on, not against the row the
+    // keyboard is on: that row may be a directory the user walked to, and a
+    // reload empties the table's selection before the window selects the same
+    // file again. Neither is a new file, so neither moves the tree.
+    if (path.isEmpty() || path == m_syncedCanonicalPath)
+        return;
+    revealInTree(path, true);
+}
+
+void CommitPage::revealInTree(const QString &path, bool makeCurrent)
+{
+    const QModelIndex index = m_treeModel->indexForPath(path);
     if (!index.isValid())
         return;
-    m_table->setCurrentIndex(index);
-    const FileChange &c = m_model->change(m_proxy->mapToSource(index).row());
+    for (QModelIndex up = index.parent(); up.isValid(); up = up.parent())
+        m_tree->expand(up); // onTreeExpanded() takes it out of the collapsed set
+    if (makeCurrent) {
+        QScopedValueRollback<bool> guard(m_syncingCurrent, true);
+        m_tree->setCurrentIndex(index);
+        m_treeCurrentPath = path;
+        m_treeCurrentIsDirectory = false;
+        m_syncedCanonicalPath = path;
+    }
+    m_tree->scrollTo(index, QAbstractItemView::EnsureVisible);
+}
+
+// Which directories are folded away is this session's, by exact path: a
+// directory that comes and goes with a refresh comes back the way the user
+// left it, and none of it is written to the settings.
+void CommitPage::onTreeExpanded(const QModelIndex &index, bool expanded)
+{
+    const QString path = m_treeModel->path(index);
+    if (path.isEmpty())
+        return;
+    if (expanded)
+        m_collapsed.remove(path);
+    else
+        m_collapsed.insert(path);
+}
+
+// The nodes have just been built again: put the folded directories and the
+// row the keyboard was on back on them, and bring the layout up to date, all
+// before the reload that caused this has returned — a scroll offset restored
+// after it has to be measured against the rows the user will see.
+void CommitPage::restoreTreeState()
+{
+    const std::function<void(const QModelIndex &)> walk = [&](const QModelIndex &parent) {
+        for (int row = 0, rows = m_treeModel->rowCount(parent); row < rows; ++row) {
+            const QModelIndex index = m_treeModel->index(row, ChangesTreeModel::Check, parent);
+            if (!m_treeModel->isDirectory(index))
+                continue;
+            // A directory nobody folded is open: that is what a new one is.
+            m_tree->setExpanded(index, !m_collapsed.contains(m_treeModel->path(index)));
+            walk(index);
+        }
+    };
+    walk(QModelIndex());
+    // By the kind it was, not by the name alone: a file and a directory may
+    // spell the same path, and the row the keyboard was on is one of them.
+    const QModelIndex current = m_treeCurrentPath.isEmpty() ? QModelIndex()
+        : m_treeCurrentIsDirectory                          ? m_treeModel->indexForDirectory(m_treeCurrentPath)
+                                                            : m_treeModel->indexForPath(m_treeCurrentPath);
+    if (current.isValid()) {
+        // A current row is scrolled to by the view itself, and scrolling to a
+        // row under a folded directory opens every directory above it — which
+        // would undo the collapsed set the walk above has just put back. The
+        // row is made current without that, and the tree is laid out below.
+        const bool autoScroll = m_tree->hasAutoScroll();
+        m_tree->setAutoScroll(false);
+        m_tree->setCurrentIndex(current);
+        m_tree->setAutoScroll(autoScroll);
+    } else {
+        m_treeCurrentPath.clear(); // it is gone from the list; nothing to put back
+        m_treeCurrentIsDirectory = false;
+    }
+    // A canonical file that left the list is no longer what the tree is
+    // synchronised to: should it come back, it is a new file to reveal.
+    if (!m_treeModel->indexForPath(m_syncedCanonicalPath).isValid())
+        m_syncedCanonicalPath.clear();
+    m_restoringTree = false;
+    static_cast<ChangesTree *>(m_tree)->layoutNow();
+}
+
+void CommitPage::showFileMenu(QAbstractItemView *view, const QModelIndex &index, const QPoint &pos)
+{
+    if (!index.isValid())
+        return; // empty space has no file menu, and neither has a directory
+    QModelIndex flat = index;
+    if (view == m_tree) {
+        if (m_treeModel->isDirectory(index))
+            return;
+        flat = m_treeModel->mapToSource(index.siblingAtColumn(ChangesTreeModel::Check));
+        if (!flat.isValid())
+            return;
+    }
+    // The actions are the clicked file's, so the click makes it current first.
+    view->setCurrentIndex(index);
+    const FileChange &c = m_model->change(m_proxy->mapToSource(flat).row());
     const QString path = QDir(m_repo->root()).filePath(c.path);
     const DefaultApp app = c.kind == FileChange::Deleted ? DefaultApp() : defaultAppFor(path);
-    QMenu menu(m_table);
+    QMenu menu(view);
     QAction *open = menu.addAction(app.name.isEmpty() ? tr("Open") : tr("Open with %1").arg(app.name));
     if (!app.icon.isEmpty())
         open->setIcon(QIcon::fromTheme(app.icon));
@@ -369,7 +1077,7 @@ void CommitPage::showFileMenu(const QPoint &pos)
                                       : tr("Restore this file to the latest commit, including staged changes"));
     connect(discard, &QAction::triggered, this, [this, change = c] { emit discardRequested(change); });
     menu.setToolTipsVisible(true);
-    menu.exec(m_table->viewport()->mapToGlobal(pos));
+    menu.exec(view->viewport()->mapToGlobal(pos));
 }
 
 void CommitPage::applyTheme()
@@ -387,7 +1095,22 @@ void CommitPage::applyTheme()
     m_actionBar->setSpacing(sectionGap());
     m_messageSplitter->setHandleWidth(sectionGap());
     m_changesDivider->setFixedHeight(space(18));
+    m_toolsDivider->setFixedHeight(space(18));
+    for (const auto &spacer : std::as_const(m_toolSpacers))
+        spacer.first->changeSize(space(spacer.second), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_changesTools->invalidate();
+    applyTreeMetrics();
     updateAmendLabel(); // the label's width moved with the font
+}
+
+// The tree's own design pixels: the two narrow columns and the row height. It
+// follows the text size whether it is the list on show or not.
+void CommitPage::applyTreeMetrics()
+{
+    m_tree->header()->setMinimumSectionSize(space(kNarrowColumn));
+    m_tree->setColumnWidth(ChangesTreeModel::Check, space(kNarrowColumn));
+    m_tree->setColumnWidth(ChangesTreeModel::Status, space(kNarrowColumn));
+    static_cast<ChangesTree *>(m_tree)->refreshRowHeights();
 }
 
 void CommitPage::resizeEvent(QResizeEvent *event)
@@ -481,13 +1204,19 @@ void CommitPage::selectFirstConflict()
 
 QPoint CommitPage::scrollOffset() const
 {
-    return QPoint(m_table->horizontalScrollBar()->value(), m_table->verticalScrollBar()->value());
+    QAbstractItemView *const view = activeListView();
+    return QPoint(view->horizontalScrollBar()->value(), view->verticalScrollBar()->value());
 }
 
 void CommitPage::setScrollOffset(const QPoint &offset)
 {
-    m_table->verticalScrollBar()->setValue(offset.y());
-    m_table->horizontalScrollBar()->setValue(offset.x());
+    QAbstractItemView *const view = activeListView();
+    // The tree's rows have to be laid out before its scroll range is: a
+    // layout still queued would clamp the offset against a folded tree.
+    if (view == m_tree)
+        static_cast<ChangesTree *>(m_tree)->layoutNow();
+    view->verticalScrollBar()->setValue(offset.y());
+    view->horizontalScrollBar()->setValue(offset.x());
 }
 
 void CommitPage::toggleAllChecked()

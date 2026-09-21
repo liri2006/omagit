@@ -22,20 +22,6 @@ constexpr int kBadgeSize = 13, kBadgeInsetX = 8, kBadgeRise = 5;
 constexpr int kNumberHeight = 12, kNumberPadding = 6, kNumberRadius = 3;
 constexpr int kNumberInsetX = 4, kNumberRise = 7;
 
-QChar kindLetter(int kind)
-{
-    switch (kind) {
-    case FileChange::Modified: return QLatin1Char('M');
-    case FileChange::Added: return QLatin1Char('A');
-    case FileChange::Deleted: return QLatin1Char('D');
-    case FileChange::Renamed: return QLatin1Char('R');
-    case FileChange::Copied: return QLatin1Char('C');
-    case FileChange::TypeChanged: return QLatin1Char('T');
-    case FileChange::Unmerged: return QLatin1Char('!');
-    default: return QLatin1Char('?');
-    }
-}
-
 // What a file is reduced to on a 32 px tile: its extension, or the first
 // letters of its name when it has none (Makefile, LICENSE, ...).
 QString tileLabel(const QModelIndex &index)
@@ -111,7 +97,10 @@ public:
         bf.setPixelSize(qMax(7, f.pixelSize() - 2));
         p->setFont(bf);
         p->setPen(t->window());
-        p->drawText(badge, Qt::AlignCenter, QString(kindLetter(index.data(ChangesModel::KindRole).toInt())));
+        // The letter the tree and compact presentations put in their status
+        // pills, so one list never spells a status differently from another.
+        const auto kind = FileChange::Kind(index.data(ChangesModel::KindRole).toInt());
+        p->drawText(badge, Qt::AlignCenter, QString(ChangesModel::statusLetter(kind)));
 
         // Row number, bottom-left, mirroring the status badge
         const QString number = QString::number(index.row() + 1);

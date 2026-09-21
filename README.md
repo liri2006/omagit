@@ -128,6 +128,18 @@ history with a branch graph, and plugs into the Nautilus context menu as
   listed file, the eye beside Refresh shows or hides the unversioned files — hidden files are
   never checked, so they are never committed — and *Amend last commit* sits at the left of the
   bottom bar, next to the button it renames.
+- **Three ways to list the pending files**, the three small buttons at the right of the *CHANGES*
+  row (the choice is remembered): *Table* is the full list with its columns, sorting and
+  right-click actions; *Compact* is the same table down to the checkbox, the file name and a
+  narrow status pill, with the file's folder after it in dim, smaller type; *Tree* puts the files
+  under their directories — directories first and alphabetically, 14 px per level, a chevron and
+  a folder icon, and `3 files` after a folded one. A directory's checkbox stands for every file
+  under it, folded away or not (partial when only some are checked), Space checks the row the
+  keyboard is on, ←/→ close and open a branch, and a click on the chevron opens it without
+  touching a check mark. Whichever list is on show, it is the same files with the same check
+  marks and the same current file: switching changes nothing but the presentation. Which
+  directories are folded is kept for the session — sorting, filtering and refreshes leave it
+  alone — but not across runs.
 - **Docked / Mini** layouts (the first of the top bar's two toggles or Ctrl+B; the choice is
   remembered). *Docked* keeps the left section (commit dialog or history) next to the diff
   pane. *Mini* shrinks it to a narrow rail of file miniatures (extension tile, status letter,
@@ -191,7 +203,12 @@ was taken on — two positive numbers, only together with `--screenshot`, and an
 a usage error; `--screenshot-menu
 branch|repo|agent|keybindings|merge|login` opens that panel first and includes it in the picture, `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
-`--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message),
+`--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
+and `@changesTree` in that list focus the list on show, so the keys reach it),
+`--files-view compact|tree|table` lists the pending files that way for one run (exactly those
+three lowercase names; anything else is a usage error and exits 2), whatever is remembered and
+without remembering it — it works on its own as well as with `--screenshot`, and with
+`--history` or `--mini` it only sets up the commit page,
 and `OMAGIT_THEME_DIR=/usr/share/omarchy/themes/tokyo-night` previews another theme.
 
 ## Tests
@@ -220,7 +237,17 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
   filter, `colors.toml` parsing with its fallbacks, the wording of the merge verdict, and
   the sign-in dialog — including one whole round trip through git itself, where
   `git credential fill` asks the built binary, which asks the dialog (no network involved;
-  the test is skipped when the binary is not built).
+  the test is skipped when the binary is not built). The files-view switcher has a group of
+  its own: the tree model over the flat proxy (its shape, its ordering and the round trip
+  between a file row and the proxy's, checked with `QAbstractItemModelTester`), directory
+  checking down to folded branches and out to a rename whose old path spells another row's,
+  the keyboard and the chevron/checkbox hit testing, which changes rebuild the tree and which
+  only repaint it, the collapsed set surviving sorting, filtering and reloads, one current
+  file across all three lists (proved with `QSignalSpy`: no second notification for the same
+  file or a mode-only switch), the refresh sequence putting the selection and the scroll back,
+  compact's three columns and the table's own widths coming back, the remembered and
+  overridden choice, and all of it measured again after a live 12 → 16 → 12 text-size change
+  against a page built fresh at that size.
 
 ## Layout
 
@@ -239,11 +266,12 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |
 | `src/SyntaxHighlighter.*` | Hand-rolled per-language tokeniser for the diff's syntax colours |
-| `src/ChangesModel.*` | Table model for the changes list (also the files of a commit) |
+| `src/ChangesModel.*` | Table model for the changes list (also the files of a commit), the shared header with its check-all box and per-presentation labels, and the table setup with its compact form |
+| `src/ChangesTreeModel.*` | The directory tree over that flat list: three columns, derived directory check states written back in one batch, and a rebuild on every change of the list's shape |
 | `src/HistoryModel.*` | Commit list model with incremental lane-graph layout |
 | `src/HistoryView.*` | History view: filter, commit table with graph and ref chips, details, files |
 | `src/MainWindow.*` | Window shell: the top bar above the body, modes and sync operations, Docked/Mini layouts, the pages and the diff pane, branches, merging, repositories and the working-tree watch |
-| `src/CommitPage.*` | The commit dialog page: message box with the coding-agent flow, changes list with its context menu, options and the Commit button |
+| `src/CommitPage.*` | The commit dialog page: message box with the coding-agent flow, the changes list in its three presentations (table, compact and tree, with their delegates and the switcher), its context menu, options and the Commit button |
 | `src/DiffPane.*` | The right pane: Prev/Next and the two-pane / whitespace / syntax toggles above the diff view, with their remembered settings |
 | `src/Footer.*` | The footer bar: the repository path or the latest message, and the keybindings button |
 | `src/UiHelpers.*` | The shell's Nerd Font glyphs and the small widget factories the sections share (section and dim labels, tool / small / dropdown buttons, hairline, menu headers) |

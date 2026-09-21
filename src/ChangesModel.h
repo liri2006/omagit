@@ -3,6 +3,7 @@
 #include "GitRepo.h"
 
 #include <QAbstractTableModel>
+#include <QHash>
 #include <QHeaderView>
 #include <QList>
 #include <QObject>
@@ -10,6 +11,8 @@
 
 #include <functional>
 
+class QAbstractItemDelegate;
+class QAbstractItemView;
 class QTableView;
 
 // The list of changes in the commit dialog. Also used, without
@@ -30,8 +33,21 @@ public:
     // Status sort lists each group alphabetically.
     enum Role { PathRole = Qt::UserRole + 1, KindRole, SortRole };
 
+    // Whether a path list names the files it means outright, or also matches
+    // the source of a rename. Ticking the files of the commit being amended
+    // wants the latter (HEAD names the old path of a file renamed since);
+    // anything that acts on the rows a view is showing — a tree directory,
+    // the check-all box over the filtered list — wants the former, or a
+    // rename source that happens to spell another shown file's path would
+    // drag that file's row in with it.
+    enum PathMatch { MatchRenameSources, CurrentPathsOnly };
+
     // Position of a kind in the Status sort: modified first, untracked last.
     static int statusRank(FileChange::Kind kind);
+    // The single letter a status is reduced to where there is no room for its
+    // name: the Mini rail's badge and the status pill of the tree and compact
+    // presentations. Untracked and unknown are both "?".
+    static QChar statusLetter(FileChange::Kind kind);
 
     explicit ChangesModel(QObject *parent = nullptr);
 
@@ -47,7 +63,7 @@ public:
     int checkedCount() const;
     void setAllChecked(bool checked);
     void setUnversionedChecked(bool checked);
-    void setPathsChecked(const QStringList &paths, bool checked);
+    void setPathsChecked(const QStringList &paths, bool checked, PathMatch match = MatchRenameSources);
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -76,17 +92,24 @@ private:
     bool m_checkable = true;
 };
 
-// The header of a changes table. Its first section holds the label-less
-// check-all box of a checkable list — the model keeps its state — and answers
-// a click with it instead of sorting by a column of checkboxes.
+// The header of a changes list, table or tree. Its first section holds the
+// label-less check-all box of a checkable list — the model keeps its state —
+// and answers a click with it instead of sorting by a column of checkboxes.
 class ChangesHeader : public QHeaderView
 {
     Q_OBJECT
 public:
-    explicit ChangesHeader(QTableView *table);
+    explicit ChangesHeader(QAbstractItemView *view);
+
+    // A label this presentation alone paints over the model's own, for the
+    // compact table, which spells Status "St" in a 30 px column. The model
+    // and the proxy every other view shares are left untouched; an empty
+    // text hands the section back to them.
+    void setSectionText(int section, const QString &text);
 
 protected:
     void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override;
+    void initStyleOptionForIndex(QStyleOptionHeader *option, int logicalIndex) const override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
@@ -105,7 +128,8 @@ private:
     QRect checkSectionRect() const;
     void setCheckHovered(bool on);
 
-    QTableView *m_table;
+    QAbstractItemView *m_view;
+    QHash<int, QString> m_sectionText; // what this presentation calls a section
     bool m_checkHovered = false; // the pointer is over the box, not just the section
 };
 
@@ -123,8 +147,29 @@ public:
     explicit ChangesTableSetup(QTableView *table);
     void applyTheme();
 
+    // The compact presentation: the same table, its columns down to the
+    // checkbox, the file name and a narrow status pill headed "St", with Name
+    // taking whatever is left. The painting is the caller's — the commit page
+    // owns both delegates — and so is the decision to switch; everything the
+    // columns had before (widths, resize modes, visibility, delegates) comes
+    // back when it is switched off.
+    void setCompactDelegates(QAbstractItemDelegate *name, QAbstractItemDelegate *status);
+    void setCompact(bool on);
+    bool compact() const { return m_compact; }
+
 private:
     bool hasChecks() const;
-    void fitPathColumn();
+    // Whichever column of the presentation on show takes the leftover width.
+    void fitStretchColumn();
+    void enterCompact();
+    void leaveCompact();
+    // The design's widths, in the scaled pixels of the text size of the moment.
+    void applyCompactWidths();
+
     QTableView *m_table;
+    QAbstractItemDelegate *m_compactName = nullptr;   // the caller's, not owned
+    QAbstractItemDelegate *m_compactStatus = nullptr; // likewise
+    QList<int> m_savedWidths;                         // the table's widths before compact
+    QList<QHeaderView::ResizeMode> m_savedModes;
+    bool m_compact = false;
 };

@@ -599,6 +599,10 @@ QTableView, QTreeView {
 QTableView::item, QTreeView::item { padding: 0 10px; border: none; }
 QTableView::item:hover, QTreeView::item:hover { background: %fill4%; }
 QTableView::item:selected, QTreeView::item:selected { background: %fill8%; color: %acc%; }
+/* The changes tree paints its own chevrons in the Name column and has no
+   indentation at all, so nothing of a platform style's branch lines or arrows
+   belongs in its checkbox column. */
+QTreeView::branch { background: transparent; image: none; }
 QLineEdit#cloneName {
     background: transparent; color: %dim%; padding: 2px 3px;
     border: none; border-bottom: 1px solid %bd40%;

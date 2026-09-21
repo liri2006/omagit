@@ -5,11 +5,16 @@
 #include "GitRepo.h"
 #include "MessageEdit.h"
 
+#include <QModelIndex>
 #include <QPoint>
+#include <QSet>
 #include <QWidget>
 
 #include <functional>
 
+class ChangesTreeModel;
+class QAbstractItemView;
+class QButtonGroup;
 class QCheckBox;
 class QHBoxLayout;
 class QLabel;
@@ -17,10 +22,13 @@ class QLayout;
 class QMenu;
 class QPushButton;
 class QSortFilterProxyModel;
+class QSpacerItem;
 class QSplitter;
+class QStackedWidget;
 class QTableView;
 class QTimer;
 class QToolButton;
+class QTreeView;
 
 // The commit dialog: message, changes list, action bar.
 // It owns the coding-agent flow that writes the message and the commit
@@ -30,11 +38,35 @@ class CommitPage : public QWidget
 {
     Q_OBJECT
 public:
+    // How the pending files are listed. Table is the one that has always
+    // been there, columns and all; Compact is that same table with only the
+    // checkbox, the name and a status pill; Tree lists them under their
+    // directories. Whichever is on, the flat list below is the same.
+    enum class FilesView { Compact, Tree, Table };
+
     explicit CommitPage(GitRepo *repo, QWidget *parent = nullptr);
 
-    // The Mini rail shows the same files, through the same selection.
+    // The Mini rail shows the same files, through the same selection: the
+    // proxy and the table's selection model are canonical in every view.
     QSortFilterProxyModel *proxy() const { return m_proxy; }
     QTableView *table() const { return m_table; }
+    QTreeView *tree() const;
+    // The list the user is looking at: the table (in either of its two
+    // presentations) or the tree.
+    QAbstractItemView *activeListView() const;
+
+    FilesView filesView() const { return m_filesView; }
+    // `persist` writes the choice to window/filesView, which is what a click
+    // on one of the three buttons does; a run started with --files-view never
+    // writes it, whatever is clicked afterwards.
+    void setFilesView(FilesView view, bool persist = true);
+    // The --files-view override: this run lists its files that way and leaves
+    // the saved choice alone.
+    void setFilesViewOverride(FilesView view);
+    // The spelling of a view in the settings and on the command line; `ok`
+    // comes back false for anything but the three lowercase names.
+    static FilesView viewFromKey(const QString &key, bool *ok);
+    static QString viewKey(FilesView view);
 
     // The row the file actions apply to, independent of the checked files.
     FileChange currentChange(bool *ok) const;
@@ -70,6 +102,13 @@ public:
     void clickCommit();
     // Whether the diff pane shows, for what a double-click on a file does.
     void setDiffPaneVisible(bool on) { m_diffPaneVisible = on; }
+
+    // The three files-view buttons, for the tests and for anyone who wants to
+    // press one without going through the accessible names.
+    QToolButton *compactButton() const { return m_compactButton; }
+    QToolButton *treeButton() const { return m_treeButton; }
+    QToolButton *tableButton() const { return m_tableButton; }
+    QToolButton *unversionedButton() const { return m_unversioned; }
 
     void applyTheme();
 
@@ -112,9 +151,38 @@ private:
     // "Amend last commit" where the row has the width for it, "Amend" where
     // it has not.
     void updateAmendLabel();
+    // The three ghost buttons at the right of the CHANGES row, in their own
+    // layout so the section row's spacing is not added on top of the
+    // design's 2 / 6 / 7 px gaps.
+    QHBoxLayout *buildChangesTools();
+    // The tree, its model and its delegates, built once beside the table.
+    QWidget *buildChangesTree();
+    // Its two narrow columns and its row height, in the scaled pixels of the
+    // text size of the moment.
+    void applyTreeMetrics();
     // Unticks the unversioned files while the eye hides them.
     void untickHidden();
-    void showFileMenu(const QPoint &pos);
+    // The file menu of whichever list was right-clicked; `index` is that
+    // view's own, and directories and empty space have no menu at all.
+    void showFileMenu(QAbstractItemView *view, const QModelIndex &index, const QPoint &pos);
+    // The tree's current row became `index`: a file makes the flat row
+    // current, a directory leaves the canonical file where it is.
+    void onTreeCurrentChanged(const QModelIndex &index);
+    // The canonical current file changed: show it in the tree, ancestors
+    // opened, without another current-row notification coming back.
+    void onTableCurrentChanged(const QModelIndex &current);
+    // Opens every directory above `path` and makes its row current.
+    void revealInTree(const QString &path, bool makeCurrent);
+    // Remembers which row the tree's keyboard is on — its path and whether it
+    // is a file or a directory, since one name can be both.
+    void rememberTreeCurrent(const QModelIndex &index);
+    // Puts the collapsed set back on the freshly built nodes, then brings the
+    // view's layout up to date, so a scroll offset restored right after this
+    // is measured against the rows the user will see.
+    void restoreTreeState();
+    void onTreeExpanded(const QModelIndex &index, bool expanded);
+    // The repo-relative path of the canonical current file, empty when none is.
+    QString currentPath() const;
     // The cog menu's three sections.
     void addAgentSection(QMenu *menu, const AgentChoice &choice, const std::function<void(const AgentChoice &)> &save);
     void addModelSection(QMenu *menu, const AgentSpec &agent, const AgentCatalog &catalog, const AgentChoice &choice,
@@ -130,6 +198,28 @@ private:
     QSortFilterProxyModel *m_proxy;
     QTableView *m_table;
     ChangesTableSetup *m_tableSetup;
+    QStackedWidget *m_listStack;   // the table and the tree in the list's slot
+    QTreeView *m_tree;
+    ChangesTreeModel *m_treeModel;
+    FilesView m_filesView = FilesView::Table;
+    bool m_filesViewLocked = false;  // --files-view: this run saves no choice
+    QSet<QString> m_collapsed;       // directories folded away, by exact path
+    bool m_restoringTree = false;    // a rebuild is putting that state back
+    bool m_syncingCurrent = false;   // one list is following the other
+    QToolButton *m_compactButton;
+    QToolButton *m_treeButton;
+    QToolButton *m_tableButton;
+    QButtonGroup *m_viewButtons;
+    QHBoxLayout *m_changesTools;        // the switcher, the eye and Refresh
+    QList<QPair<QSpacerItem *, int>> m_toolSpacers; // their gaps, with the design px
+    QWidget *m_toolsDivider;            // between the switcher and the eye
+    QString m_treeCurrentPath;          // the tree's own row, kept over rebuilds
+    bool m_treeCurrentIsDirectory = false; // ...and which of the two lookups finds it again
+    // The canonical file the tree was last put on. It is the tree's memory of
+    // the flat list, not of itself: the row the keyboard is on may be a
+    // directory, and a reload empties the table's selection before the window
+    // puts it back — neither is a new file to reveal.
+    QString m_syncedCanonicalPath;
     MessageEdit *m_message;      // the commit message, with the generate button in its corner
     QSplitter *m_messageSplitter; // the message over the changes list, the heights it grows in
     QLayout *m_sectionsLayout;    // MESSAGE and CHANGES, over the action bar

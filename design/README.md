@@ -23,7 +23,7 @@ tile widths (Wide, Half, Third, Eighth).
 | 1 | Kit primitives | done (`dc5abfe`) |
 | 2 | Commit page content | done |
 | 3 | Top bar restructure | done |
-| 4 | Files-view switcher | |
+| 4 | Files-view switcher | done |
 | 5 | Mini rail commit tile and popover | |
 | 6 | Agent settings popover | |
 | 7 | Stacked layouts | |
@@ -95,10 +95,37 @@ row.
 The only phase with real new logic, independent of the others.
 
 - Three ghost icon buttons — compact / tree / table — at the right of the
-  CHANGES row, the active one selected.
-- Tree: directories first, 14 px per level, chevron and folder icon, files
-  under their parent's folder icon, collapsed directories show `N files`;
-  keyboard navigation and check state per directory.
+  CHANGES row, the active one selected; the choice is `window/filesView`.
+- Tree (`src/ChangesTreeModel.*`): directories first and alphabetically, 14 px
+  per level, chevron and folder icon, files under their parent's folder icon,
+  collapsed directories show `N files`; keyboard navigation and check state per
+  directory. Three columns — a fixed 30 px checkbox, Name, a 30 px `St` pill —
+  with all the depth painted in Name, so the checkbox gutter is one straight
+  line (indentation 0, no root decoration).
+- Compact is the same table with its other columns hidden, Name filling the
+  width and Status a 30 px pill column; `St` is painted over the section by the
+  header alone, so the shared model and proxy keep their own labels. Going back
+  to the table restores the user's widths, the resize modes and the delegates,
+  and Path absorbs the viewport again.
+- The flat proxy and the table's selection model stay canonical in all three:
+  the tree is an adapter over the proxy, a tree file becoming current selects
+  the flat row (which is what drives the diff), and a directory leaves the
+  current file alone. Switching reveals the current file and announces nothing.
+- A directory's box acts on exactly the proxy-visible files under it, folded
+  branches included — `setPathsChecked()` grew a current-paths-only mode for
+  that and for the check-all box, so a rename source that spells another shown
+  file's path cannot drag it in. Amending keeps the old matching on purpose.
+- Which directories are folded is the session's, by exact path, reapplied
+  synchronously as the tree is rebuilt (before MainWindow restores the scroll);
+  nothing of it is written to the settings.
+- `--files-view compact|tree|table` is the deterministic startup override for
+  screenshots and tests: validated before anything is opened (exit 2 otherwise)
+  and never written back.
+
+Not in this phase: the design's other column changes (no `Ext`, one `+ −`
+column) and the tree's `+ −` column, both still deferred; the width-driven
+compact default and the stacked layouts belong to phase 7, the Mini commit
+tile to 5 and the agent popover to 6. HistoryView stays a plain table.
 
 ### 5. Mini rail commit tile and popover
 

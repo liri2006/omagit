@@ -25,6 +25,10 @@ constexpr auto kWindowDiffPane = QLatin1StringView("window/diffPane");
 constexpr auto kWindowLeftWidth = QLatin1StringView("window/leftWidth");
 // State of the commit page's message-over-changes splitter (QByteArray).
 constexpr auto kWindowCommitMessageSplitter = QLatin1StringView("window/commitMessageSplitter");
+// How the commit page lists its pending files: "compact", "tree" or "table"
+// (the default, and what an unknown value falls back to). Which collapsed
+// directories a tree run had is deliberately not remembered.
+constexpr auto kWindowFilesView = QLatin1StringView("window/filesView");
 
 // ---- The diff ---------------------------------------------------------------
 
