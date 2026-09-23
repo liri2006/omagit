@@ -648,6 +648,11 @@ QToolButton::menu-indicator { image: none; width: 0; height: 0; }
    the badge hangs in. The vertical padding is the text buttons', so both forms
    of a button are one height. */
 QToolButton[compact="true"] { padding: 5px 14px 5px 0; }
+/* The icon form of the diff pane's Prev, Next and view-option buttons
+   (ui::setIconForm()): a fixed 28 px square sideways, the glyph centred by
+   the button's own text alignment, and the text buttons' vertical padding,
+   so both forms of a button are one height. */
+QToolButton[iconForm="true"] { padding: 5px 0; }
 /* The icon squares of the chrome: the glyph is centred by the fixed size
    ui::iconButton() gives them, so all a rule has to drop is the padding.
    A toolbar one is only fixed sideways and keeps the vertical padding of

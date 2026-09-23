@@ -27,6 +27,7 @@ tile widths (Wide, Half, Third, Eighth).
 | 5 | Mini rail commit tile and popover | done |
 | 6 | Agent settings popover | done |
 | 7 | Stacked layouts | done |
+| 8 | Diff pane toolbar | done |
 
 ### 1. Kit primitives
 
@@ -247,12 +248,38 @@ The tiling end of the design (the `s` / `xs` levels of `screens.js`).
 
 Not in this phase: History's icon-only All branches control, its folded files
 button and the details date; the footer's `xs` status text; the design's
-height classes and shallow windows; a compact diff toolbar or forced unified
-view; the action bar's Abort button and hint; right-aligned shortcut hints in
+height classes and shallow windows; the forced unified view of the Diff tab
+(the compact diff toolbar is phase 8); the action bar's Abort button and hint; right-aligned shortcut hints in
 menus (tooltips carry them); repository search; a MiniRail redesign.
 
 Not in any phase yet: a search prompt in the repo menu (it exists in Figma,
 but is new functionality in the app).
+
+### 8. Diff pane toolbar
+
+Phase 7's review, finding 4: the diff pane's row (Prev, Next, the counter,
+Two-pane, Whitespace, Syntax) elided every label mid-word in a narrow pane,
+which the stacked Diff tab made the normal look of a 470 px window.
+
+- Three forms, picked by the pane's own width at fixed thresholds that scale
+  with the text size (`screens.js diffPane()`): labelled from `space(900)`;
+  the three view options as glyph squares from `space(560)`; below that Prev
+  and Next as glyph squares too, the counter as `n/m` without the summary,
+  and the options behind a `…` (`View options`, a `TickMenu` of three
+  checkable entries filled on `aboutToShow`, each the button's own click).
+- One button per action in every form: a form change swaps the text and the
+  width, so the connections, the checked states and the window's Ctrl+T /
+  Ctrl+W / Ctrl+L on a hidden button carry on. `ui::setIconForm()` sets the
+  `iconForm` property (`padding: 5px 0`, so both forms are one height) and the
+  28 px square, repolishing only on a real change; a resize within a form
+  touches nothing, and `applyTheme()` re-applies the form for a new text size.
+- The design's gaps: 4 between Prev and Next and between the options, 10 on
+  either side of the counter.
+- `--screenshot-menu diff` opens the `…` menu where the button is shown.
+
+Not in this phase: the design's `Split ▾ / Unified ▾` dropdown in place of
+the Two-pane toggle, the forced unified view of the stacked Diff tab, and the
+coloured summary (`Modified +4 −2`).
 
 ## How a phase is done
 

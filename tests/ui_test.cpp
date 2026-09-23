@@ -10,6 +10,7 @@
 #include "../src/ChangesTreeModel.h"
 #include "../src/CommitPage.h"
 #include "../src/CommitPopover.h"
+#include "../src/DiffModel.h"
 #include "../src/DiffPane.h"
 #include "../src/DiffView.h"
 #include "../src/CloneDialog.h"
@@ -1181,6 +1182,82 @@ QStringList agentCardMetrics(const AgentPopover *card)
     }
     for (const QAbstractButton *copy : card->copyButtons())
         entry("copy", copy->width());
+    return out;
+}
+
+// ---- The diff pane's toolbar
+
+// A diff pane of its own, shown, with a document of two changes and the
+// row's controls found by the names they keep in every form.
+struct PaneFixture
+{
+    std::unique_ptr<DiffPane> pane;
+
+    QToolButton *button(const QString &name) const
+    {
+        for (QToolButton *b : pane->findChildren<QToolButton *>())
+            if (b->parentWidget() == pane.get() && b->accessibleName() == name)
+                return b;
+        return nullptr;
+    }
+    QToolButton *prev() const { return button(QStringLiteral("Prev")); }
+    QToolButton *next() const { return button(QStringLiteral("Next")); }
+    QToolButton *twoPane() const { return button(QStringLiteral("Two-pane")); }
+    QToolButton *whitespace() const { return button(QStringLiteral("Whitespace")); }
+    QToolButton *syntax() const { return button(QStringLiteral("Syntax")); }
+    QToolButton *options() const { return button(QStringLiteral("View options")); }
+    QList<QToolButton *> viewOptions() const { return {twoPane(), whitespace(), syntax()}; }
+    QLabel *counter() const
+    {
+        for (QLabel *l : pane->findChildren<QLabel *>())
+            if (l->parentWidget() == pane.get())
+                return l;
+        return nullptr;
+    }
+    void resizeTo(int width) const
+    {
+        pane->resize(width, 400);
+        QCoreApplication::processEvents();
+    }
+};
+
+const QString kPaneSummary = QStringLiteral("Modified  +2 −2");
+
+PaneFixture diffPane()
+{
+    PaneFixture f;
+    f.pane.reset(new DiffPane);
+    f.pane->setSummary(kPaneSummary);
+    // Two change blocks, a run of context between them.
+    const DiffDocument doc = DiffModel::parse(
+        QStringLiteral("@@ -1,5 +1,5 @@\n-a\n+A\n b\n c\n d\n-e\n+E\n"));
+    f.pane->view()->setDocument(doc, QStringLiteral("x.txt"), QString(), QStringLiteral("HEAD"),
+                                QStringLiteral("Working Tree"));
+    f.pane->view()->firstChange();
+    f.pane->resize(ui::space(1000), 400);
+    f.pane->show();
+    return f;
+}
+
+// The row's buttons on screen, each no narrower than what it wears asks. A
+// labelled button asks for its size hint. A glyph square (the icon form, and
+// the "…" of ui::iconButton()) is held to its glyph instead: its size hint is
+// a text button's, the glyph with two spaces of air around it, which for the
+// wider glyphs (split, code tags, dots) is a pixel or two over the design's
+// 28 px square that the glyph sits in with room to spare.
+QStringList squeezedButtons(QWidget *row)
+{
+    QStringList out;
+    for (QToolButton *b : row->findChildren<QToolButton *>()) {
+        if (b->parentWidget() != row || !b->isVisible())
+            continue;
+        const QFontMetrics fm = b->fontMetrics();
+        const bool square = b->objectName() == QLatin1String("iconButton") || b->property("iconForm").toBool();
+        const int needs = square ? qMax(fm.boundingRect(b->text()).width(), fm.horizontalAdvance(b->text())) + 2
+                                 : b->sizeHint().width();
+        if (b->width() < needs)
+            out << QStringLiteral("%1: %2 < %3").arg(b->accessibleName()).arg(b->width()).arg(needs);
+    }
     return out;
 }
 
@@ -3022,6 +3099,231 @@ esac
                                 .arg(menu->geometry().right()).arg(window.right())));
         menu->close();
         QTRY_VERIFY(!menu->isVisible());
+    }
+
+    // --- The diff pane's toolbar ---------------------------------------------
+
+    // Labelled from 900 px of pane up, the view options as glyphs from 560,
+    // and below that Prev and Next as glyphs too, the counter as "n/m" and
+    // the options behind "…". The widest form comes back exactly.
+    void theDiffToolbarFoldsInThreeStepsAsItNarrows()
+    {
+        PaneFixture f = diffPane();
+        QVERIFY(QTest::qWaitForWindowExposed(f.pane.get()));
+        settle();
+        QVERIFY(f.prev() && f.next() && f.twoPane() && f.whitespace() && f.syntax() && f.options() && f.counter());
+        QCOMPARE(f.options()->popupMode(), QToolButton::InstantPopup);
+        QVERIFY(qobject_cast<TickMenu *>(f.options()->menu()));
+        QCOMPARE(f.options()->text(), ui::icon(ui::kDotsHorizontal, QStringLiteral("…")).trimmed());
+
+        const QList<QPair<QToolButton *, QString>> labelled{
+            {f.prev(), ui::icon(ui::kArrowUp) + QStringLiteral("Prev")},
+            {f.next(), ui::icon(ui::kArrowDown) + QStringLiteral("Next")},
+            {f.twoPane(), ui::icon(ui::kSplit) + QStringLiteral("Two-pane")},
+            {f.whitespace(), ui::icon(ui::kPilcrow) + QStringLiteral("Whitespace")},
+            {f.syntax(), ui::icon(ui::kCodeTags) + QStringLiteral("Syntax")}};
+        const QList<QString> glyphs{ui::icon(ui::kArrowUp).trimmed(), ui::icon(ui::kArrowDown).trimmed(),
+                                    ui::icon(ui::kSplit).trimmed(), ui::icon(ui::kPilcrow).trimmed(),
+                                    ui::icon(ui::kCodeTags).trimmed()};
+        const QString longCounter = QStringLiteral("Change 1 of 2   ·   ") + kPaneSummary;
+        // `glyphFrom`: the index of the first button wearing its glyph alone.
+        const auto expectForm = [&](int glyphFrom, bool compact) {
+            for (int i = 0; i < labelled.size(); ++i) {
+                QToolButton *b = labelled.at(i).first;
+                const bool glyph = i >= glyphFrom;
+                const bool shown = !(compact && i >= 2);
+                QCOMPARE(b->isVisible(), shown);
+                QCOMPARE(b->text(), glyph ? glyphs.at(i) : labelled.at(i).second);
+                QCOMPARE(b->property("iconForm").toBool(), glyph);
+                if (glyph) {
+                    if (shown)
+                        QCOMPARE(b->width(), ui::space(28));
+                    QCOMPARE(b->maximumWidth(), ui::space(28));
+                } else {
+                    QCOMPARE(b->minimumWidth(), 0);
+                    QCOMPARE(b->maximumWidth(), QWIDGETSIZE_MAX);
+                    QVERIFY(b->width() > ui::space(28));
+                }
+            }
+            QCOMPARE(f.options()->isVisible(), compact);
+            QCOMPARE(f.counter()->text(), compact ? QStringLiteral("1/2") : longCounter);
+        };
+
+        f.resizeTo(ui::space(900));
+        expectForm(5, false);
+        QList<int> widths;
+        for (const auto &b : labelled)
+            widths << b.first->width();
+        f.resizeTo(ui::space(899));
+        expectForm(2, false);
+        // The design's gaps: 4 between Prev and Next and between the options.
+        QCOMPARE(f.next()->x() - (f.prev()->x() + f.prev()->width()), ui::space(4));
+        QCOMPARE(f.whitespace()->x() - (f.twoPane()->x() + f.twoPane()->width()), ui::space(4));
+        QCOMPARE(f.syntax()->x() - (f.whitespace()->x() + f.whitespace()->width()), ui::space(4));
+        f.resizeTo(ui::space(560));
+        expectForm(2, false);
+        f.resizeTo(ui::space(559));
+        expectForm(0, true);
+        QCOMPARE(f.next()->x() - (f.prev()->x() + f.prev()->width()), ui::space(4));
+        QCOMPARE(f.options()->width(), ui::space(28));
+        QCOMPARE(f.options()->x() + f.options()->width(), f.pane->width());
+
+        f.resizeTo(ui::space(900));
+        expectForm(5, false);
+        QList<int> after;
+        for (const auto &b : labelled)
+            after << b.first->width();
+        QCOMPARE(after, widths);
+    }
+
+    // The point of the folding: at no width does a button of the row wear
+    // less room than its text asks for.
+    void noDiffToolbarButtonIsNarrowerThanItsContent()
+    {
+        PaneFixture f = diffPane();
+        QVERIFY(QTest::qWaitForWindowExposed(f.pane.get()));
+        settle();
+        int visibleAtNarrowest = 0;
+        for (int width = ui::space(300); width <= ui::space(1000); width += ui::space(7)) {
+            f.resizeTo(width);
+            const QStringList squeezed = squeezedButtons(f.pane.get());
+            QVERIFY2(squeezed.isEmpty(), qPrintable(QStringLiteral("at %1: ").arg(width) + squeezed.join(", ")));
+            if (width == ui::space(300))
+                for (QToolButton *b : f.pane->findChildren<QToolButton *>())
+                    visibleAtNarrowest += b->parentWidget() == f.pane.get() && b->isVisible();
+        }
+        QCOMPARE(visibleAtNarrowest, 3); // Prev, Next and "…"
+    }
+
+    // The "…" menu says what the three buttons say at the moment it opens,
+    // and its entries take the buttons' own paths.
+    void theDiffToolbarMenuMirrorsTheOptions()
+    {
+        PaneFixture f = diffPane();
+        QVERIFY(QTest::qWaitForWindowExposed(f.pane.get()));
+        settle();
+        f.resizeTo(ui::space(400));
+        QVERIFY(f.options()->isVisible());
+        QMenu *menu = f.options()->menu();
+        QVERIFY(menu);
+
+        const auto checks = [&] {
+            QList<bool> out;
+            for (const QAction *a : filledMenu(menu))
+                out << a->isChecked();
+            return out;
+        };
+        const auto buttons = [&] {
+            QList<bool> out;
+            for (const QToolButton *b : f.viewOptions())
+                out << b->isChecked();
+            return out;
+        };
+        const QList<QAction *> entries = filledMenu(menu);
+        QCOMPARE(menuTexts(entries), QStringList({ui::icon(ui::kSplit) + QStringLiteral("Two-pane"),
+                                                  ui::icon(ui::kPilcrow) + QStringLiteral("Whitespace"),
+                                                  ui::icon(ui::kCodeTags) + QStringLiteral("Syntax")}));
+        for (int i = 0; i < entries.size(); ++i) {
+            QVERIFY(entries.at(i)->isCheckable());
+            QCOMPARE(entries.at(i)->toolTip(), f.viewOptions().at(i)->toolTip());
+        }
+        QCOMPARE(checks(), buttons());
+
+        // The Two-pane entry switches the view, through the button.
+        DiffView *view = f.pane->view();
+        const DiffView::Mode before = view->mode();
+        filledMenu(menu).at(0)->trigger();
+        QVERIFY(view->mode() != before);
+        QCOMPARE(f.twoPane()->isChecked(), view->mode() == DiffView::TwoPane);
+        QCOMPARE(checks(), buttons());
+
+        // Ctrl+T while the button is hidden: the button flips, and the menu
+        // with it the next time it opens.
+        QVERIFY(!f.twoPane()->isVisible());
+        const bool was = f.twoPane()->isChecked();
+        f.pane->togglePaneMode();
+        QCOMPARE(f.twoPane()->isChecked(), !was);
+        QCOMPARE(view->mode() == DiffView::TwoPane, !was);
+        QCOMPARE(checks().at(0), !was);
+        f.pane->toggleWhitespace();
+        QCOMPARE(checks(), buttons());
+        f.pane->toggleWhitespace();
+
+        // The window's own path to it opens it only where the button shows.
+        f.resizeTo(ui::space(900));
+        QVERIFY(!f.options()->isVisible());
+        f.pane->showOptionsMenu();
+        QVERIFY(!menu->isVisible());
+
+        // Back to what the settings held before the test.
+        if (view->mode() != before)
+            f.pane->togglePaneMode();
+        QCOMPARE(view->mode(), before);
+    }
+
+    // The counter follows the change and the form, and says nothing with no
+    // change to count.
+    void theCounterFollowsTheFormAndTheChange()
+    {
+        PaneFixture f = diffPane();
+        QVERIFY(QTest::qWaitForWindowExposed(f.pane.get()));
+        settle();
+        f.resizeTo(ui::space(400));
+        QCOMPARE(f.counter()->text(), QStringLiteral("1/2"));
+        f.pane->nextChange();
+        QCOMPARE(f.counter()->text(), QStringLiteral("2/2"));
+        f.resizeTo(ui::space(900));
+        QCOMPARE(f.counter()->text(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
+        f.resizeTo(ui::space(700));
+        QCOMPARE(f.counter()->text(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
+
+        // A cleared view (and no file to summarise): empty in either form.
+        f.pane->setSummary(QString());
+        f.pane->view()->clear();
+        QCOMPARE(f.counter()->text(), QString());
+        f.resizeTo(ui::space(400));
+        QCOMPARE(f.counter()->text(), QString());
+        QVERIFY(!f.prev()->isEnabled());
+        QVERIFY(!f.next()->isEnabled());
+    }
+
+    // In the window: the stacked Diff tab at 470 wears the compact row, Mini
+    // at 945 the middle one, and neither squeezes a button.
+    void theDiffToolbarFollowsTheWindowsPane()
+    {
+        WindowFixture f = mainWindow(0, true, [](MainWindow *w) { w->resize(470, 612); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        w->setDiffTab(true);
+        settle();
+        auto *pane = w->findChild<DiffPane *>();
+        QVERIFY(pane && pane->isVisible());
+        QVERIFY2(pane->width() < ui::space(560), qPrintable(QString::number(pane->width())));
+        const auto named = [pane](const QString &name) -> QToolButton * {
+            for (QToolButton *b : pane->findChildren<QToolButton *>())
+                if (b->parentWidget() == pane && b->accessibleName() == name)
+                    return b;
+            return nullptr;
+        };
+        QToolButton *prev = named(QStringLiteral("Prev")), *twoPane = named(QStringLiteral("Two-pane")),
+                    *options = named(QStringLiteral("View options"));
+        QVERIFY(prev && twoPane && options);
+        QVERIFY(options->isVisible());
+        QVERIFY(!twoPane->isVisible());
+        QCOMPARE(prev->width(), ui::space(28));
+        QVERIFY2(squeezedButtons(pane).isEmpty(), qPrintable(squeezedButtons(pane).join(", ")));
+
+        w->resize(945, 612);
+        settle();
+        QVERIFY(w->findChild<MiniRail *>()->isVisible());
+        QVERIFY2(pane->width() >= ui::space(560) && pane->width() < ui::space(900), qPrintable(QString::number(pane->width())));
+        QVERIFY(!options->isVisible());
+        QVERIFY(twoPane->isVisible());
+        QCOMPARE(twoPane->width(), ui::space(28));
+        QCOMPARE(prev->text(), ui::icon(ui::kArrowUp) + QStringLiteral("Prev"));
+        QVERIFY2(squeezedButtons(pane).isEmpty(), qPrintable(squeezedButtons(pane).join(", ")));
     }
 
     // --- The stacked commit page ------------------------------------------------

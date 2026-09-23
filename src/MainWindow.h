@@ -112,6 +112,9 @@ private slots:
     void showSyncMenu();
     void showMoreMenu();
     void showOptionsMenu();
+    // The diff pane's view options behind its "…" (--screenshot-menu diff):
+    // only while the pane is narrow enough to wear that button.
+    void showDiffOptionsMenu();
 
 protected:
     void changeEvent(QEvent *event) override;

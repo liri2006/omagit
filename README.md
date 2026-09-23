@@ -24,6 +24,10 @@ history with a branch graph, and plugs into the Nautilus context menu as
   choice is remembered), and Ctrl+wheel or Ctrl+= / Ctrl+- zoom (Ctrl+0 resets).
   Drag the center divider to resize the diff panes;
   double-click it to restore an equal split.
+  The row above the diff folds with the pane's width instead of cutting its labels short:
+  in a pane narrower than 900 px (scaled with the text size) the view options become glyphs,
+  and under 560 px Prev and Next do too, the counter reads `1/3` and the three options move
+  into a `…` menu.
 - Commit the checked files with a message (Ctrl+Enter; in the Mini layout it opens the commit
   popover first, and commits from it once it is open). In the changes list, Space checks or
   unchecks a file and Ctrl+Shift+Space all of them; Ctrl+Shift+A ticks *Amend last commit*, Ctrl+E opens
@@ -242,11 +246,12 @@ Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 945x612` gives the window a fixed size first, so a picture does not depend on the desktop it
 was taken on — two positive numbers, only together with `--screenshot`, and anything else is
 a usage error; `--screenshot-menu
-branch|repo|agent|keybindings|merge|login|commit|sync|more|options` opens that panel first and includes it in the picture
+branch|repo|agent|keybindings|merge|login|commit|sync|more|options|diff` opens that panel first and includes it in the picture
 (`commit` is the Mini layout's commit popover, so it goes with `--mini`; elsewhere it opens nothing;
 `agent` opens nothing in the history; `sync` and `options` are the stacked layout's sync dropdown
 and action-bar menus and open nothing on a wider window, `more` only where the More button is
-shown), `--screenshot-keys
+shown, `diff` the diff pane's `…` view options, only where the pane is narrow enough to show
+that button), `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
 and `@changesTree` in that list focus the list on show, so the keys reach it),

@@ -96,6 +96,13 @@ enum class IconButtonSize { Inline = 24, Toolbar = 28 };
 QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip,
                         IconButtonSize size = IconButtonSize::Inline, bool ghost = true);
 
+// A text button of a folding row wearing its glyph alone: the stylesheet
+// drops its side padding by the `iconForm` property and the button takes the
+// design's 28 px square sideways; switched off, its width is free again. The
+// caller swaps the text. Only a button that really changes form is
+// repolished, so a row may apply its form on every resize.
+void setIconForm(QToolButton *button, bool on);
+
 // The search prompt of a popup, in the Omarchy menu look: no box of its own —
 // the popup's accent frame is the focus cue — with a magnifier that stays put
 // while typing. promptBox() is the row it lives in, hairline included, ready

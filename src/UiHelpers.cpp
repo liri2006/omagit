@@ -13,6 +13,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
+#include <QStyle>
 #include <QTableView>
 #include <QVBoxLayout>
 #include <QWidgetAction>
@@ -175,6 +176,25 @@ QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip,
     b->setProperty("ghost", ghost);
     b->setProperty("toolbar", size == IconButtonSize::Toolbar);
     return b;
+}
+
+void setIconForm(QToolButton *button, bool on)
+{
+    // Repolishing is a whole style pass, so only a real change pays for one.
+    if (button->property("iconForm").toBool() != on) {
+        button->setProperty("iconForm", on);
+        button->style()->unpolish(button);
+        button->style()->polish(button);
+        button->update();
+    }
+    // Both are no-ops when the width already is what the form asks, and a
+    // text-size change gets the new square from the same call.
+    if (on) {
+        button->setFixedWidth(space(int(IconButtonSize::Toolbar)));
+    } else {
+        button->setMinimumWidth(0);
+        button->setMaximumWidth(QWIDGETSIZE_MAX);
+    }
 }
 
 QLineEdit *promptField(const QString &placeholder)

@@ -1465,6 +1465,11 @@ void MainWindow::showOptionsMenu()
         m_commitPage->optionsButton()->showMenu();
 }
 
+void MainWindow::showDiffOptionsMenu()
+{
+    m_diffPane->showOptionsMenu();
+}
+
 void MainWindow::showStatus(const QString &text, int ms)
 {
     m_footer->showStatus(text, ms);
