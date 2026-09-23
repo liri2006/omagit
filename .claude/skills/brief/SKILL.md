@@ -1,6 +1,6 @@
 ---
 name: brief
-description: Co-create an implementation brief with Codex — Codex (gpt-6-astra high) drafts and revises, the main session critiques and owns architecture/taste, iterating until they agree. Use before delegating non-trivial features to opus-implementer (Opus 5), or when the user asks for a brief/plan co-authored with Codex.
+description: Co-create an implementation brief with Codex — Codex (gpt-6-astra high) drafts and revises, the main session critiques and owns architecture/taste, iterating until they agree. Use before delegating non-trivial features to opus-implementer (Opus 5.5), or when the user asks for a brief/plan co-authored with Codex.
 ---
 
 # Brief co-creation with Codex
@@ -64,4 +64,4 @@ Capture the session id for the loop: `grep -m1 "session id:" "$SCRATCH/brief-run
 
 - Save the agreed brief (with any final rulings edited in) to `docs/briefs/YYYY-MM-DD-<short-slug>.md` in the repo (create `docs/briefs/` if missing). This is the user-visible artifact — working drafts and critiques stay in `$SCRATCH`, but the final brief always lands here. Give the user the file path in your summary.
 - Summarize for the user: goal, files to change, test plan in one line, any contested points and how they resolved.
-- Ask the user whether to proceed to implementation. If yes, hand the saved brief file's contents to `opus-implementer` (Agent tool, `subagent_type: "opus-implementer"`, `model: "opus"`; announce the delegation, BRIEF markers, review the diff after).
+- Ask the user whether to proceed to implementation. If yes, hand the saved brief file's contents to `opus-implementer` (Agent tool, `subagent_type: "opus-implementer"`, no `model` override; announce the delegation, BRIEF markers, review the diff after).

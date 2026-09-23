@@ -1,11 +1,11 @@
 ---
 name: codex-review
-description: Adversarial code-review loop with Codex — the main session reviews the current diff first, debates findings with Codex (gpt-6-astra high) until they agree on a fix list, delegates the fixes to an Opus 5 agent (opus-implementer), then re-reviews. Repeats until both reviewers have no remaining findings. Use after an implementation lands (especially one produced by opus-implementer) or when the user asks for a joint/thorough review.
+description: Adversarial code-review loop with Codex — the main session reviews the current diff first, debates findings with Codex (gpt-6-astra high) until they agree on a fix list, delegates the fixes to an Opus 5.5 agent (opus-implementer), then re-reviews. Repeats until both reviewers have no remaining findings. Use after an implementation lands (especially one produced by opus-implementer) or when the user asks for a joint/thorough review.
 ---
 
 # Review loop with Codex
 
-Roles: **You** (main session) review first, own architecture/taste/correctness judgments, and are the final authority on every disputed finding. **Codex** (gpt-6-astra, high reasoning, read-only sandbox) reviews independently, challenges your findings, and adds its own. Fixes are implemented by the `opus-implementer` subagent (an Opus 5 agent, launched with `model: "opus"`), never by Codex and never by the review session itself beyond trivial one-liners.
+Roles: **You** (main session) review first, own architecture/taste/correctness judgments, and are the final authority on every disputed finding. **Codex** (gpt-6-astra, high reasoning, read-only sandbox) reviews independently, challenges your findings, and adds its own. Fixes are implemented by the `opus-implementer` subagent (an Opus 5.5 agent pinned to `claude-opus-5-5` in its frontmatter; do not pass a `model` override), never by Codex and never by the review session itself beyond trivial one-liners.
 
 Conventions:
 
@@ -54,7 +54,7 @@ If the agreed fix list is EMPTY and Codex says AGREED — the loop is done; go t
 ## Cycle N, phase 3 — implement fixes
 
 - Trivial taste/one-line fixes: apply directly yourself.
-- Everything else: hand `fixlist-N.md` to `opus-implementer` (Agent tool, `subagent_type: "opus-implementer"`, `model: "opus"`; announce it, BRIEF markers, include verification commands — at minimum `qmake6 omagit.pro && make -j$(nproc)` plus `tests/run.sh <suites covering the touched code>`).
+- Everything else: hand `fixlist-N.md` to `opus-implementer` (Agent tool, `subagent_type: "opus-implementer"`, no `model` override; announce it, BRIEF markers, include verification commands — at minimum `qmake6 omagit.pro && make -j$(nproc)` plus `tests/run.sh <suites covering the touched code>`).
 - After the subagent reports, review the fix diff yourself and confirm verification passed. For visible changes, also take an offscreen screenshot (`XDG_CONFIG_HOME=<fresh scratch dir> QT_QPA_PLATFORM=offscreen ./omagit --no-fetch --screenshot "$SCRATCH/after.png" …`) and look at it; wipe the scratch `XDG_CONFIG_HOME` between batches so persisted toggles don't leak between runs.
 
 ## Cycle N+1
