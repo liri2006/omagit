@@ -118,9 +118,10 @@ private:
         int repoFull = 0;    // folder glyph + name + chevron
         int repoFolded = 0;  // the bare folder glyph: space(28)
         int branchFull = 0;
-        int branchLabel = 0;  // the name inside it, on its own
-        int branchChrome = 0; // and what the button puts around it
-        int more = 0;
+        int branchLabel = 0;    // the name inside it, on its own
+        int branchChrome = 0;   // and what the button puts around it
+        int branchEllipsis = 0; // a lone "…" in the chip's font: the stacked row's floor
+        int more = 0;           // the ordinary row's; stacked, More is space(28)
         int tabsLabels = 0;
         int tabsGlyphs = 0;
         int toggles = 0; // both, with the gap between them

@@ -16,6 +16,7 @@
 #include <QTimerEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QtMath>
 
 #include <functional>
 
@@ -33,7 +34,7 @@ constexpr int kDividerHeight = 16;
 constexpr int kTogglesGap = 4;
 constexpr int kFoldedRepo = 28;   // the bare folder chip
 constexpr int kIconForm = 28;     // a sync button showing its glyph alone, and more
-constexpr int kBranchFloor = 72;  // the least of the branch name the last level keeps
+constexpr int kBranchFloor = 72;  // the least of the branch name the ordinary row's last level keeps
 constexpr int kSyncDropdown = 92; // the stacked sync dropdown at its narrowest, whatever its size hint says
 
 // How the row folds, from everything spelled out to the narrowest form. The
@@ -66,7 +67,7 @@ constexpr int kFoldCount = int(sizeof(kFolds) / sizeof(kFolds[0]));
 //
 //   0  tab labels
 //   1  tab glyphs
-//   2  tab glyphs; the branch elides
+//   2  tab glyphs; the branch elides, down to a lone ellipsis if it has to
 constexpr int kStackedFoldCount = 3;
 
 // What a control takes sideways, its fixed width included: the layout toggles
@@ -76,10 +77,11 @@ int widthOf(const QWidget *w)
     return qBound(w->minimumWidth(), w->sizeHint().width(), w->maximumWidth());
 }
 
-// A sync button wearing its glyph alone, and the more button: the design's
-// 28 px square with the badge's reserve beside it. Their size hint is the
-// wrong measure here — it is a text button's padding around a glyph, half as
-// wide again as the design asks — so the row states the width instead.
+// A sync button wearing its glyph alone, and the ordinary row's more button:
+// the design's 28 px square with the badge's reserve beside it. Their size
+// hint is the wrong measure here — it is a text button's padding around a
+// glyph, half as wide again as the design asks — so the row states the width
+// instead.
 int iconFormWidth()
 {
     return space(kIconForm) + BadgeButton::kBadgeReserve;
@@ -384,7 +386,7 @@ TopBar::TopBar(QWidget *parent)
     m_more = toolButton<BadgeButton>(QString(), tr("More — the buttons that do not fit"));
     m_more->setParent(m_row);
     m_more->setAccessibleName(tr("More"));
-    setCompact(m_more, true); // it never wears a label
+    setCompact(m_more, true); // it never wears a label; stacked, it is the icon form instead (apply())
     m_more->setPopupMode(QToolButton::InstantPopup);
     m_moreMenu = new TickMenu(m_more);
     m_moreMenu->setToolTipsVisible(true);
@@ -557,6 +559,9 @@ void TopBar::measure()
     // of the button is the glyph, the chevron and the padding around them.
     m_metrics.branchLabel = m_probeBranch->fontMetrics().horizontalAdvance(m_branchLabel);
     m_metrics.branchChrome = m_metrics.branchFull - m_metrics.branchLabel;
+    // A lone ellipsis, rounded up: elidedText() gives nothing at all in a
+    // width a fraction short of it.
+    m_metrics.branchEllipsis = qCeil(QFontMetricsF(m_probeBranch->font()).horizontalAdvance(QChar(0x2026)));
 
     // A probe wears no compact property, so it measures the labelled form.
     for (SyncControl &c : m_syncControls) {
@@ -605,9 +610,10 @@ bool TopBar::tabLabels(int level) const
 
 int TopBar::rightGroupWidth(int level) const
 {
-    // Stacked: the dropdown and More, whatever the level.
+    // Stacked: the dropdown and More, whatever the level; More is the bare
+    // square there, as nothing folds into it that could hang a badge on it.
     if (m_stacked)
-        return dropdownWidth(m_syncDropdown) + space(kSyncGap) + m_metrics.more;
+        return dropdownWidth(m_syncDropdown) + space(kSyncGap) + space(kIconForm);
     const Fold &fold = kFolds[level];
     int w = 0;
     for (int i = 0; i < m_syncControls.size(); ++i) {
@@ -630,10 +636,12 @@ int TopBar::totalWidth(int level, int branchLabelWidth) const
     return left + space(kGroupGap) + tabs + space(kGroupGap) + rightGroupWidth(level);
 }
 
-// The last level keeps this much of the branch name, and no less.
+// The last level keeps this much of the branch name, and no less. Stacked,
+// that is a lone ellipsis, so the bar never forces a width on a narrow tile;
+// an elided text narrower than the ellipsis would be no text at all.
 int TopBar::minBranchLabel() const
 {
-    return qMin(m_metrics.branchLabel, space(kBranchFloor));
+    return qMin(m_metrics.branchLabel, m_stacked ? m_metrics.branchEllipsis : space(kBranchFloor));
 }
 
 QSize TopBar::sizeHint() const
@@ -686,9 +694,14 @@ void TopBar::apply(int level, int branchLabelWidth)
     setTextOnce(m_branchButton, icon(kBranch) + label + chevron());
 
     // Stacked, all four belong to the dropdown: none of them is folded into
-    // More, which is there anyway for its own entries.
+    // More, which is there anyway for its own entries, as the design's bare
+    // 28 px square; the ordinary row's More is the compact form, badge reserve
+    // and all. The two properties are never set at once: the one going off
+    // goes first.
     m_foldedSync.clear();
     if (m_stacked) {
+        setCompact(m_more, false);
+        setIconForm(m_more, true);
         for (const SyncControl &c : std::as_const(m_syncControls))
             c.button->setVisible(false);
         m_more->setVisible(true);
@@ -697,6 +710,8 @@ void TopBar::apply(int level, int branchLabelWidth)
         m_layoutButton->setVisible(false);
         m_diffToggle->setVisible(false);
     } else {
+        setIconForm(m_more, false);
+        setCompact(m_more, true);
         const Fold &fold = kFolds[level];
         for (int i = 0; i < m_syncControls.size(); ++i) {
             const SyncControl &c = m_syncControls.at(i);
@@ -744,7 +759,7 @@ void TopBar::place(int level, int branchLabelWidth)
         m_syncDropdown->setGeometry(x, 0, dropdown, height);
         m_syncDropdown->show();
         x += dropdown + space(kSyncGap);
-        put(m_more, x, m_metrics.more);
+        put(m_more, x, space(kIconForm));
         placeTabs(leftEnd, rightStart, level);
         return;
     }

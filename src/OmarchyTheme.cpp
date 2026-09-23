@@ -714,8 +714,9 @@ QLabel#bigLabel { font-size: %big%px; }
 QToolButton#keybindingsButton, QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
 /* The two chips stand in the top bar's row beside the sync buttons, so they
    carry those buttons' vertical padding; the footer's info button keeps the
-   tighter one. */
-QToolButton#branchButton, QToolButton#repoButton { padding: 5px 6px; }
+   tighter one. Sideways, 3 px and the 7 px of air a tool button keeps around
+   its text put the glyph 10 px in, as the design does. */
+QToolButton#branchButton, QToolButton#repoButton { padding: 5px 3px; }
 QToolButton#branchButton { color: %acc%; font-weight: bold; }
 QToolButton#keybindingsButton:hover, QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
 QToolButton#keybindingsButton:pressed, QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }

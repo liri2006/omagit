@@ -39,6 +39,7 @@
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHostAddress>
@@ -78,6 +79,7 @@
 #include <QTreeView>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QtMath>
 #include <QWheelEvent>
 
 #include <functional>
@@ -675,9 +677,11 @@ struct WindowFixture
 // `extra` more unversioned files (f01.txt, f02.txt, ...) beside the two, and
 // `mini` starts the window in the Mini layout before its first show;
 // `beforeShow` does whatever else main() would do before showing it (flags,
-// a size of its own).
+// a size of its own); a `branch` is checked out after the first commit, in
+// place of main.
 WindowFixture mainWindow(int extra = 0, bool mini = false,
-                         const std::function<void(MainWindow *)> &beforeShow = {})
+                         const std::function<void(MainWindow *)> &beforeShow = {},
+                         const QString &branch = {})
 {
     WindowFixture f;
     f.dir.reset(new QTemporaryDir);
@@ -695,6 +699,8 @@ WindowFixture mainWindow(int extra = 0, bool mini = false,
         return f;
     writeFixture(QDir(path).filePath(QStringLiteral("a.txt")), "a\n");
     if (!git(path, {"add", "-A"}) || !git(path, {"commit", "-q", "-m", "first"}, 1))
+        return f;
+    if (!branch.isEmpty() && !git(path, {QStringLiteral("checkout"), QStringLiteral("-q"), QStringLiteral("-b"), branch}))
         return f;
     writeFixture(QDir(path).filePath(QStringLiteral("a.txt")), "a changed\n");
     writeFixture(QDir(path).filePath(QStringLiteral("u1.txt")), "u1\n");
@@ -2201,10 +2207,13 @@ esac
             QVERIFY(bar->moreButton()->isVisible());
             QCOMPARE(bar->diffTab()->isVisible(), true);
             // The dropdown is the design's 92 px whatever its hint, the row's
-            // height; More keeps its one width.
+            // height; More is the design's bare 28 px square, in the icon form
+            // and never the compact one at the same time.
             QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(92));
             QCOMPARE(f.rectOf(bar->syncDropdown()).height(), bar->syncDropdown()->parentWidget()->height());
-            QCOMPARE(f.rectOf(bar->moreButton()).width(), iconFormWidth());
+            QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(28));
+            QVERIFY(bar->moreButton()->property("iconForm").toBool());
+            QVERIFY(!bar->moreButton()->property("compact").toBool());
             // The gaps: the bare folder, 4 to the branch, 6 between the two
             // controls on the right, More against the right edge.
             const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
@@ -2230,17 +2239,24 @@ esac
         const QRect branch = f.rectOf(bar->branchButton());
         QCOMPARE(tight.x(), branch.x() + branch.width() + ui::space(16));
         QCOMPARE(tight.x() + tight.width() + ui::space(16), f.rectOf(bar->syncDropdown()).x());
-        // The branch floor: 72 px of the name, the glyph and chevron kept.
-        const int name = bar->branchButton()->fontMetrics().horizontalAdvance(bar->branchLabel());
+        // The branch floor: a lone ellipsis between the glyph and the
+        // chevron, in the chip's font, and the chip no wider than that.
+        const QFontMetrics chip = bar->branchButton()->fontMetrics();
+        const int name = chip.horizontalAdvance(bar->branchLabel());
+        // Rounded up: elidedText() gives nothing at all a fraction short of it.
+        const int ellipsis = qCeil(QFontMetricsF(bar->branchButton()->font()).horizontalAdvance(QChar(0x2026)));
         QVERIFY(name > ui::space(72));
         QCOMPARE(f.levelAt(widest.value(1)), 1);
         const int unelided = f.rectOf(bar->branchButton()).width();
+        const int branchChrome = unelided - name;
         QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 2);
-        QCOMPARE(f.rectOf(bar->branchButton()).width(), unelided - (name - ui::space(72)));
-        const QString elided = bar->branchButton()->text();
-        QVERIFY2(elided.contains(QChar(0x2026)), qPrintable(elided));
-        QVERIFY(elided.endsWith(ui::chevron()));
+        QCOMPARE(bar->branchButton()->text(), ui::icon(ui::kBranch) + QString(QChar(0x2026)) + ui::chevron());
+        QCOMPARE(f.rectOf(bar->branchButton()).width(), branchChrome + ellipsis);
         QVERIFY(bar->minimumSizeHint().width() < bar->sizeHint().width());
+        // So the stacked row asks for less than the ordinary one's last level,
+        // which keeps 72 px of this long a name.
+        QVERIFY2(bar->minimumSizeHint().width() < ordinaryMin,
+                 qPrintable(QStringLiteral("%1 >= %2").arg(bar->minimumSizeHint().width()).arg(ordinaryMin)));
 
         // Unstacked at a wide width: level 0 of the ordinary row, every text
         // canonical again, the Diff tab gone and the ordinary hints back.
@@ -2260,6 +2276,13 @@ esac
         QVERIFY(bar->diffToggle()->isVisible());
         QVERIFY(!bar->diffTab()->isVisible());
         QCOMPARE(barNames(bar), kBarNames);
+        // More is the compact form again, badge reserve and all, wherever the
+        // ordinary row shows it.
+        QCOMPARE(f.levelAt(ordinaryMin), 6);
+        QVERIFY(bar->moreButton()->isVisible());
+        QCOMPARE(f.rectOf(bar->moreButton()).width(), iconFormWidth());
+        QVERIFY(bar->moreButton()->property("compact").toBool());
+        QVERIFY(!bar->moreButton()->property("iconForm").toBool());
     }
 
     // The Diff tab between the other two: one exclusive switch of three, that
@@ -2630,7 +2653,7 @@ esac
         bar->setStacked(true);
         f.levelAt(bar->sizeHint().width());
         QVERIFY(bar->moreButton()->isVisible());
-        QCOMPARE(f.rectOf(bar->moreButton()).width(), iconFormWidth());
+        QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(28)); // no badge to keep room for
         actions = filledMenu(bar->moreButton()->menu());
         QCOMPARE(menuTexts(actions), own);
         // No dot: the sync counts are the dropdown's to show.
@@ -3324,6 +3347,46 @@ esac
         QCOMPARE(twoPane->width(), ui::space(28));
         QCOMPARE(prev->text(), ui::icon(ui::kArrowUp) + QStringLiteral("Prev"));
         QVERIFY2(squeezedButtons(pane).isEmpty(), qPrintable(squeezedButtons(pane).join(", ")));
+    }
+
+    // The stacked bar never forces a width on a 470 tile: with the Changes
+    // pill and a branch name longer than the ordinary row's 72 px, the window
+    // stays 470 wide on every tab and the name elides instead.
+    void theStackedWindowKeepsA470Tile()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); },
+                                     QStringLiteral("feature/askpass-login-dialog"));
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        TopBar *bar = f.bar();
+        QVERIFY(w->isStacked());
+        QVERIFY(bar->isStacked());
+        QCOMPARE(bar->branchLabel(), QStringLiteral("feature/askpass-login-dialog"));
+        QVERIFY(bar->changesCount() > 0);
+        QVERIFY(bar->branchButton()->fontMetrics().horizontalAdvance(bar->branchLabel()) > ui::space(72));
+
+        const auto holds = [&](QToolButton *tab, const char *name) {
+            tab->click();
+            settle();
+            QVERIFY2(tab->isChecked(), name);
+            QVERIFY2(w->width() == 470, qPrintable(QStringLiteral("%1: %2 wide").arg(QLatin1String(name)).arg(w->width())));
+            QVERIFY2(w->minimumSizeHint().width() <= 470,
+                     qPrintable(QStringLiteral("%1: a minimum of %2").arg(QLatin1String(name)).arg(w->minimumSizeHint().width())));
+            QVERIFY2(bar->branchButton()->text().contains(QChar(0x2026)), qPrintable(bar->branchButton()->text()));
+        };
+        holds(bar->changesTab(), "Changes");
+        if (QTest::currentTestFailed())
+            return;
+        holds(bar->diffTab(), "Diff");
+        if (QTest::currentTestFailed())
+            return;
+        QVERIFY(w->diffTab());
+        holds(bar->historyTab(), "History");
+        if (QTest::currentTestFailed())
+            return;
+        QCOMPARE(w->mode(), MainWindow::HistoryMode);
     }
 
     // --- The stacked commit page ------------------------------------------------
