@@ -12,7 +12,6 @@
 #include <QMenu>
 #include <QPainter>
 #include <QResizeEvent>
-#include <QStyle>
 #include <QTimerEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -36,6 +35,10 @@ constexpr int kFoldedRepo = 28;   // the bare folder chip
 constexpr int kIconForm = 28;     // a sync button showing its glyph alone, and more
 constexpr int kBranchFloor = 72;  // the least of the branch name the ordinary row's last level keeps
 constexpr int kSyncDropdown = 92; // the stacked sync dropdown at its narrowest, whatever its size hint says
+// How far a sync button's badge rises over the button's top edge (kit.js
+// button(): badge(…, y − 5, …)). The bar keeps that much room above the row,
+// so the badge is painted inside the bar.
+constexpr int kBadgeOverhang = 5;
 
 // How the row folds, from everything spelled out to the narrowest form. The
 // first level that fits the width wins.
@@ -77,26 +80,15 @@ int widthOf(const QWidget *w)
     return qBound(w->minimumWidth(), w->sizeHint().width(), w->maximumWidth());
 }
 
-// A sync button wearing its glyph alone, and the ordinary row's more button:
-// the design's 28 px square with the badge's reserve beside it. Their size
-// hint is the wrong measure here — it is a text button's padding around a
-// glyph, half as wide again as the design asks — so the row states the width
-// instead.
+// A sync button wearing its glyph alone, and the more button: the design's
+// 28 px square (ui::setIconForm()), the glyph centred in it. The badge hangs
+// over the corner outside it, so nothing is kept free inside for one. Their
+// size hint is the wrong measure here — it is a text button's padding around
+// a glyph, half as wide again as the design asks — so the row states the
+// width instead.
 int iconFormWidth()
 {
-    return space(kIconForm) + BadgeButton::kBadgeReserve;
-}
-
-// The stylesheet tells the two forms apart by this property. Repolishing is a
-// whole style pass, so only a button that really changes form pays for one.
-void setCompact(QWidget *w, bool on)
-{
-    if (w->property("compact").toBool() == on)
-        return;
-    w->setProperty("compact", on);
-    w->style()->unpolish(w);
-    w->style()->polish(w);
-    w->update();
+    return space(kIconForm);
 }
 
 // The row applies a level on every resize: a button already carrying the text
@@ -170,7 +162,8 @@ signals:
 protected:
     void paintEvent(QPaintEvent *event) override
     {
-        // The chrome, and Merge's mark in the corner where a badge would be.
+        // The chrome. Merge's mark is this button's badge, which the bar's
+        // badge layer paints over the corner like any other.
         BadgeButton::paintEvent(event);
         const OmarchyTheme *t = OmarchyTheme::instance();
         QPainter p(this);
@@ -329,6 +322,11 @@ TopBar::TopBar(QWidget *parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     m_row = new BarRow([this] { relayout(); });
+    // The badges hang over the buttons' corners, out of the buttons' own
+    // rects, so a layer over the whole bar paints them (see the end of the
+    // constructor); the room above the row (kBadgeOverhang) is where their
+    // tops land. It exists before anything can relay the row out.
+    m_badges = new BadgeLayer(this);
 
     // Repository and branch chips: the same ghost buttons the footer used to
     // carry, with their object names and so their styling.
@@ -386,7 +384,7 @@ TopBar::TopBar(QWidget *parent)
     m_more = toolButton<BadgeButton>(QString(), tr("More — the buttons that do not fit"));
     m_more->setParent(m_row);
     m_more->setAccessibleName(tr("More"));
-    setCompact(m_more, true); // it never wears a label; stacked, it is the icon form instead (apply())
+    setIconForm(m_more, true); // it never wears a label, in either presentation
     m_more->setPopupMode(QToolButton::InstantPopup);
     m_moreMenu = new TickMenu(m_more);
     m_moreMenu->setToolTipsVisible(true);
@@ -454,9 +452,13 @@ TopBar::TopBar(QWidget *parent)
     }
 
     m_rootLayout = new QVBoxLayout(this);
-    m_rootLayout->setContentsMargins(0, 0, 0, 0);
     m_rootLayout->addWidget(m_row);
     m_rootLayout->addWidget(hairline());
+
+    // The badge layer over everything else in the bar.
+    for (BadgeButton *b : {m_pull, m_push, m_fetch, m_merge, m_more, m_syncDropdown})
+        m_badges->watch(b);
+    m_badges->raise();
 
     applyTheme();
 }
@@ -534,6 +536,7 @@ void TopBar::applyTheme()
     m_historyTab->refreshGlyph();
     static_cast<SyncDropdown *>(m_syncDropdown)->refresh();
     m_rootLayout->setSpacing(space(kBarGap));
+    m_rootLayout->setContentsMargins(0, space(kBadgeOverhang), 0, 0);
     measure();
     updateMoreMark();
 }
@@ -563,7 +566,7 @@ void TopBar::measure()
     // width a fraction short of it.
     m_metrics.branchEllipsis = qCeil(QFontMetricsF(m_probeBranch->font()).horizontalAdvance(QChar(0x2026)));
 
-    // A probe wears no compact property, so it measures the labelled form.
+    // A probe wears no iconForm property, so it measures the labelled form.
     for (SyncControl &c : m_syncControls) {
         c.full = icon(c.glyph) + c.label;
         c.iconText = icon(c.glyph, c.fallback).trimmed();
@@ -644,21 +647,24 @@ int TopBar::minBranchLabel() const
     return qMin(m_metrics.branchLabel, m_stacked ? m_metrics.branchEllipsis : space(kBranchFloor));
 }
 
+// The height: the room the badges rise into, the row, the gap and the hairline.
 QSize TopBar::sizeHint() const
 {
-    return QSize(totalWidth(0, m_metrics.branchLabel), m_metrics.height + space(kBarGap) + 1);
+    return QSize(totalWidth(0, m_metrics.branchLabel), space(kBadgeOverhang) + m_metrics.height + space(kBarGap) + 1);
 }
 
 // Never wider than the last level at its shortest branch name: the bar folds
 // instead of forcing a width on the window.
 QSize TopBar::minimumSizeHint() const
 {
-    return QSize(totalWidth(levelCount() - 1, minBranchLabel()), m_metrics.height + space(kBarGap) + 1);
+    return QSize(totalWidth(levelCount() - 1, minBranchLabel()),
+                 space(kBadgeOverhang) + m_metrics.height + space(kBarGap) + 1);
 }
 
 void TopBar::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+    m_badges->setGeometry(rect());
     relayout();
 }
 
@@ -679,6 +685,7 @@ void TopBar::relayout()
         label = qBound(minBranchLabel(), width - totalWidth(m_level, 0), m_metrics.branchLabel);
     apply(m_level, label);
     place(m_level, label);
+    m_badges->update(); // the buttons may have moved without a badge changing
 }
 
 // The presentation of every control at `level`, the displayed text included:
@@ -694,14 +701,12 @@ void TopBar::apply(int level, int branchLabelWidth)
     setTextOnce(m_branchButton, icon(kBranch) + label + chevron());
 
     // Stacked, all four belong to the dropdown: none of them is folded into
-    // More, which is there anyway for its own entries, as the design's bare
-    // 28 px square; the ordinary row's More is the compact form, badge reserve
-    // and all. The two properties are never set at once: the one going off
-    // goes first.
+    // More, which is there anyway for its own entries. More is the design's
+    // 28 px square in both presentations; setting it again on every level
+    // keeps its width on the text size of the moment.
     m_foldedSync.clear();
+    setIconForm(m_more, true);
     if (m_stacked) {
-        setCompact(m_more, false);
-        setIconForm(m_more, true);
         for (const SyncControl &c : std::as_const(m_syncControls))
             c.button->setVisible(false);
         m_more->setVisible(true);
@@ -710,14 +715,12 @@ void TopBar::apply(int level, int branchLabelWidth)
         m_layoutButton->setVisible(false);
         m_diffToggle->setVisible(false);
     } else {
-        setIconForm(m_more, false);
-        setCompact(m_more, true);
         const Fold &fold = kFolds[level];
         for (int i = 0; i < m_syncControls.size(); ++i) {
             const SyncControl &c = m_syncControls.at(i);
             const bool shown = i < fold.syncShown;
             setTextOnce(c.button, fold.syncLabels ? c.full : c.iconText);
-            setCompact(c.button, !fold.syncLabels); // the icon form's narrower padding
+            setIconForm(c.button, !fold.syncLabels); // the design's square, the glyph centred
             c.button->setVisible(shown);
             if (!shown)
                 m_foldedSync << c.button;
@@ -750,7 +753,11 @@ void TopBar::place(int level, int branchLabelWidth)
 
     // The right group hangs off the right edge, in the order it reads in:
     // the sync buttons, the more menu, the divider, then the two toggles —
-    // or, stacked, the sync dropdown and More.
+    // or, stacked, the sync dropdown and More. A badge overhangs its button's
+    // right edge by space(4), which always lands inside the row: the ordinary
+    // row ends with the toggles, which carry none, and the stacked one with
+    // More, which carries none there either (nothing is folded into it, so
+    // updateMoreMark() leaves it bare).
     x = width - rightGroupWidth(level);
     const int rightStart = x;
     if (m_stacked) {

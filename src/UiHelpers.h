@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QLabel>
 #include <QString>
 #include <QStringList>
 #include <QToolButton>
@@ -10,7 +11,6 @@ class QAction;
 class QDateTime;
 class QFont;
 class QHBoxLayout;
-class QLabel;
 class QLineEdit;
 class QMenu;
 class QTableView;
@@ -74,6 +74,33 @@ QString ago(const QDateTime &when);
 QLabel *sectionLabel(const QString &text);
 
 QLabel *dimLabel(const QString &text = QString());
+
+// A one-line label that elides its text at the right to the width it is
+// given, rather than cutting the last character it has room for in half; the
+// full text is its tooltip while it is elided. It asks for the full text's
+// width and gives up any of it, so a row can squeeze it to nothing.
+class ElidedLabel : public QLabel
+{
+    Q_OBJECT
+public:
+    explicit ElidedLabel(QWidget *parent = nullptr);
+
+    // What the label says when it has the room: setText() is for the
+    // elided copy the label shows, and only the label calls it.
+    void setFullText(const QString &text);
+    QString fullText() const { return m_fullText; }
+
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+    void changeEvent(QEvent *event) override;
+
+private:
+    void elide();
+    QString m_fullText;
+};
 
 template <typename Button = QToolButton>
 Button *toolButton(const QString &text, const QString &tip = QString())

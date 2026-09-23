@@ -139,7 +139,10 @@ void MainWindow::buildUi()
 {
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
-    rootLayout->setContentsMargins(14, 8, 14, 8);
+    // The top margin is 3: the top bar keeps 5 more above its row for the
+    // badges that rise over the sync buttons, so at the design's text size
+    // the row stays 8 px under the window's edge.
+    rootLayout->setContentsMargins(14, 3, 14, 8);
     rootLayout->setSpacing(kBodySpacing);
 
     // ---- The top bar: the repository and branch chips, the page tabs, the

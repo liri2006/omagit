@@ -281,6 +281,24 @@ Not in this phase: the design's `Split ▾ / Unified ▾` dropdown in place of
 the Two-pane toggle, the forced unified view of the stacked Diff tab, and the
 coloured summary (`Modified +4 −2`).
 
+### Gap fixes (after phase 9)
+
+Done 2026-09-23 (brief `docs/briefs/2026-09-23-design-rework-gaps.md`,
+record `docs/reviews/2026-09-23-design-rework-gaps.md`):
+
+- The sync buttons' badge is the design's square hanging over the top-right
+  corner (`space(4)` past the right edge, `space(5)` above the top, kit.js
+  `badge()`), painted by a `BadgeLayer` over the whole top bar, because a
+  widget cannot paint outside its own rect; the bar keeps `space(5)` above
+  its row for it. No reserve inside the buttons any more: the icon form is
+  `ui::setIconForm()`'s 28 px square, the glyph centred by its ink (a Nerd
+  Font glyph's ink is wider than its advance).
+- The merge dialog is `min(640, window − 24)` wide and stacks its pickers
+  under 520 (`fitWidth()` / `arrangePickers()`).
+- The footer's status is a `ui::ElidedLabel` (the design's shorter `xs`
+  text, done by eliding).
+- No header text over the history graph column.
+
 ## How a phase is done
 
 1. A brief from the Figma frames and the generator's numbers; co-written with

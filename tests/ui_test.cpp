@@ -5,6 +5,7 @@
 // the theme's colors.toml parsing and the merge verdict's wording — and, with
 // git itself but no network, the way a fetch signs in.
 #include "../src/BadgeButton.h"
+#include "../src/Footer.h"
 #include "../src/BranchMenu.h"
 #include "../src/ChangesModel.h"
 #include "../src/ChangesTreeModel.h"
@@ -753,10 +754,10 @@ const QStringList kBarNames{QStringLiteral("omagit-workspace"),
                             QStringLiteral("Diff pane")};
 
 // A sync button wearing its glyph alone, and the more button: the design's
-// 28 px square with the badge's reserve beside it.
+// 28 px square; the badge hangs over its corner, outside it.
 int iconFormWidth()
 {
-    return ui::space(28) + BadgeButton::kBadgeReserve;
+    return ui::space(28);
 }
 
 // What a top bar measures at the text size of the moment, spelled out so a
@@ -1632,6 +1633,14 @@ esac
         QCOMPARE(model.graph(2).edges.first().from, 0);
         QCOMPARE(model.graph(2).edges.first().to, -1);
         QVERIFY(model.isHead(0));
+        // No header text over the graph, as in the design; the column keeps
+        // its name for the tooltip and for screen readers.
+        QVERIFY(model.headerData(HistoryModel::Graph, Qt::Horizontal, Qt::DisplayRole).toString().isEmpty());
+        QCOMPARE(model.headerData(HistoryModel::Graph, Qt::Horizontal, Qt::ToolTipRole).toString(), QStringLiteral("Graph"));
+        QCOMPARE(model.headerData(HistoryModel::Graph, Qt::Horizontal, Qt::AccessibleTextRole).toString(),
+                 QStringLiteral("Graph"));
+        QCOMPARE(model.headerData(HistoryModel::Message, Qt::Horizontal, Qt::DisplayRole).toString(),
+                 QStringLiteral("Message"));
     }
 
     // Two branches that are merged one after the other: the second one must
@@ -1933,16 +1942,18 @@ esac
             menu->hide();
             return actions;
         };
-        // The accent dot BadgeButton paints for a folded count; the button
-        // keeps no getter for it, so it is read off its own pixels.
+        // The accent dot BadgeButton paints for a folded count, read off the
+        // pixels its badge paints. The bar's badge layer only paints the
+        // badges of buttons on screen, and the checks below hide the whole
+        // bar, so the badge is painted here the way the layer paints it.
         const auto hasDot = [](BadgeButton *button) {
-            const QImage shot = button->grab().toImage();
-            const QRgb accent = OmarchyTheme::instance()->accent().rgb() | 0xff000000;
-            for (int y = 0; y < shot.height(); ++y)
-                for (int x = 0; x < shot.width(); ++x)
-                    if ((shot.pixel(x, y) | 0xff000000) == accent)
-                        return true;
-            return false;
+            const int room = ui::space(20);
+            QImage shot(button->size() + QSize(2 * room, 2 * room), QImage::Format_ARGB32_Premultiplied);
+            shot.fill(Qt::transparent);
+            QPainter p(&shot);
+            button->paintBadge(&p, QRect(QPoint(room, room), button->size()));
+            p.end();
+            return imagePaints(shot, OmarchyTheme::instance()->accent());
         };
 
         // The menu's own entries after the folded ones: a separator, Refresh,
@@ -2041,9 +2052,9 @@ esac
         QCOMPARE(historyBox, ui::space(14));
     }
 
-    // The icon form of a sync button is the design's square with the badge's
-    // reserve beside it, not the size hint of a text button around a glyph —
-    // and that width is what the levels are folded on.
+    // The icon form of a sync button is the design's square, not the size
+    // hint of a text button around a glyph — and that width is what the
+    // levels are folded on.
     void theTopBarSyncButtonsFoldToTheDesignsSquare()
     {
         BarFixture f = topBar();
@@ -2066,8 +2077,8 @@ esac
             saved += labelled.at(i) - iconFormWidth();
         }
         QVERIFY2(saved > 0, "the icon form is no narrower than the labelled one");
-        // Both forms are one height: the compact padding only takes from the
-        // sides, so the icons line up with the chips and the tabs.
+        // Both forms are one height: the icon form's padding only takes from
+        // the sides, so the icons line up with the chips and the tabs.
         QCOMPARE(f.rectOf(bar->pullButton()).height(), labelledHeight);
         QCOMPARE(f.rectOf(bar->moreButton()).height(), labelledHeight);
 
@@ -2081,6 +2092,122 @@ esac
         const int levelTwo = wide - saved - iconFormWidth() - ui::space(6);
         QCOMPARE(f.levelAt(levelTwo), 2);
         QCOMPARE(f.levelAt(levelTwo - 1), 3);
+    }
+
+    // A badge is the design's square hanging over its button's top-right
+    // corner (kit.js badge()): its right edge space(4) past the button's, its
+    // top space(5) above it. The bar's badge layer paints it there, in the
+    // icon form and the labelled one alike.
+    void theBadgeHangsOverTheButtonsCorner()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+        BadgeButton *pull = bar->pullButton();
+        pull->setCount(2);
+        const QRgb accent = OmarchyTheme::instance()->accent().rgb() | 0xff000000;
+        const int wide = bar->sizeHint().width();
+        for (const int level : {1, 0}) {
+            QCOMPARE(f.levelAt(level == 1 ? wide - 1 : wide), level);
+            QTest::qWait(500); // the pop is over: the badge is at its full size
+            const QRect button = f.rectOf(pull);
+            const QRect badge = pull->badgeRect(button);
+            QCOMPARE(badge.top(), button.top() - ui::space(5));
+            QCOMPARE(badge.right(), button.right() + ui::space(4));
+            QCOMPARE(badge.height(), ui::space(14));
+            QVERIFY(badge.width() >= ui::space(14));
+            QVERIFY(bar->rect().contains(badge)); // the bar keeps the room it rises into
+
+            const QImage shot = bar->grab().toImage();
+            const auto at = [&shot](int x, int y) { return shot.pixel(x, y) | 0xff000000; };
+            // Above the button's top edge, and right of its right edge.
+            QVERIFY(badge.top() + 1 < button.top());
+            QCOMPARE(at(badge.left() + 1, badge.top() + 1), accent);
+            QVERIFY(badge.right() - 1 > button.right());
+            QCOMPARE(at(badge.right() - 1, badge.bottom() - 1), accent);
+            // Square: a rounded pill would leave its top-right corner bare.
+            QCOMPARE(at(badge.right(), badge.top()), accent);
+        }
+    }
+
+    // The icon form centres its glyph in the square, both ways. The badge is
+    // not the button's to paint any more, so a count cannot skew what the
+    // button's own pixels show.
+    void theIconFormCentresTheGlyph()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+        BadgeButton *pull = bar->pullButton();
+        pull->setCount(2);
+        QCOMPARE(f.levelAt(bar->sizeHint().width() - 1), 1);
+        QVERIFY(pull->property("iconForm").toBool());
+        QCOMPARE(pull->width(), ui::space(28));
+
+        // The glyph's box: whatever differs from the fill, the border ring left out.
+        const QImage shot = pull->grab().toImage();
+        constexpr int kRing = 2;
+        const QRgb fill = shot.pixel(kRing, kRing);
+        int left = INT_MAX, right = -1, top = INT_MAX, bottom = -1;
+        for (int y = kRing; y < shot.height() - kRing; ++y) {
+            for (int x = kRing; x < shot.width() - kRing; ++x) {
+                if (shot.pixel(x, y) == fill)
+                    continue;
+                left = qMin(left, x);
+                right = qMax(right, x);
+                top = qMin(top, y);
+                bottom = qMax(bottom, y);
+            }
+        }
+        QVERIFY2(right >= 0, "the button paints no glyph");
+        const auto offCentre = [](int from, int to, int size) { return (from + to) / 2.0 - (size - 1) / 2.0; };
+        const QString box = QStringLiteral("glyph %1..%2 x %3..%4 in %5 x %6")
+                                .arg(left).arg(right).arg(top).arg(bottom).arg(shot.width()).arg(shot.height());
+        QVERIFY2(qAbs(offCentre(left, right, shot.width())) <= 1.0, qPrintable(box));
+        QVERIFY2(qAbs(offCentre(top, bottom, shot.height())) <= 1.0, qPrintable(box));
+    }
+
+    // The pop and the walking dots move the painted badge on without its
+    // content changing: the button says so, and the layer repaints.
+    void theBadgeLayerFollowsTheBusyDots()
+    {
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+        BadgeButton *pull = bar->pullButton();
+        QWidget *layer = bar->findChild<BadgeLayer *>();
+        QVERIFY(layer);
+        QVERIFY(layer->isVisible());
+
+        // Counts the layer's paint events.
+        struct PaintCounter : QObject {
+            int paints = 0;
+            bool eventFilter(QObject *, QEvent *event) override
+            {
+                if (event->type() == QEvent::Paint)
+                    ++paints;
+                return false;
+            }
+        } counter;
+        layer->installEventFilter(&counter);
+
+        QSignalSpy popping(pull, &BadgeButton::badgeRepaint);
+        pull->setCount(2); // a larger count on a visible button pops
+        QTRY_VERIFY(popping.count() > 1);
+        QTest::qWait(500);
+
+        pull->setBusy(true);
+        QSignalSpy ticks(pull, &BadgeButton::badgeRepaint);
+        settle();
+        const int before = counter.paints;
+        QTest::qWait(400);
+        QVERIFY(ticks.count() >= 1);
+        QTRY_VERIFY(counter.paints > before);
+        pull->setBusy(false);
+        layer->removeEventFilter(&counter);
     }
 
     // What the bar is called stays what it is at every width: the names are
@@ -2207,13 +2334,11 @@ esac
             QVERIFY(bar->moreButton()->isVisible());
             QCOMPARE(bar->diffTab()->isVisible(), true);
             // The dropdown is the design's 92 px whatever its hint, the row's
-            // height; More is the design's bare 28 px square, in the icon form
-            // and never the compact one at the same time.
+            // height; More is the design's bare 28 px square, in the icon form.
             QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(92));
             QCOMPARE(f.rectOf(bar->syncDropdown()).height(), bar->syncDropdown()->parentWidget()->height());
             QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(28));
             QVERIFY(bar->moreButton()->property("iconForm").toBool());
-            QVERIFY(!bar->moreButton()->property("compact").toBool());
             // The gaps: the bare folder, 4 to the branch, 6 between the two
             // controls on the right, More against the right edge.
             const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
@@ -2276,13 +2401,11 @@ esac
         QVERIFY(bar->diffToggle()->isVisible());
         QVERIFY(!bar->diffTab()->isVisible());
         QCOMPARE(barNames(bar), kBarNames);
-        // More is the compact form again, badge reserve and all, wherever the
-        // ordinary row shows it.
+        // More is the same icon form on the ordinary row, wherever it shows.
         QCOMPARE(f.levelAt(ordinaryMin), 6);
         QVERIFY(bar->moreButton()->isVisible());
         QCOMPARE(f.rectOf(bar->moreButton()).width(), iconFormWidth());
-        QVERIFY(bar->moreButton()->property("compact").toBool());
-        QVERIFY(!bar->moreButton()->property("iconForm").toBool());
+        QVERIFY(bar->moreButton()->property("iconForm").toBool());
     }
 
     // The Diff tab between the other two: one exclusive switch of three, that
@@ -2557,11 +2680,13 @@ esac
                 QVERIFY(!imagePaints(grab, accent, wide - ui::space(10) - chevronBox, wide - ui::space(10)));
 
                 // The mark widens it by its own room and stays off the chevron
-                // glyph. (The badge may take the box's last column: at base 12
-                // it starts one pixel inside, well clear of the glyph.)
+                // glyph. The bar's badge layer paints it over the dropdown's
+                // corner, so it is read off the bar: the dropdown's columns
+                // and the badge's overhang past them.
                 bar->mergeButton()->setMark(QStringLiteral("!"), red);
                 QCOMPARE(width(), wide + ui::space(6));
-                grab = sync->grab().toImage();
+                const QRect dropdown = f.rectOf(sync);
+                grab = bar->grab().toImage().copy(dropdown.x(), 0, dropdown.width() + ui::space(4), bar->height());
                 QVERIFY(imagePaints(grab, red));
                 const int glyphLeft = wide - ui::space(10) - chevronBox + (chevronBox - chevronAdvance) / 2;
                 QVERIFY(!imagePaints(grab, red, glyphLeft, glyphLeft + chevronAdvance));
@@ -3869,6 +3994,56 @@ esac
         g_theme.reset(new OmarchyTheme);
         g_theme->apply(*qApp);
         QVERIFY(OmarchyTheme::instance() == g_theme.get());
+    }
+
+    // --- Footer ------------------------------------------------------------
+
+    // A status too long for the footer ends in an ellipsis rather than a
+    // character cut in half, and its tooltip spells it out; with the room for
+    // it, the whole text and no tooltip. A message and the idle text that
+    // comes back after it go the same way.
+    void theFooterElidesItsStatus()
+    {
+        QWidget host;
+        host.resize(1000, 100);
+        auto *footer = new Footer(&host);
+        QLabel *reference = ui::dimLabel(QStringLiteral("x")); // what a dim label looks like
+        reference->setParent(&host);
+        const QString path = QStringLiteral("~/Projects/") + QStringLiteral("a-rather-long-directory-name/").repeated(2)
+            + QStringLiteral("omagit");
+        footer->setIdleText(path);
+        const int height = footer->sizeHint().height();
+        footer->setGeometry(0, 0, 260, height);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        settle();
+
+        auto *label = footer->findChild<ui::ElidedLabel *>();
+        QVERIFY(label);
+        QCOMPARE(label->objectName(), QStringLiteral("dimLabel"));
+        QCOMPARE(label->font(), reference->font());
+        QCOMPARE(label->fullText(), path);
+        const auto elided = [label, &path] {
+            QVERIFY2(label->text().endsWith(QChar(0x2026)), qPrintable(label->text()));
+            QVERIFY(label->fontMetrics().horizontalAdvance(label->text()) <= label->width());
+            QCOMPARE(label->toolTip(), path);
+        };
+        elided();
+        QVERIFY(label->sizeHint().width() > label->width()); // it still asks for the whole path
+
+        footer->resize(900, height);
+        settle();
+        QCOMPARE(label->text(), path);
+        QVERIFY(label->toolTip().isEmpty());
+
+        footer->resize(260, height);
+        settle();
+        elided();
+        footer->showStatus(QStringLiteral("short"), 50);
+        QCOMPARE(label->text(), QStringLiteral("short"));
+        QVERIFY(label->toolTip().isEmpty());
+        QTRY_COMPARE(label->fullText(), path);
+        elided();
     }
 
     // --- MainWindow ---------------------------------------------------------

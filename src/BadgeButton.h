@@ -1,25 +1,26 @@
 #pragma once
 
+#include <QList>
+#include <QPointer>
 #include <QToolButton>
 
+class QPainter;
 class QVariantAnimation;
 
-// A tool button with a small count badge in its top-right corner, the way
+// A tool button with a small count badge over its top-right corner, the way
 // the Pull and Push buttons show how many commits wait on either side.
 // Setting a larger count pops the badge in briefly; while busy the badge
 // shows a walking ellipsis instead of the (stale) number.
+//
+// The badge hangs over the button's top and right edges (design/figma-gen/
+// kit.js badge()), where no widget can paint in its own rect, so the button
+// only keeps the badge's state and says where and how it is drawn: a
+// BadgeLayer over the row paints it.
 class BadgeButton : public QToolButton
 {
     Q_OBJECT
 public:
     explicit BadgeButton(QWidget *parent = nullptr);
-
-    // The room sizeHint() keeps free beside the label. badgeSize() is wider than
-    // this as soon as the badge carries a digit (15px at the default theme font,
-    // 21 for two digits, 34 for "999+"), so a badge does cover the end of the
-    // label; widening every Pull and Push button to fit would move the whole
-    // toolbar, which is a call of its own.
-    static constexpr int kBadgeReserve = 14;
 
     void setCount(int count); // < 1 hides the badge
     int count() const { return m_count; }
@@ -31,19 +32,29 @@ public:
     void setBusy(bool busy);
     bool isBusy() const { return m_busy; }
 
-    QSize sizeHint() const override; // leaves room for a badge beside the label
+    // Whether there is a badge to paint: a count, a mark or the busy dots.
+    bool hasBadge() const;
+    // The badge's box for this button drawn at `button`: its right edge
+    // space(4) past the button's, its top space(5) above the button's, a
+    // square of space(14) at the least and wider for a longer text.
+    QRect badgeRect(const QRect &button) const;
+    // Paints the badge for this button drawn at `button`, pop and all.
+    void paintBadge(QPainter *p, const QRect &button) const;
 
 signals:
     void badgeChanged(); // count, mark or busy state
+    // The painted badge moved on while its content stayed: a tick of the pop
+    // animation or of the walking dots.
+    void badgeRepaint();
 
 protected:
+    // The icon form's glyph, centred by its ink; the rest is the style's.
     void paintEvent(QPaintEvent *event) override;
     void timerEvent(QTimerEvent *event) override;
 
 private:
     QString badgeText() const;
     QFont badgeFont() const;
-    QSize badgeSize(const QString &text) const;
     int m_count = 0;
     QString m_mark;
     QColor m_markColor;
@@ -51,4 +62,26 @@ private:
     int m_busyTimer = 0;
     int m_busyPhase = 0;
     QVariantAnimation *m_pop;
+};
+
+// A transparent overlay that paints the badges of the buttons it watches,
+// each over its button's corner: the badges overhang their buttons, so they
+// are painted on a widget that covers the room around them. It takes no
+// input; the buttons under it get every click.
+class BadgeLayer : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit BadgeLayer(QWidget *parent = nullptr);
+
+    // Paints `button`'s badge from now on, and repaints whenever the badge or
+    // the button's place changes.
+    void watch(BadgeButton *button);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QList<QPointer<BadgeButton>> m_buttons;
 };

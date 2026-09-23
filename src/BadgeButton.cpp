@@ -1,13 +1,22 @@
 #include "BadgeButton.h"
 #include "OmarchyTheme.h"
+#include "UiHelpers.h"
 
+#include <QEvent>
 #include <QPainter>
+#include <QStyleOptionToolButton>
+#include <QStylePainter>
 #include <QTimerEvent>
 #include <QVariantAnimation>
 
 namespace {
-// How far the badge hangs over the top-right corner of the button's border.
-constexpr int kBadgeInset = 3;
+// The design's badge (design/figma-gen/kit.js badge()), in 12 px-base pixels:
+// its right edge this far past the button's, its top this far above it.
+constexpr int kBadgeRight = 4;
+constexpr int kBadgeRise = 5;
+constexpr int kBadgeHeight = 14;
+constexpr int kBadgeTextPad = 8; // both sides of the text together
+constexpr int kBusyExtra = 6;    // the walking dots' box over a square
 } // namespace
 
 BadgeButton::BadgeButton(QWidget *parent)
@@ -18,7 +27,7 @@ BadgeButton::BadgeButton(QWidget *parent)
     m_pop->setEasingCurve(QEasingCurve::OutBack);
     m_pop->setStartValue(0.0);
     m_pop->setEndValue(1.0);
-    connect(m_pop, &QVariantAnimation::valueChanged, this, qOverload<>(&QWidget::update));
+    connect(m_pop, &QVariantAnimation::valueChanged, this, &BadgeButton::badgeRepaint);
 }
 
 // The caption font, bold and a shade smaller: small enough for a corner,
@@ -31,20 +40,6 @@ QFont BadgeButton::badgeFont() const
     return f;
 }
 
-// The box the badge fills for `text`, or the walking dots when it is empty.
-// A pill: never narrower than it is tall.
-QSize BadgeButton::badgeSize(const QString &text) const
-{
-    const QFontMetrics fm(badgeFont());
-    const int h = fm.height() + 2;
-    return QSize(text.isEmpty() ? h + 6 : qMax(h, fm.horizontalAdvance(text) + 8), h);
-}
-
-QSize BadgeButton::sizeHint() const
-{
-    return QToolButton::sizeHint() + QSize(kBadgeReserve, 0);
-}
-
 void BadgeButton::setCount(int count)
 {
     count = qMax(0, count);
@@ -54,7 +49,6 @@ void BadgeButton::setCount(int count)
     m_count = count;
     if (grew && !m_busy && isVisible())
         m_pop->start();
-    update();
     emit badgeChanged();
 }
 
@@ -64,7 +58,6 @@ void BadgeButton::setMark(const QString &text, const QColor &color)
         return;
     m_mark = text;
     m_markColor = color;
-    update();
     emit badgeChanged();
 }
 
@@ -93,7 +86,6 @@ void BadgeButton::setBusy(bool busy)
         if (m_count > 0 && isVisible())
             m_pop->start(); // the number is fresh: show it off
     }
-    update();
     emit badgeChanged();
 }
 
@@ -101,10 +93,34 @@ void BadgeButton::timerEvent(QTimerEvent *event)
 {
     if (event->timerId() == m_busyTimer) {
         m_busyPhase = (m_busyPhase + 1) % 3;
-        update();
+        emit badgeRepaint();
         return;
     }
     QToolButton::timerEvent(event);
+}
+
+// The icon form (ui::setIconForm()) puts the glyph in the middle of its
+// square by the glyph's ink rather than by its advance: a Nerd Font glyph's
+// ink hangs over the advance its metrics report (Pull's by a pixel and a half
+// to the right at base 12), which the button's own text alignment would leave
+// off-centre. The chrome and the colour are the style's; every other form is
+// the plain tool button's.
+void BadgeButton::paintEvent(QPaintEvent *event)
+{
+    if (!property("iconForm").toBool() || text().isEmpty()) {
+        QToolButton::paintEvent(event);
+        return;
+    }
+    QStylePainter p(this);
+    QStyleOptionToolButton option;
+    initStyleOption(&option);
+    const QString glyph = option.text;
+    option.text.clear();
+    p.drawComplexControl(QStyle::CC_ToolButton, option);
+    const QRectF ink = QFontMetricsF(option.font).tightBoundingRect(glyph);
+    p.setFont(option.font);
+    p.setPen(option.palette.color(QPalette::ButtonText));
+    p.drawText(QRectF(rect()).center() - ink.center(), glyph);
 }
 
 QString BadgeButton::badgeText() const
@@ -118,44 +134,101 @@ QString BadgeButton::badgeText() const
     return m_count > 0 ? QString::number(m_count) : QString();
 }
 
-void BadgeButton::paintEvent(QPaintEvent *event)
+bool BadgeButton::hasBadge() const
 {
-    QToolButton::paintEvent(event);
-    const QString text = badgeText();
-    if (text.isEmpty() && !m_busy)
+    return m_busy || !badgeText().isEmpty();
+}
+
+QRect BadgeButton::badgeRect(const QRect &button) const
+{
+    const int h = ui::space(kBadgeHeight);
+    const int w = m_busy ? h + ui::space(kBusyExtra)
+                         : qMax(h, QFontMetrics(badgeFont()).horizontalAdvance(badgeText()) + ui::space(kBadgeTextPad));
+    const int right = button.right() + 1 + ui::space(kBadgeRight); // the edge, one past the last column
+    return QRect(right - w, button.top() - ui::space(kBadgeRise), w, h);
+}
+
+void BadgeButton::paintBadge(QPainter *p, const QRect &button) const
+{
+    if (!hasBadge())
         return;
-
     const OmarchyTheme *t = OmarchyTheme::instance();
-    const QSize box = badgeSize(text);
-    // Inside the button, overlapping the top-right corner of its border.
-    QRectF badge(width() - box.width() - kBadgeInset, 2, box.width(), box.height());
+    const QRectF badge = badgeRect(button);
 
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing);
     qreal scale = 1.0;
     if (m_pop->state() == QVariantAnimation::Running)
         scale = 0.4 + 0.6 * m_pop->currentValue().toReal();
     if (scale != 1.0) {
         const QPointF c = badge.center();
-        p.translate(c);
-        p.scale(scale, scale);
-        p.translate(-c);
+        p->translate(c);
+        p->scale(scale, scale);
+        p->translate(-c);
     }
-    QColor fill = m_busy ? t->fill(0.30) : (!m_mark.isEmpty() ? m_markColor : t->accent());
-    p.setPen(Qt::NoPen);
-    p.setBrush(fill);
-    p.drawRoundedRect(badge, box.height() / 2.0, box.height() / 2.0);
+    // Square, like the design's: a plain box over the corner.
+    const QColor fill = m_busy ? t->fill(0.30) : (!m_mark.isEmpty() ? m_markColor : t->accent());
+    p->setPen(Qt::NoPen);
+    p->setBrush(fill);
+    p->drawRect(badge);
     if (m_busy) {
         // Three dots, the active one in the accent colour, walking left to right.
-        const qreal r = qMax(1.5, box.height() / 7.0);
+        const qreal r = qMax(1.5, badge.height() / 7.0);
         const qreal step = badge.width() / 4.0;
         for (int i = 0; i < 3; ++i) {
-            p.setBrush(i == m_busyPhase ? t->accent() : t->mutedText());
-            p.drawEllipse(QPointF(badge.left() + step * (i + 1), badge.center().y()), r, r);
+            p->setBrush(i == m_busyPhase ? t->accent() : t->mutedText());
+            p->drawEllipse(QPointF(badge.left() + step * (i + 1), badge.center().y()), r, r);
         }
-        return;
+    } else {
+        p->setFont(badgeFont());
+        p->setPen(t->window());
+        p->drawText(badge, Qt::AlignCenter, badgeText());
     }
-    p.setFont(badgeFont());
-    p.setPen(t->window());
-    p.drawText(badge, Qt::AlignCenter, text);
+    p->restore();
+}
+
+BadgeLayer::BadgeLayer(QWidget *parent)
+    : QWidget(parent)
+{
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAttribute(Qt::WA_NoSystemBackground);
+    setFocusPolicy(Qt::NoFocus);
+}
+
+void BadgeLayer::watch(BadgeButton *button)
+{
+    m_buttons << button;
+    connect(button, &BadgeButton::badgeChanged, this, qOverload<>(&QWidget::update));
+    connect(button, &BadgeButton::badgeRepaint, this, qOverload<>(&QWidget::update));
+    button->installEventFilter(this);
+    update();
+}
+
+// The button's place on the layer is what the badge hangs off.
+bool BadgeLayer::eventFilter(QObject *watched, QEvent *event)
+{
+    switch (event->type()) {
+    case QEvent::Move:
+    case QEvent::Resize:
+    case QEvent::Show:
+    case QEvent::Hide:
+        update();
+        break;
+    default:
+        break;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void BadgeLayer::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    for (const QPointer<BadgeButton> &b : std::as_const(m_buttons)) {
+        if (!b || !b->isVisible() || !b->hasBadge())
+            continue;
+        // Through the window both share: the layer lies over the buttons'
+        // row, beside it rather than above it in the widget tree.
+        const QPoint at = mapFrom(window(), b->mapTo(window(), QPoint(0, 0)));
+        b->paintBadge(&p, QRect(at, b->size()));
+    }
 }

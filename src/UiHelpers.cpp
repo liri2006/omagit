@@ -166,6 +166,60 @@ QLabel *dimLabel(const QString &text)
     return l;
 }
 
+ElidedLabel::ElidedLabel(QWidget *parent)
+    : QLabel(parent)
+{
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+}
+
+void ElidedLabel::setFullText(const QString &text)
+{
+    m_fullText = text;
+    updateGeometry(); // the size hint is the full text's
+    elide();
+}
+
+QSize ElidedLabel::sizeHint() const
+{
+    const QMargins m = contentsMargins();
+    return QSize(fontMetrics().horizontalAdvance(m_fullText) + m.left() + m.right() + 2 * margin(),
+                 QLabel::sizeHint().height());
+}
+
+QSize ElidedLabel::minimumSizeHint() const
+{
+    return QSize(0, sizeHint().height());
+}
+
+void ElidedLabel::resizeEvent(QResizeEvent *event)
+{
+    QLabel::resizeEvent(event);
+    elide();
+}
+
+void ElidedLabel::changeEvent(QEvent *event)
+{
+    QLabel::changeEvent(event);
+    if (event->type() == QEvent::FontChange) {
+        updateGeometry();
+        elide();
+    }
+}
+
+// The copy on screen, and the tooltip that spells out what it leaves off.
+// Neither is set again when it already is what it should be: a resize that
+// stays inside one elision relays nothing out.
+void ElidedLabel::elide()
+{
+    const int room = qMax(0, contentsRect().width() - 2 * margin());
+    const QString shown = fontMetrics().elidedText(m_fullText, Qt::ElideRight, room);
+    if (text() != shown)
+        setText(shown);
+    const QString tip = shown == m_fullText ? QString() : m_fullText;
+    if (toolTip() != tip)
+        setToolTip(tip);
+}
+
 QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip, IconButtonSize size, bool ghost)
 {
     auto *b = toolButton<IconButton>(icon(glyph, fallback).trimmed(), tip);

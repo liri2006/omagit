@@ -38,8 +38,15 @@ constexpr uint kGood = 0xF05E0, kBad = 0xF0028, kWarn = 0xF0026;
 constexpr int kPreviewDebounceMs = 120;
 constexpr int kSpinnerIntervalMs = 80;
 constexpr int kPopupPollMs = 50;      // how often a verdict held back by an open menu asks again
-// The window is as wide as the two pickers side by side want to be.
+// The window is as wide as the two pickers side by side want to be, or the
+// window it opens over less a margin, whichever is narrower
+// (design/figma-gen/screens.js screen(): min(640, W − 24)).
 constexpr int kDialogWidth = 640;
+constexpr int kWindowMargin = 24;
+// Narrower than this, the pickers stack (screens.js mergeDialog()).
+constexpr int kStackBelow = 520;
+// Between the stacked form's swap button and the INTO caption beside it.
+constexpr int kSwapGap = 10;
 // The conflict list scrolls beyond this many rows instead of growing on.
 constexpr int kFileRows = 6;
 // Blocked paths named in the warning before it says "and N more".
@@ -485,7 +492,8 @@ void MergeDialog::buildUi()
     layout->addStretch(1);
     layout->addLayout(buildButtonRow());
 
-    // The width is fixed; the height follows the content (fitToContent()).
+    // The width is fixed, to the window the dialog opens over once it is shown
+    // (fitWidth()); the height follows the content (fitToContent()).
     setFixedWidth(kDialogWidth);
     setTabOrder(m_sourcePicker, m_swapButton);
     setTabOrder(m_swapButton, m_destinationPicker);
@@ -495,10 +503,11 @@ void MergeDialog::buildUi()
     m_sourcePicker->setFocus();
 }
 
-// MERGE [source ▾]  ⇄  INTO [destination ▾]
+// MERGE [source ▾]  ⇄  INTO [destination ▾], or stacked (arrangePickers()).
 QGridLayout *MergeDialog::buildBranchRow()
 {
     auto *grid = new QGridLayout;
+    m_branchGrid = grid;
     grid->setHorizontalSpacing(12);
     grid->setVerticalSpacing(6);
     m_sourceCaption = ui::sectionLabel(tr("Merge"));
@@ -518,14 +527,58 @@ QGridLayout *MergeDialog::buildBranchRow()
     m_swapButton->setAccessibleName(tr("Swap"));
     connect(m_swapButton, &QToolButton::clicked, this, &MergeDialog::swap);
     new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_S), this, this, &MergeDialog::swap);
-    grid->addWidget(m_sourceCaption, 0, 0);
-    grid->addWidget(m_destinationCaption, 0, 2);
-    grid->addWidget(m_sourcePicker, 1, 0);
-    grid->addWidget(m_swapButton, 1, 1, Qt::AlignCenter);
-    grid->addWidget(m_destinationPicker, 1, 2);
-    grid->setColumnStretch(0, 1);
-    grid->setColumnStretch(2, 1);
+    // The widgets are the dialog's own before the grid places them: the
+    // arrangement takes them out of it and puts them back.
+    for (QWidget *w : QList<QWidget *>{m_sourceCaption, m_destinationCaption, m_sourcePicker, m_swapButton,
+                                       m_destinationPicker})
+        w->setParent(this);
+    arrangePickers(false);
     return grid;
+}
+
+// Side by side:            Stacked:
+//   MERGE        INTO        MERGE
+//   [source] ⇄ [dest]        [source          ]
+//                            ⇄  INTO
+//                            [dest            ]
+void MergeDialog::arrangePickers(bool stacked)
+{
+    if (m_pickersStacked == int(stacked))
+        return;
+    m_pickersStacked = int(stacked);
+
+    QGridLayout *grid = m_branchGrid;
+    for (QWidget *w : QList<QWidget *>{m_sourceCaption, m_destinationCaption, m_sourcePicker, m_swapButton,
+                                       m_destinationPicker})
+        grid->removeWidget(w);
+    // The swap row goes with its spacer; deleting a layout leaves its widgets
+    // alone, and it takes itself out of the grid.
+    delete m_swapRow;
+    m_swapRow = nullptr;
+
+    if (stacked) {
+        grid->addWidget(m_sourceCaption, 0, 0, 1, 3);
+        grid->addWidget(m_sourcePicker, 1, 0, 1, 3);
+        m_swapRow = new QHBoxLayout;
+        m_swapRow->setSpacing(kSwapGap);
+        m_swapRow->addWidget(m_swapButton, 0, Qt::AlignVCenter);
+        m_swapRow->addWidget(m_destinationCaption, 0, Qt::AlignVCenter);
+        m_swapRow->addStretch(1);
+        grid->addLayout(m_swapRow, 2, 0, 1, 3);
+        grid->addWidget(m_destinationPicker, 3, 0, 1, 3);
+        // The pickers are Expanding and span the grid: no column needs a say.
+        for (int column = 0; column < 3; ++column)
+            grid->setColumnStretch(column, 0);
+    } else {
+        grid->addWidget(m_sourceCaption, 0, 0);
+        grid->addWidget(m_destinationCaption, 0, 2);
+        grid->addWidget(m_sourcePicker, 1, 0);
+        grid->addWidget(m_swapButton, 1, 1, Qt::AlignCenter);
+        grid->addWidget(m_destinationPicker, 1, 2);
+        grid->setColumnStretch(0, 1);
+        grid->setColumnStretch(1, 0);
+        grid->setColumnStretch(2, 1);
+    }
 }
 
 QCheckBox *MergeDialog::buildNoFastForwardBox()
@@ -782,11 +835,27 @@ void MergeDialog::fitToContent()
         m_verdictHeight = m_card->height();
 }
 
+// As wide as the design asks, over the window of the moment: the width is
+// picked on every show, and the arrangement goes with it. Never narrower than
+// the layout can take, whatever the window.
+void MergeDialog::fitWidth()
+{
+    const QWidget *host = parentWidget() ? parentWidget()->window() : nullptr;
+    int width = host ? qMin(kDialogWidth, host->width() - kWindowMargin) : kDialogWidth;
+    arrangePickers(width < kStackBelow);
+    QLayout *l = layout();
+    l->invalidate();
+    width = qMax(width, l->totalMinimumSize().width());
+    if (width != this->width() || minimumWidth() != width || maximumWidth() != width)
+        setFixedWidth(width);
+}
+
 // Fonts and frame widths from the stylesheet are only final once the widgets
 // are polished, which is later than the constructor's first verdict.
 void MergeDialog::showEvent(QShowEvent *e)
 {
     ensurePolished();
+    fitWidth();
     fitToContent();
     QDialog::showEvent(e);
 }

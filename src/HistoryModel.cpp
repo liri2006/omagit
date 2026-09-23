@@ -188,10 +188,18 @@ QVariant HistoryModel::data(const QModelIndex &index, int role) const
 
 QVariant HistoryModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
+    if (orientation != Qt::Horizontal)
+        return {};
+    // The design draws no header over the graph, which is too narrow for its
+    // name anyway; the column keeps it for tooltips and screen readers.
+    if (section == Graph) {
+        if (role == Qt::ToolTipRole || role == Qt::AccessibleTextRole)
+            return tr("Graph");
+        return role == Qt::DisplayRole ? QVariant(QString()) : QVariant();
+    }
+    if (role != Qt::DisplayRole)
         return {};
     switch (section) {
-    case Graph: return tr("Graph");
     case Message: return tr("Message");
     case Author: return tr("Author");
     case Date: return tr("Date");

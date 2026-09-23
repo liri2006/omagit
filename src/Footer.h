@@ -2,9 +2,11 @@
 
 #include <QWidget>
 
-class QLabel;
 class QTimer;
 class QToolButton;
+namespace ui {
+class ElidedLabel;
+}
 
 // The bar under the body: a hairline, then the current path (or the latest
 // message) and the keybindings button. The repository and branch selectors
@@ -24,7 +26,7 @@ public:
 
 private:
     QToolButton *m_keybindingsButton;
-    QLabel *m_statusLabel;       // the footer's message, the repository path when there is none
+    ui::ElidedLabel *m_statusLabel; // the footer's message, the repository path when there is none
     QTimer *m_statusTimer;
     QString m_idleText;
 };

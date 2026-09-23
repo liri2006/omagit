@@ -1,4 +1,5 @@
 #include "Footer.h"
+#include "OmarchyTheme.h"
 #include "UiHelpers.h"
 
 #include <QHBoxLayout>
@@ -18,12 +19,14 @@ Footer::Footer(QWidget *parent)
     rootLayout->addWidget(hairline());
     auto *footer = new QHBoxLayout;
     footer->setSpacing(8);
-    m_statusLabel = dimLabel();
-    m_statusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    m_statusLabel->setMinimumWidth(0);
+    // A dim label, styled and themed like every other (the object name), that
+    // elides a path too long for a narrow window instead of cutting it off.
+    m_statusLabel = new ElidedLabel;
+    m_statusLabel->setObjectName(QStringLiteral("dimLabel"));
+    m_statusLabel->setFont(OmarchyTheme::instance()->captionFont());
     m_statusTimer = new QTimer(this);
     m_statusTimer->setSingleShot(true);
-    connect(m_statusTimer, &QTimer::timeout, this, [this] { m_statusLabel->setText(m_idleText); });
+    connect(m_statusTimer, &QTimer::timeout, this, [this] { m_statusLabel->setFullText(m_idleText); });
     footer->addWidget(m_statusLabel, 1);
     m_keybindingsButton = toolButton(icon(kInfo, tr("i")).trimmed(), tr("Keybindings (Ctrl+K)"));
     m_keybindingsButton->setObjectName(QStringLiteral("keybindingsButton"));
@@ -34,7 +37,7 @@ Footer::Footer(QWidget *parent)
 
 void Footer::showStatus(const QString &text, int ms)
 {
-    m_statusLabel->setText(text);
+    m_statusLabel->setFullText(text);
     if (ms > 0)
         m_statusTimer->start(ms);
     else
@@ -45,5 +48,5 @@ void Footer::setIdleText(const QString &text)
 {
     m_idleText = text;
     m_statusTimer->stop();
-    m_statusLabel->setText(text);
+    m_statusLabel->setFullText(text);
 }

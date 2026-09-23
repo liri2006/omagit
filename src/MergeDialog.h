@@ -80,6 +80,9 @@ protected:
 private:
     void buildUi();
     QGridLayout *buildBranchRow();
+    // The pickers side by side, or stacked for a narrow window; see
+    // fitWidth(). Nothing happens when the form is the one on screen.
+    void arrangePickers(bool stacked);
     QCheckBox *buildNoFastForwardBox();
     QHBoxLayout *buildButtonRow();
     void applyTheme();
@@ -94,6 +97,9 @@ private:
     void showMergeState();
     void setVerdict(const MergeVerdict &verdict);
     void setBusy(bool busy);
+    // The width for the window the dialog opens over, and the pickers'
+    // arrangement for that width.
+    void fitWidth();
     void fitToContent();
     bool checkoutDestination(const QString &destination);
     void startMerge();
@@ -112,6 +118,9 @@ private:
     bool m_merging = false;
     int m_verdictHeight = 0; // of the card showing the last verdict, held while the next is checked
 
+    QGridLayout *m_branchGrid;
+    QHBoxLayout *m_swapRow = nullptr; // the stacked form's swap button and INTO caption
+    int m_pickersStacked = -1;        // the arrangement on screen: 0 side by side, 1 stacked, -1 none yet
     QLabel *m_sourceCaption, *m_destinationCaption;
     BranchPicker *m_sourcePicker, *m_destinationPicker;
     QToolButton *m_swapButton;

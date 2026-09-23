@@ -8,6 +8,7 @@
 #include "Segmented.h"
 
 class BadgeButton;
+class BadgeLayer;
 class QMenu;
 class QToolButton;
 class QVBoxLayout;
@@ -121,7 +122,7 @@ private:
         int branchLabel = 0;    // the name inside it, on its own
         int branchChrome = 0;   // and what the button puts around it
         int branchEllipsis = 0; // a lone "…" in the chip's font: the stacked row's floor
-        int more = 0;           // the ordinary row's; stacked, More is space(28)
+        int more = 0;           // the more button: the icon form's square
         int tabsLabels = 0;
         int tabsGlyphs = 0;
         int toggles = 0; // both, with the gap between them
@@ -169,6 +170,7 @@ private:
     QWidget *m_divider;
     QToolButton *m_layoutButton;
     QToolButton *m_diffToggle;
+    BadgeLayer *m_badges; // over the whole bar: paints the sync buttons' and More's badges
     // Measured on, never shown: what a candidate text would come to on a chip
     // or on a labelled sync button.
     QToolButton *m_probeRepo;
