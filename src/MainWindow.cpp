@@ -2,6 +2,7 @@
 #include "BadgeButton.h"
 #include "BranchMenu.h"
 #include "CommitPage.h"
+#include "AgentPopover.h"
 #include "CommitPopover.h"
 #include "DesktopExec.h"
 #include "DiffPane.h"
@@ -97,12 +98,15 @@ MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     QTimer::singleShot(0, this, &MainWindow::refresh);
 }
 
-// The commit popover goes first. Its message box borrows the commit page's
+// The overlays go first, the agent settings before the commit card they may
+// hang from. The commit card's message box borrows the commit page's
 // QTextDocument, which the page's own editor owns; the card is created after
 // the pages, so the central widget would otherwise delete the page, and the
 // document with it, while the card's editor still pointed at it.
 MainWindow::~MainWindow()
 {
+    delete m_agentPopover;
+    m_agentPopover = nullptr;
     delete m_commitPopover;
     m_commitPopover = nullptr;
 }
@@ -269,6 +273,20 @@ void MainWindow::buildUi()
         // The keyboard goes back to where the card was opened from; a change
         // of layout or mode that closed the card moves it on afterwards.
         m_rail->list()->setFocus(Qt::OtherFocusReason);
+    });
+
+    // ---- The agent settings: an overlay too, hanging from whichever cog
+    // asked for it (the page's, or the commit card's in Mini). The page owns
+    // the choice; a press on this card is a press on the commit card.
+    m_agentPopover = new AgentPopover(m_commitPage, central);
+    m_commitPopover->setCompanion(m_agentPopover);
+    m_agentPopover->setBeside(m_commitPopover);
+    connect(m_commitPage, &CommitPage::agentSettingsRequested, this, [this](QWidget *anchor) {
+        // The cog toggles.
+        if (m_agentPopover->isVisible() && m_agentPopover->anchor() == anchor)
+            m_agentPopover->dismiss();
+        else
+            m_agentPopover->popup(anchor);
     });
 
     // Every keybinding at once, now that the widgets they belong to exist.
@@ -471,8 +489,10 @@ void MainWindow::showCommitPopover()
 void MainWindow::setMode(Mode mode)
 {
     // The card commits the changes list, which the history does not show.
-    if (mode != CommitMode)
+    if (mode != CommitMode) {
+        m_agentPopover->dismiss();
         m_commitPopover->dismiss();
+    }
     m_rail->setCommitTileVisible(mode == CommitMode);
     m_mode = mode;
     m_stack->setCurrentWidget(mode == CommitMode ? static_cast<QWidget *>(m_commitPage) : m_history);
@@ -500,7 +520,10 @@ void MainWindow::setMode(Mode mode)
 
 void MainWindow::setPaneLayout(PaneLayout layout, bool persist)
 {
-    // Before the rail it hangs from goes.
+    // Before the rail it hangs from goes; the agent settings hang from a cog
+    // the other layout hides.
+    if (layout != m_layout)
+        m_agentPopover->dismiss();
     if (layout != PaneLayout::Mini)
         m_commitPopover->dismiss();
     m_layout = layout;
@@ -607,6 +630,7 @@ void MainWindow::applyTheme()
     m_history->applyTheme();
     m_rail->applyTheme();
     m_commitPopover->applyTheme();
+    m_agentPopover->applyTheme();
     // The layout toggle's glyph says which layout is on, so it is the window's
     // to put back after the top bar has re-fetched the glyphs it owns itself.
     applyPanes();
@@ -1193,6 +1217,7 @@ bool MainWindow::openRepository(const QString &path)
         return true;
 
     // The message and the controls on the card belong to the repository being left.
+    m_agentPopover->dismiss();
     m_commitPopover->dismiss();
     m_initialSelection.clear();
     m_repo->setRoot(root); // RemoteSync follows through rootChanged
@@ -1270,9 +1295,19 @@ void MainWindow::generateMessage()
     m_commitPage->generateMessage();
 }
 
+// The agent settings under the cog of the layout of the moment: the page's
+// in Docked, the commit card's in Mini (opening the card first). The history
+// has no cog.
 void MainWindow::showAgentMenu()
 {
-    m_commitPage->showAgentMenu();
+    if (m_mode != CommitMode)
+        return;
+    if (m_layout == PaneLayout::Mini) {
+        showCommitPopover();
+        m_agentPopover->popup(m_commitPopover->agentButton());
+    } else {
+        m_agentPopover->popup(m_commitPage->agentButton());
+    }
 }
 
 void MainWindow::showStatus(const QString &text, int ms)

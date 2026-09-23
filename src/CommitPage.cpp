@@ -4,7 +4,6 @@
 #include "MessageEdit.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
-#include "TickMenu.h"
 #include "UiHelpers.h"
 
 #include <QAction>
@@ -13,10 +12,8 @@
 #include <QDir>
 #include <QHBoxLayout>
 #include <QHeaderView>
-#include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -564,7 +561,13 @@ CommitPage::CommitControls CommitPage::commitControls() const
     c.shown = m_proxy->rowCount();
     c.generateText = m_message->cornerButton()->text();
     c.generateTip = m_message->cornerButton()->toolTip();
+    c.generating = m_agent->running();
     return c;
+}
+
+void CommitPage::requestAgentSettings(QWidget *anchor)
+{
+    emit agentSettingsRequested(anchor);
 }
 
 QString CommitPage::agentButtonTip()
@@ -600,7 +603,7 @@ QLayout *CommitPage::buildMessageSection()
     auto *messageRow = sectionHeaderRow(sectionLabel(tr("Message")));
     messageRow->addStretch();
     m_agentButton = iconButton(kCog, tr("⚙"), agentButtonTip());
-    connect(m_agentButton, &QToolButton::clicked, this, &CommitPage::showAgentMenu);
+    connect(m_agentButton, &QToolButton::clicked, this, [this] { requestAgentSettings(m_agentButton); });
     messageRow->addWidget(m_agentButton, 0, Qt::AlignVCenter);
 
     m_message = new MessageEdit;
@@ -1491,6 +1494,9 @@ void CommitPage::generateMessage()
     setGenerating(true);
     emit statusMessage(tr("Asking %1 for a commit message…").arg(CommitMessageAgent::spec(choice.agent).name), 0);
     m_agent->generate(choice, m_repo->root(), diff);
+    // The snapshot's `generating` is the process itself, which only exists
+    // now: the spinner above said so before it did.
+    emit commitControlsChanged();
 }
 
 void CommitPage::onMessageGenerated(bool ok, const QString &text)
@@ -1509,117 +1515,10 @@ void CommitPage::onMessageGenerated(bool ok, const QString &text)
                        4000);
 }
 
-// The cog's menu: AGENT (Claude Code and Codex, whichever is installed),
-// MODEL and REASONING as the chosen agent's CLI names them (`claude --help`,
-// `codex debug models`; Codex has levels per model), or any model by name.
-void CommitPage::showAgentMenu()
+// The agent popover's choices land here: the page's own generate button names
+// the agent and the model, so it is told as the choice is saved.
+void CommitPage::applyAgentChoice(const AgentChoice &choice)
 {
-    showAgentMenuAt(m_agentButton);
-}
-
-void CommitPage::showAgentMenuAt(QWidget *anchor)
-{
-    TickMenu menu(this);
-    menu.setToolTipsVisible(true);
-    const AgentChoice choice = CommitMessageAgent::savedChoice();
-    const auto save = [this](const AgentChoice &c) {
-        CommitMessageAgent::saveChoice(c);
-        setGenerating(m_agent->running());
-    };
-
-    addAgentSection(&menu, choice, save);
-    const AgentSpec current = CommitMessageAgent::spec(choice.agent);
-    if (current.isValid()) {
-        const AgentCatalog catalog = CommitMessageAgent::catalog(choice.agent);
-        addModelSection(&menu, current, catalog, choice, save);
-        addReasoningSection(&menu, catalog.effortsFor(choice.model), choice, save);
-    }
-    // A cog sits at the right edge of its row, so the menu hangs from its right corner.
-    menu.exec(anchor->mapToGlobal(QPoint(anchor->width() - menu.sizeHint().width(), anchor->height())));
-}
-
-void CommitPage::addAgentSection(QMenu *menu, const AgentChoice &choice,
-                                 const std::function<void(const AgentChoice &)> &save)
-{
-    addMenuHeader(menu, tr("Agent"));
-    const QList<AgentSpec> installed = CommitMessageAgent::installedAgents();
-    if (installed.isEmpty()) {
-        QAction *none = menu->addAction(tr("None installed"));
-        none->setEnabled(false);
-        none->setToolTip(tr("`omarchy default agent claude` (or codex) installs one"));
-    }
-    const QString omarchyDefault = CommitMessageAgent::omarchyDefaultAgent();
-    for (const AgentSpec &agent : installed) {
-        QAction *a = menu->addAction(icon(kRobot) + agent.name);
-        a->setCheckable(true);
-        a->setChecked(agent.id == choice.agent);
-        a->setToolTip(agent.id == omarchyDefault ? tr("%1 — Omarchy's default agent").arg(agent.binary) : agent.binary);
-        connect(a, &QAction::triggered, this, [save, agent] {
-            // A model and a level belong to the agent they were picked for.
-            save(AgentChoice{agent.id, QString(), QString()});
-        });
-    }
-}
-
-void CommitPage::addModelSection(QMenu *menu, const AgentSpec &agent, const AgentCatalog &catalog,
-                                 const AgentChoice &choice, const std::function<void(const AgentChoice &)> &save)
-{
-    menu->addSeparator();
-    addMenuHeader(menu, tr("Model"));
-    QAction *def = menu->addAction(tr("Default"));
-    def->setCheckable(true);
-    def->setChecked(choice.model.isEmpty());
-    def->setToolTip(tr("Whatever %1 is set to use").arg(agent.name));
-    connect(def, &QAction::triggered, this, [save, choice] { save(AgentChoice{choice.agent, QString(), choice.effort}); });
-    QList<AgentModel> models = catalog.models;
-    const bool known = std::any_of(models.cbegin(), models.cend(), [&](const AgentModel &m) { return m.id == choice.model; });
-    if (!choice.model.isEmpty() && !known)
-        models.prepend(AgentModel{choice.model, choice.model, {}, {}});
-    for (const AgentModel &m : std::as_const(models)) {
-        QAction *a = menu->addAction(m.name);
-        a->setCheckable(true);
-        a->setChecked(m.id == choice.model);
-        a->setToolTip(m.id);
-        connect(a, &QAction::triggered, this, [save, choice, m] {
-            // A level the new model does not have goes back to its default.
-            const QString effort = m.efforts.isEmpty() || m.efforts.contains(choice.effort) ? choice.effort : QString();
-            save(AgentChoice{choice.agent, m.id, effort});
-        });
-    }
-    if (models.isEmpty() && !catalog.error.isEmpty()) {
-        QAction *err = menu->addAction(tr("Could not read the models"));
-        err->setEnabled(false);
-        err->setToolTip(catalog.error);
-    }
-    QAction *other = menu->addAction(tr("Other…"));
-    other->setToolTip(tr("A model by name, as %1 --model takes it").arg(agent.binary));
-    connect(other, &QAction::triggered, this, [this, save, choice, agent] {
-        bool ok = false;
-        const QString id = QInputDialog::getText(this, tr("Model"), tr("Model name for %1:").arg(agent.name),
-                                                 QLineEdit::Normal, choice.model, &ok)
-                               .trimmed();
-        if (ok)
-            save(AgentChoice{choice.agent, id, choice.effort});
-    });
-}
-
-void CommitPage::addReasoningSection(QMenu *menu, const QStringList &efforts, const AgentChoice &choice,
-                                     const std::function<void(const AgentChoice &)> &save)
-{
-    if (efforts.isEmpty())
-        return;
-    menu->addSeparator();
-    addMenuHeader(menu, tr("Reasoning"));
-    QAction *defEffort = menu->addAction(tr("Default"));
-    defEffort->setCheckable(true);
-    defEffort->setChecked(choice.effort.isEmpty());
-    connect(defEffort, &QAction::triggered, this,
-            [save, choice] { save(AgentChoice{choice.agent, choice.model, QString()}); });
-    for (const QString &level : efforts) {
-        QAction *a = menu->addAction(level.at(0).toUpper() + level.mid(1));
-        a->setCheckable(true);
-        a->setChecked(level == choice.effort);
-        connect(a, &QAction::triggered, this,
-                [save, choice, level] { save(AgentChoice{choice.agent, choice.model, level}); });
-    }
+    CommitMessageAgent::saveChoice(choice);
+    setGenerating(m_agent->running());
 }

@@ -52,7 +52,8 @@ CommitPopover::CommitPopover(CommitPage *page, QWidget *host)
     auto *header = sectionHeaderRow(sectionLabel(tr("Message")));
     header->addStretch();
     m_agentButton = iconButton(kCog, tr("⚙"), CommitPage::agentButtonTip());
-    connect(m_agentButton, &QToolButton::clicked, this, [this] { m_page->showAgentMenuAt(m_agentButton); });
+    // The page's settings, hanging from this cog: the window opens them.
+    connect(m_agentButton, &QToolButton::clicked, this, [this] { m_page->requestAgentSettings(m_agentButton); });
     header->addWidget(m_agentButton, 0, Qt::AlignVCenter);
     m_layout->addLayout(header);
 
@@ -139,6 +140,11 @@ void CommitPopover::setAnchor(MiniRail *rail)
     // the card follows them.
     m_rail->installEventFilter(this);
     m_rail->commitTile()->installEventFilter(this);
+}
+
+void CommitPopover::setCompanion(QWidget *companion)
+{
+    m_companion = companion;
 }
 
 void CommitPopover::applyTheme()
@@ -329,7 +335,11 @@ bool CommitPopover::eventFilter(QObject *watched, QEvent *event)
             const QPoint global = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
             const bool onCard = rect().contains(mapFromGlobal(global));
             const bool onRail = m_rail && m_rail->isVisible() && m_rail->rect().contains(m_rail->mapFromGlobal(global));
-            if (!onCard && !onRail)
+            // The card opened from this one's cog is part of it, as far as a
+            // press is concerned.
+            const bool onCompanion = m_companion && m_companion->isVisible()
+                && m_companion->rect().contains(m_companion->mapFromGlobal(global));
+            if (!onCard && !onRail && !onCompanion)
                 dismiss();
         }
         return false;

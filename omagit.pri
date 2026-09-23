@@ -32,6 +32,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/HistoryView.cpp \
     $$PWD/src/MiniRail.cpp \
     $$PWD/src/BadgeButton.cpp \
+    $$PWD/src/Segmented.cpp \
     $$PWD/src/TopBar.cpp \
     $$PWD/src/TickMenu.cpp \
     $$PWD/src/BranchMenu.cpp \
@@ -45,6 +46,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/DiffPane.cpp \
     $$PWD/src/CommitPage.cpp \
     $$PWD/src/CommitPopover.cpp \
+    $$PWD/src/AgentPopover.cpp \
     $$PWD/src/Footer.cpp \
     $$PWD/src/MainWindow.cpp
 
@@ -60,6 +62,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/MiniRail.h \
     $$PWD/src/PaneLayout.h \
     $$PWD/src/BadgeButton.h \
+    $$PWD/src/Segmented.h \
     $$PWD/src/TopBar.h \
     $$PWD/src/TickMenu.h \
     $$PWD/src/BranchMenu.h \
@@ -72,6 +75,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/DiffPane.h \
     $$PWD/src/CommitPage.h \
     $$PWD/src/CommitPopover.h \
+    $$PWD/src/AgentPopover.h \
     $$PWD/src/Footer.h \
     $$PWD/src/MainWindow.h \
     $$PWD/src/Settings.h

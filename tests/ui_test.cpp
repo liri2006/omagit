@@ -14,6 +14,7 @@
 #include "../src/DiffView.h"
 #include "../src/CloneDialog.h"
 #include "../src/HistoryModel.h"
+#include "../src/AgentPopover.h"
 #include "../src/AskPass.h"
 #include "../src/KeybindingsPanel.h"
 #include "../src/LoginDialog.h"
@@ -23,6 +24,7 @@
 #include "../src/MiniRail.h"
 #include "../src/OmarchyTheme.h"
 #include "../src/RemoteSync.h"
+#include "../src/Segmented.h"
 #include "../src/Settings.h"
 #include "../src/TopBar.h"
 #include "../src/UiHelpers.h"
@@ -641,6 +643,7 @@ struct WindowFixture
     CommitPage *page() const { return window->findChild<CommitPage *>(); }
     MiniRail *rail() const { return window->findChild<MiniRail *>(); }
     CommitPopover *popover() const { return window->findChild<CommitPopover *>(); }
+    AgentPopover *agentCard() const { return window->findChild<AgentPopover *>(); }
     QToolButton *tile() const { return rail()->commitTile(); }
     QWidget *host() const { return window->centralWidget(); }
     DiffView *diff() const { return window->findChild<DiffView *>(); }
@@ -930,6 +933,167 @@ QStringList popoverMetrics(const WindowFixture &f)
             entry("hintPx", hint.pixelSize()),
             entry("hintBold", hint.bold()),
             entry("cardHeight", cardRect.height())};
+}
+
+// The `claude --help` sample of gitrepo_test.cpp's parseClaudeHelp check: the
+// aliases fable, opus and sonnet, the levels low to max.
+const char kClaudeHelp[] =
+    "Options:\n"
+    "  --effort <level>                      Effort level for the current session\n"
+    "                                        (low, medium, high, xhigh, max)\n"
+    "  --environment <environment_id>        Create a new cloud session\n"
+    "  --model <model>                       Model for the current session. Provide\n"
+    "                                        an alias for the latest model (e.g.\n"
+    "                                        'fable', 'opus', or 'sonnet') or a\n"
+    "                                        model's full name (e.g.\n"
+    "                                        'claude-fable-5').\n"
+    "  --no-chrome                           Disable Claude in Chrome integration\n";
+
+// The parseCodexModels sample: GPT-6-Astra with six levels, GPT-5.5 with two.
+const char kCodexModels[] =
+    "{\"models\":[{\"slug\":\"gpt-5.5\",\"display_name\":\"GPT-5.5\",\"visibility\":\"list\",\"priority\":12,"
+    "\"default_reasoning_level\":\"medium\",\"supported_reasoning_levels\":[{\"effort\":\"low\"},{\"effort\":\"high\"}]},"
+    "{\"slug\":\"gpt-reserve\",\"display_name\":\"GPT-Reserve\",\"visibility\":\"hide\",\"priority\":3},"
+    "{\"slug\":\"gpt-6-astra\",\"display_name\":\"GPT-6-Astra\",\"visibility\":\"list\",\"priority\":1,"
+    "\"default_reasoning_level\":\"medium\",\"supported_reasoning_levels\":[{\"effort\":\"low\"},{\"effort\":\"medium\"},"
+    "{\"effort\":\"high\"},{\"effort\":\"xhigh\"},{\"effort\":\"max\"},{\"effort\":\"ultra\"}]}]}";
+
+// A fake agent CLI in `dir`: asked `$1` (`probe`), it prints `answer`;
+// asked anything else, it reads the diff and answers with a one-line message.
+// Shell builtins only: the tests' PATH has git on it and nothing else.
+bool writeFakeAgent(const QString &dir, const QString &name, const char *probe, const QByteArray &answer)
+{
+    const QByteArray script = QByteArray("#!/bin/sh\nif [ \"$1\" = ") + probe
+        + " ]; then\nwhile IFS= read -r line; do printf '%s\\n' \"$line\"; done <<'EOF'\n" + answer
+        + "\nEOF\nelse\nwhile IFS= read -r line; do :; done\necho 'Fake subject'\nfi\n";
+    return writeFixture(QDir(dir).filePath(name), script, true);
+}
+
+// A fake `claude`: --help prints the sample above.
+bool writeFakeClaude(const QString &dir)
+{
+    return writeFakeAgent(dir, QStringLiteral("claude"), "--help", kClaudeHelp);
+}
+
+// A fake `codex`: `debug models` prints the catalog sample.
+bool writeFakeCodex(const QString &dir)
+{
+    return writeFakeAgent(dir, QStringLiteral("codex"), "debug", kCodexModels);
+}
+
+// For the length of a test of the agent settings: PATH is `tools` (git and
+// whatever fake agents a test put there), nothing is saved under agent/*, the
+// catalogs are read afresh from what is on that PATH, and Omarchy's default
+// agent is `omarchyDefault` (none when empty).
+class AgentScope
+{
+public:
+    explicit AgentScope(const QString &tools, const QString &omarchyDefault = QString())
+        : m_path("PATH", tools.toUtf8())
+    {
+        QSettings().remove(QStringLiteral("agent"));
+        const QString defaults = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+            + QStringLiteral("/omarchy/defaults");
+        m_defaultFile = defaults + QStringLiteral("/agent");
+        QFile::remove(m_defaultFile);
+        if (!omarchyDefault.isEmpty() && QDir().mkpath(defaults))
+            writeFixture(m_defaultFile, omarchyDefault.toUtf8() + '\n');
+        for (const AgentSpec &agent : CommitMessageAgent::agents())
+            CommitMessageAgent::catalog(agent.id, true);
+    }
+    ~AgentScope()
+    {
+        QSettings().remove(QStringLiteral("agent"));
+        QFile::remove(m_defaultFile);
+    }
+
+private:
+    ScopedEnv m_path;
+    QString m_defaultFile;
+};
+
+// The model rows as the card shows them: name and id, the chosen one marked.
+QStringList rowTexts(const AgentPopover *card)
+{
+    QStringList out;
+    for (const QAbstractButton *row : card->modelRows())
+        out << row->text() + QLatin1Char('|') + row->accessibleDescription() + (row->isChecked() ? QStringLiteral("|*") : QString());
+    return out;
+}
+
+// The model row named `name`, or null.
+QAbstractButton *modelRow(const AgentPopover *card, const QString &name)
+{
+    for (QAbstractButton *row : card->modelRows())
+        if (row->text() == name)
+            return row;
+    return nullptr;
+}
+
+QString savedAgent(const char *key)
+{
+    return QSettings().value(QLatin1String(key)).toString();
+}
+
+// The visible labels of the card, their texts.
+QStringList cardLabels(const AgentPopover *card)
+{
+    QStringList out;
+    for (const QLabel *l : card->findChildren<QLabel *>())
+        if (l->isVisible())
+            out << l->text();
+    return out;
+}
+
+// What the agent card measures at the text size of the moment, spelled out
+// so a mismatch names itself: the installed state's parts, or the command
+// rows of the none-installed one.
+QStringList agentCardMetrics(const AgentPopover *card)
+{
+    QStringList out;
+    const auto entry = [&out](const char *name, int value) { out << QStringLiteral("%1=%2").arg(QLatin1String(name)).arg(value); };
+    const QMargins m = card->layout()->contentsMargins();
+    out << QStringLiteral("margins=%1,%2,%3,%4").arg(m.left()).arg(m.top()).arg(m.right()).arg(m.bottom());
+    entry("width", card->width());
+    entry("height", card->height());
+    if (card->agentPicker()) {
+        entry("picker", card->agentPicker()->height());
+        entry("pickerTop", card->agentPicker()->y());
+    }
+    for (const QAbstractButton *row : card->modelRows()) {
+        entry("row", row->height());
+        entry("rowBold", row->font().bold());
+    }
+    if (card->otherModelButton()) {
+        entry("otherTop", card->otherModelButton()->y());
+        entry("other", card->otherModelButton()->height());
+        entry("otherWidth", card->otherModelButton()->width());
+    }
+    if (const LevelTrack *track = card->levelTrack()) {
+        entry("track", track->height());
+        entry("trackTop", track->y());
+        entry("stop0", qRound(track->stopCentre(0).x()));
+        entry("stopY", qRound(track->stopCentre(0).y()));
+    }
+    for (const QLabel *l : card->findChildren<QLabel *>()) {
+        if (!l->isVisible())
+            continue;
+        if (l->objectName() == QLatin1String("agentPopoverNote") || l->objectName() == QLatin1String("agentPopoverSmall")) {
+            entry("notePx", l->font().pixelSize());
+            entry("noteBold", l->font().bold());
+        }
+    }
+    for (const QFrame *row : card->findChildren<QFrame *>(QStringLiteral("commandRow"))) {
+        if (!row->isVisible())
+            continue;
+        entry("command", row->height());
+        entry("commandTop", row->y());
+        const QMargins rm = row->layout()->contentsMargins();
+        entry("commandPad", rm.left());
+    }
+    for (const QAbstractButton *copy : card->copyButtons())
+        entry("copy", copy->width());
+    return out;
 }
 
 } // namespace
@@ -3010,6 +3174,879 @@ esac
         QImage history = shoot({QStringLiteral("--mini"), QStringLiteral("--history"), menu, commitMenu}, &keys);
         QVERIFY(!history.isNull());
         QVERIFY(frameRun(history) < 50);
+    }
+
+    // --- The agent settings popover -----------------------------------------
+
+    // The segmented control the top bar and the agent picker share: at its
+    // hints the first segment takes its own width and the last the rest; in
+    // stretch mode each gets floor(width / n) and the last the remainder,
+    // with its content centred; a single segment fills the strip.
+    void segmentStripLaysOutItsSegments()
+    {
+        const auto segment = [](const QString &label) {
+            auto *s = ui::toolButton<SegmentButton>(label);
+            s->setGlyph(ui::kRobot, QStringLiteral("R"));
+            s->setCheckable(true);
+            return s;
+        };
+        QWidget host;
+        host.resize(600, 100);
+        auto *first = segment(QStringLiteral("Claude Code"));
+        auto *second = segment(QStringLiteral("Codex"));
+        auto *strip = new SegmentStrip({first, second}, &host);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        QCOMPARE(strip->sizeHint().width(), first->sizeHint().width() + second->sizeHint().width() + 3);
+        QCOMPARE(strip->sizeHint().height(), qMax(first->sizeHint().height(), second->sizeHint().height()) + 2);
+        strip->setGeometry(0, 0, strip->sizeHint().width() + 40, 30);
+        QCOMPARE(first->geometry(), QRect(1, 1, first->sizeHint().width(), 28));
+        QCOMPARE(second->geometry(), QRect(2 + first->width(), 1, strip->width() - 3 - first->width(), 28));
+
+        strip->setStretch(true);
+        QVERIFY(first->isCentred() && second->isCentred());
+        strip->setGeometry(0, 0, 301, 30);
+        const int each = 301 / 2;
+        QCOMPARE(first->geometry(), QRect(1, 1, each - 1, 28));
+        QCOMPARE(second->geometry(), QRect(each + 1, 1, 301 - 1 - (each + 1), 28));
+        // The ink of a centred segment keeps the same distance from either side.
+        const auto inkMargins = [](QWidget *w) {
+            const QImage image = w->grab().toImage();
+            const QColor fill = image.pixelColor(0, 0);
+            int left = image.width(), right = -1;
+            for (int x = 0; x < image.width(); ++x)
+                for (int y = 0; y < image.height(); ++y)
+                    if (!closeTo(image.pixelColor(x, y), fill)) {
+                        left = qMin(left, x);
+                        right = qMax(right, x);
+                    }
+            return qMakePair(left, image.width() - 1 - right);
+        };
+        const auto margins = inkMargins(second);
+        // The glyph's ink is narrower than the box it is laid out in.
+        QVERIFY2(qAbs(margins.first - margins.second) <= ui::space(14) / 2, qPrintable(QStringLiteral("%1 %2").arg(margins.first).arg(margins.second)));
+
+        auto *third = segment(QStringLiteral("Three"));
+        SegmentStrip three({segment(QStringLiteral("One")), segment(QStringLiteral("Two")), third});
+        three.setStretch(true);
+        three.resize(302, 30);
+        three.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&three));
+        QCOMPARE(three.segments().size(), 3);
+        QCOMPARE(three.segments().at(0)->geometry(), QRect(1, 1, 99, 28));
+        QCOMPARE(three.segments().at(1)->geometry(), QRect(101, 1, 99, 28));
+        QCOMPARE(third->geometry(), QRect(201, 1, 100, 28));
+
+        auto *only = segment(QStringLiteral("Claude Code"));
+        SegmentStrip one({only});
+        one.resize(250, 30);
+        one.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&one));
+        QCOMPARE(only->geometry(), QRect(1, 1, 248, 28));
+        one.setStretch(true);
+        QCOMPARE(only->geometry(), QRect(1, 1, 248, 28));
+    }
+
+    // Nothing on PATH but git: the card says so, offers the two commands and
+    // copies them; none of the settings' parts is there.
+    void theAgentCardSaysWhenNoAgentIsInstalled()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        QVERIFY(card);
+        QVERIFY(!card->isVisible());
+        QCOMPARE(card->parentWidget(), f.host());
+
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        const QStringList labels = cardLabels(card);
+        for (const QString &text : {QStringLiteral("No coding agent installed"), QStringLiteral("Claude Code or Codex writes it for you."),
+                                    QStringLiteral("INSTALL ONE"), QStringLiteral("$ omarchy default agent claude"),
+                                    QStringLiteral("$ omarchy default agent codex"),
+                                    QStringLiteral("Reopen this menu once one is installed.")})
+            QVERIFY2(labels.contains(text), qPrintable(text + QStringLiteral(" in ") + labels.join(QLatin1Char('/'))));
+        QVERIFY(!card->agentPicker());
+        QVERIFY(card->modelRows().isEmpty());
+        QVERIFY(!card->otherModelButton() && !card->otherModelField());
+        QVERIFY(!card->levelTrack());
+        QVERIFY(!card->generateButton());
+        // The robot: muted ink at the top left, in the design's 20 px glyph.
+        const QImage image = card->grab().toImage();
+        bool robot = false;
+        const QColor muted = OmarchyTheme::instance()->mutedText();
+        for (int x = ui::space(10); x < ui::space(10) + ui::space(32); ++x)
+            for (int y = ui::space(10); y < ui::space(10) + ui::space(24); ++y)
+                robot = robot || closeTo(image.pixelColor(x, y), muted);
+        QVERIFY(robot);
+
+        QCOMPARE(card->copyButtons().size(), 2);
+        QSignalSpy status(f.page(), &CommitPage::statusMessage);
+        QApplication::clipboard()->clear();
+        QTest::mouseClick(card->copyButtons().first(), Qt::LeftButton);
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("omarchy default agent claude"));
+        QCOMPARE(status.count(), 1);
+        QCOMPARE(status.first().first().toString(), QStringLiteral("Copied"));
+        QTest::mouseClick(card->copyButtons().last(), Qt::LeftButton);
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("omarchy default agent codex"));
+        QVERIFY(card->isVisible()); // copying is no reason to close
+        QVERIFY(QSettings().childKeys().filter(QStringLiteral("agent")).isEmpty());
+        QVERIFY(!QSettings().childGroups().contains(QStringLiteral("agent")));
+    }
+
+    // A fake claude on PATH: its name on the picker, the models its --help
+    // names, and its levels on the track; Default chosen while nothing is saved.
+    void theAgentCardListsTheAgentsModelsAndLevels()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(writeFakeClaude(f.tools->path()));
+        AgentScope scope(f.tools->path(), QStringLiteral("claude"));
+        AgentPopover *card = f.agentCard();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+
+        SegmentStrip *picker = card->agentPicker();
+        QVERIFY(picker);
+        QVERIFY(picker->isStretch());
+        QCOMPARE(picker->segments().size(), 1);
+        QCOMPARE(picker->segments().first()->text(), QStringLiteral("Claude Code"));
+        QVERIFY(picker->segments().first()->isChecked());
+        QCOMPARE(picker->segments().first()->width(), picker->width() - 2); // one agent, the whole width
+        QCOMPARE(picker->height(), ui::space(28));
+
+        QCOMPARE(rowTexts(card), QStringList({QStringLiteral("Default|whatever claude uses|*"), QStringLiteral("Fable|fable"),
+                                              QStringLiteral("Opus|opus"), QStringLiteral("Sonnet|sonnet")}));
+        QVERIFY(card->levelTrack());
+        QCOMPARE(card->levelTrack()->labels(), QStringList({QStringLiteral("Default"), QStringLiteral("Low"), QStringLiteral("Medium"),
+                                                            QStringLiteral("High"), QStringLiteral("Xhigh"), QStringLiteral("Max")}));
+        QCOMPARE(card->levelTrack()->selected(), 0);
+        const QStringList labels = cardLabels(card);
+        for (const QString &text : {QStringLiteral("AGENT"), QStringLiteral("claude is the Omarchy default"), QStringLiteral("MODEL"),
+                                    QStringLiteral("from claude --help"), QStringLiteral("REASONING"),
+                                    QStringLiteral("more thinking, slower answer")})
+            QVERIFY2(labels.contains(text), qPrintable(text + QStringLiteral(" in ") + labels.join(QLatin1Char('/'))));
+        QVERIFY(card->otherModelButton()->isVisible());
+        QVERIFY(!card->otherModelField()->isVisible());
+        QVERIFY(card->generateButton()->isVisible());
+        QVERIFY(card->generateButton()->text().endsWith(QStringLiteral("Generate now  Ctrl+G")));
+        // Opening it saves nothing.
+        QVERIFY(!QSettings().childGroups().contains(QStringLiteral("agent")));
+    }
+
+    // Every choice is saved the moment it is made, the page's tooltip follows,
+    // and a level the new model does not have goes.
+    void theAgentCardSavesEachChoice()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        QVERIFY(writeFakeClaude(f.tools->path()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+
+        const QRect before = card->geometry();
+        QTest::mouseClick(modelRow(card, QStringLiteral("Opus")), Qt::LeftButton);
+        settle();
+        QCOMPARE(savedAgent("agent/name"), QStringLiteral("claude"));
+        QCOMPARE(savedAgent("agent/model"), QStringLiteral("opus"));
+        QVERIFY(card->isVisible()); // a choice is no reason to close
+        QCOMPARE(card->geometry(), before);
+        QAbstractButton *opus = modelRow(card, QStringLiteral("Opus"));
+        QVERIFY(opus->isChecked());
+        QVERIFY(opus->font().bold());
+        QVERIFY(!modelRow(card, QStringLiteral("Default"))->isChecked());
+        QVERIFY(!modelRow(card, QStringLiteral("Default"))->font().bold());
+        // The name in the accent: some of its ink is the accent itself.
+        {
+            const QImage image = opus->grab().toImage();
+            bool accent = false;
+            for (int x = ui::space(10); x < ui::space(60); ++x)
+                for (int y = 0; y < image.height(); ++y)
+                    accent = accent || closeTo(image.pixelColor(x, y), OmarchyTheme::instance()->accent());
+            QVERIFY(accent);
+        }
+        QVERIFY(f.page()->commitControls().generateTip.contains(QStringLiteral("(opus)")));
+        QVERIFY(f.pageEditor()->cornerButton()->toolTip().contains(QStringLiteral("(opus)")));
+        // A second click on the chosen row changes nothing.
+        QTest::mouseClick(modelRow(card, QStringLiteral("Opus")), Qt::LeftButton);
+        settle();
+        QVERIFY(modelRow(card, QStringLiteral("Opus"))->isChecked());
+
+        // The track: a click on High, then the keys.
+        LevelTrack *track = card->levelTrack();
+        QTest::mouseClick(track, Qt::LeftButton, {}, track->stopCentre(3).toPoint());
+        settle();
+        QCOMPARE(savedAgent("agent/effort"), QStringLiteral("high"));
+        track = card->levelTrack();
+        QCOMPARE(track->selected(), 3);
+        track->setFocus();
+        QTRY_VERIFY(track->hasFocus());
+        QTest::keyClick(track, Qt::Key_Left);
+        settle();
+        QCOMPARE(savedAgent("agent/effort"), QStringLiteral("medium"));
+        QTRY_VERIFY(card->levelTrack()->hasFocus()); // the keyboard stays on the (new) track
+        QTest::keyClick(card->levelTrack(), Qt::Key_Right);
+        QTest::keyClick(card->levelTrack(), Qt::Key_Right);
+        settle();
+        QCOMPARE(savedAgent("agent/effort"), QStringLiteral("xhigh"));
+        QCOMPARE(card->levelTrack()->selected(), 4);
+        QTest::keyClick(card->levelTrack(), Qt::Key_Left);
+        settle();
+        QCOMPARE(savedAgent("agent/effort"), QStringLiteral("high"));
+
+        // A level Sonnet has stays; one it has not goes.
+        QTest::mouseClick(modelRow(card, QStringLiteral("Sonnet")), Qt::LeftButton);
+        settle();
+        QCOMPARE(savedAgent("agent/model"), QStringLiteral("sonnet"));
+        QCOMPARE(savedAgent("agent/effort"), QStringLiteral("high"));
+
+        // A saved level the track does not have shows as Default, and a click
+        // on Default, the stop already lit, clears it.
+        CommitMessageAgent::saveChoice(AgentChoice{QStringLiteral("claude"), QStringLiteral("opus"), QStringLiteral("ultra")});
+        card->dismiss();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->levelTrack()->selected(), 0);
+        QTest::mouseClick(card->levelTrack(), Qt::LeftButton, {}, card->levelTrack()->stopCentre(0).toPoint());
+        settle();
+        QCOMPARE(savedAgent("agent/effort"), QString());
+        QCOMPARE(savedAgent("agent/model"), QStringLiteral("opus"));
+        QCOMPARE(CommitMessageAgent::savedChoice().effort, QString());
+        QCOMPARE(card->levelTrack()->selected(), 0);
+        QVERIFY(f.page()->commitControls().generateTip.contains(QStringLiteral("(opus)")));
+
+        CommitMessageAgent::saveChoice(AgentChoice{QStringLiteral("claude"), QStringLiteral("opus"), QStringLiteral("ultra")});
+        card->dismiss();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QCOMPARE(card->levelTrack()->selected(), 0); // a level the track does not have is its Default
+        QTest::mouseClick(modelRow(card, QStringLiteral("Sonnet")), Qt::LeftButton);
+        settle();
+        QCOMPARE(savedAgent("agent/model"), QStringLiteral("sonnet"));
+        QCOMPARE(savedAgent("agent/effort"), QString());
+        // Default is a model like the others.
+        QTest::mouseClick(modelRow(card, QStringLiteral("Default")), Qt::LeftButton);
+        settle();
+        QCOMPARE(savedAgent("agent/model"), QString());
+        QVERIFY(f.page()->commitControls().generateTip.contains(QStringLiteral("(default model)")));
+    }
+
+    // A model by name: the field opens on demand, Return saves and shows the
+    // name as a row, Escape closes the field before the card.
+    void theAgentCardTakesAModelByName()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        QVERIFY(writeFakeClaude(f.tools->path()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        const int height = card->height();
+
+        QTest::mouseClick(card->otherModelButton(), Qt::LeftButton);
+        settle();
+        QLineEdit *field = card->otherModelField();
+        QVERIFY(field->isVisible());
+        QVERIFY(!card->otherModelButton()->isVisible());
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(field));
+        QCOMPARE(field->text(), QString());
+        QCOMPARE(field->placeholderText(), QStringLiteral("Model name, as claude --model takes it"));
+        QCOMPARE(field->width(), card->generateButton()->width()); // the inner width
+        QCOMPARE(card->height(), height); // the field takes the button's row
+        QTest::keyClicks(field, QStringLiteral("claude-x"));
+        QTest::keyClick(field, Qt::Key_Return);
+        settle();
+        QCOMPARE(savedAgent("agent/model"), QStringLiteral("claude-x"));
+        QVERIFY(card->isVisible());
+        QCOMPARE(rowTexts(card), QStringList({QStringLiteral("Default|whatever claude uses"), QStringLiteral("Claude-x|claude-x|*"),
+                                              QStringLiteral("Fable|fable"), QStringLiteral("Opus|opus"),
+                                              QStringLiteral("Sonnet|sonnet")}));
+        QVERIFY(!card->otherModelField()->isVisible());
+        QVERIFY(card->otherModelButton()->isVisible());
+        QTRY_VERIFY(card->hasFocus());
+
+        // Open again: the name is there to edit. Escape: back, nothing changed.
+        QTest::mouseClick(card->otherModelButton(), Qt::LeftButton);
+        settle();
+        field = card->otherModelField();
+        QCOMPARE(field->text(), QStringLiteral("claude-x"));
+        QCOMPARE(field->selectedText(), QStringLiteral("claude-x"));
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(field));
+        QTest::keyClicks(field, QStringLiteral("other"));
+        QTest::keyClick(field, Qt::Key_Escape);
+        settle();
+        QVERIFY(card->isVisible());
+        QVERIFY(!field->isVisible());
+        QVERIFY(card->otherModelButton()->isVisible());
+        QCOMPARE(savedAgent("agent/model"), QStringLiteral("claude-x"));
+        QTRY_VERIFY(card->hasFocus());
+        QTest::keyClick(card, Qt::Key_Escape);
+        settle();
+        QVERIFY(!card->isVisible());
+
+        // An empty name is Default.
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QTest::mouseClick(card->otherModelButton(), Qt::LeftButton);
+        settle();
+        card->otherModelField()->clear();
+        QTest::keyClick(card->otherModelField(), Qt::Key_Return);
+        settle();
+        QCOMPARE(savedAgent("agent/model"), QString());
+        QVERIFY(modelRow(card, QStringLiteral("Default"))->isChecked());
+        QVERIFY(!modelRow(card, QStringLiteral("Claude-x")));
+    }
+
+    // Generate now closes the card and asks the agent, as the page's own
+    // button does.
+    void theAgentCardGeneratesNow()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        QVERIFY(writeFakeClaude(f.tools->path()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QVERIFY(card->generateButton()->isDefault());
+        QTest::mouseClick(card->generateButton(), Qt::LeftButton);
+        QVERIFY(!card->isVisible());
+        QTRY_COMPARE_WITH_TIMEOUT(f.pageEditor()->toPlainText(), QStringLiteral("Fake subject"), 10000);
+    }
+
+    // While a run is going, Generate now is off, saying why, and the rest of
+    // the card, an open other-model field with it, stays as it was; once the
+    // run is over it is on again.
+    void theAgentCardWaitsForARunningAgent()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        QVERIFY(writeFakeClaude(f.tools->path()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QVERIFY(!f.page()->commitControls().generating);
+        QPushButton *generate = card->generateButton();
+        QVERIFY(generate->isEnabled());
+        const QString tip = generate->toolTip();
+        QTest::mouseClick(card->otherModelButton(), Qt::LeftButton);
+        settle();
+        QLineEdit *field = card->otherModelField();
+        QTest::keyClicks(field, QStringLiteral("claude-x"));
+
+        // Checked before the event loop runs again, so before the fake can
+        // have answered.
+        f.page()->generateMessage();
+        QVERIFY(f.page()->commitControls().generating);
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->generateButton(), generate); // followed, not rebuilt
+        QVERIFY(!generate->isEnabled());
+        QCOMPARE(generate->toolTip(), QStringLiteral("The agent is writing the message — the sparkle stops it"));
+        QCOMPARE(card->otherModelField(), field);
+        QVERIFY(field->isVisible());
+        QCOMPARE(field->text(), QStringLiteral("claude-x"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(f.pageEditor()->toPlainText(), QStringLiteral("Fake subject"), 10000);
+        QVERIFY(!f.page()->commitControls().generating);
+        QVERIFY(generate->isEnabled());
+        QCOMPARE(generate->toolTip(), tip);
+        QCOMPARE(card->otherModelField(), field);
+        QCOMPARE(field->text(), QStringLiteral("claude-x"));
+        QVERIFY(QSettings().value(QStringLiteral("agent/model")).toString().isEmpty());
+    }
+
+    // The cogs open it — the page's in Docked, the commit card's in Mini —
+    // and close it again; the slot main() calls opens the one of the layout
+    // of the moment, and none in the history.
+    void theAgentCardOpensFromTheCogs()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        QSignalSpy opened(card, &AgentPopover::opened);
+        QToolButton *pageCog = f.page()->agentButton();
+
+        QTest::mouseClick(pageCog, Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->anchor(), static_cast<QWidget *>(pageCog));
+        QCOMPARE(opened.count(), 1);
+        QTest::mouseClick(pageCog, Qt::LeftButton); // the cog toggles
+        settle();
+        QVERIFY(!card->isVisible());
+
+        QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showAgentMenu"));
+        settle();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->anchor(), static_cast<QWidget *>(pageCog));
+        const QRect geometry = card->geometry();
+        QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showAgentMenu")); // again: stays, same place
+        settle();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->geometry(), geometry);
+        QCOMPARE(f.window->findChildren<AgentPopover *>().size(), 1);
+        card->dismiss();
+
+        // Mini: from the commit card's cog.
+        QVERIFY(f.openCard());
+        QToolButton *cardCog = f.popover()->agentButton();
+        QTest::mouseClick(cardCog, Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QVERIFY(f.popover()->isVisible());
+        QCOMPARE(card->anchor(), static_cast<QWidget *>(cardCog));
+        QTest::mouseClick(cardCog, Qt::LeftButton);
+        settle();
+        QVERIFY(!card->isVisible());
+        QVERIFY(f.popover()->isVisible());
+        // The slot in Mini opens the commit card too.
+        f.popover()->dismiss();
+        settle();
+        QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showAgentMenu"));
+        settle();
+        QVERIFY(f.popover()->isVisible());
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->anchor(), static_cast<QWidget *>(cardCog));
+        QCOMPARE(card->x(), f.popover()->geometry().right() + 1 + ui::space(8)); // beside the commit card
+
+        // The history has no cog.
+        f.window->setMode(MainWindow::HistoryMode);
+        settle();
+        QVERIFY(!card->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showAgentMenu"));
+        settle();
+        QVERIFY(!card->isVisible());
+        QVERIFY(!f.popover()->isVisible());
+    }
+
+    // Under the cog, its right edge on the cog's, 360 wide where there is
+    // room, clamped by the window's margins where there is not, moved up in a
+    // short window, and placed again when its height changes.
+    void theAgentCardHangsUnderItsCog()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(writeFakeClaude(f.tools->path()));
+        QVERIFY(writeFakeCodex(f.tools->path()));
+        AgentScope scope(f.tools->path(), QStringLiteral("claude"));
+        AgentPopover *card = f.agentCard();
+        QWidget *host = f.host();
+        const QMargins margins = host->layout()->contentsMargins();
+        QToolButton *cog = f.page()->agentButton();
+        const auto cogRect = [&] { return rectIn(cog, host); };
+
+        f.window->resize(945, 1234);
+        settle();
+        QTest::mouseClick(cog, Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->width(), ui::space(360));
+        QCOMPARE(card->geometry().right(), cogRect().right());
+        QCOMPARE(card->y(), cogRect().bottom() + 1 + ui::space(6));
+        QCOMPARE(card->height(), card->sizeHint().height());
+
+        // Another agent, another height; the top stays under the cog.
+        const int claudeHeight = card->height();
+        QVERIFY(card->agentPicker());
+        QCOMPARE(card->agentPicker()->segments().size(), 2);
+        QTest::mouseClick(card->agentPicker()->segments().last(), Qt::LeftButton);
+        settle();
+        QCOMPARE(savedAgent("agent/name"), QStringLiteral("codex"));
+        QCOMPARE(rowTexts(card), QStringList({QStringLiteral("Default|whatever codex uses|*"), QStringLiteral("GPT-6-Astra|gpt-6-astra"),
+                                              QStringLiteral("GPT-5.5|gpt-5.5")}));
+        QCOMPARE(card->levelTrack()->labels().size(), 7);
+        QVERIFY(card->height() != claudeHeight);
+        QCOMPARE(card->height(), card->sizeHint().height());
+        QCOMPARE(card->y(), cogRect().bottom() + 1 + ui::space(6));
+        QCOMPARE(card->geometry().right(), cogRect().right());
+        // A model with fewer levels, a shorter track; none, no track at all.
+        QTest::mouseClick(modelRow(card, QStringLiteral("GPT-5.5")), Qt::LeftButton);
+        settle();
+        QCOMPARE(card->levelTrack()->labels(), QStringList({QStringLiteral("Default"), QStringLiteral("Low"), QStringLiteral("High")}));
+
+        // Narrow: as wide as the margins allow, from the left margin. The top
+        // bar keeps the window wider than that; a minimum of the test's own
+        // lets it be squeezed anyway.
+        f.window->setMinimumSize(1, 1);
+        f.window->resize(300, 1234);
+        settle();
+        QTRY_COMPARE(card->width(), qMin(ui::space(360), host->width() - margins.left() - margins.right()));
+        QCOMPARE(card->x(), qMax(margins.left(), cogRect().right() + 1 - card->width()));
+        QVERIFY(host->width() < 360 + margins.left() + margins.right());
+        QCOMPARE(card->x(), margins.left());
+
+        // Short: moved up to fit, never above the top margin.
+        f.window->resize(945, 360);
+        settle();
+        QTRY_VERIFY(card->geometry().bottom() + 1 <= host->height() - margins.bottom()
+                    || card->y() == margins.top());
+        QVERIFY(card->y() < cogRect().bottom() + 1 + ui::space(6));
+        QVERIFY(card->y() >= margins.top());
+    }
+
+    // Mini, from the commit card's cog: beside that card, 8 to its right and
+    // level with it, never over it; where the room right of it is under 240,
+    // under the cog again.
+    void theAgentCardSitsBesideTheCommitCard()
+    {
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+            {
+                WindowFixture f = mainWindow();
+                QVERIFY(f.window);
+                QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+                QVERIFY(writeFakeClaude(f.tools->path()));
+                AgentScope scope(f.tools->path(), QStringLiteral("claude"));
+                f.window->resize(945, 1234);
+                settle();
+                QVERIFY(f.openCard());
+                CommitPopover *commitCard = f.popover();
+                AgentPopover *card = f.agentCard();
+                QWidget *host = f.host();
+                const QMargins margins = host->layout()->contentsMargins();
+                QToolButton *cog = commitCard->agentButton();
+                QTest::mouseClick(cog, Qt::LeftButton);
+                settle();
+                QVERIFY(card->isVisible());
+                QVERIFY(commitCard->isVisible());
+                const QRect commitRect = commitCard->geometry();
+                QCOMPARE(card->x(), commitRect.right() + 1 + ui::space(8));
+                QVERIFY(card->y() <= commitRect.y());
+                QVERIFY2(!card->geometry().intersects(commitRect),
+                         qPrintable(QStringLiteral("%1,%2 %3x%4 / %5,%6 %7x%8")
+                                        .arg(card->x()).arg(card->y()).arg(card->width()).arg(card->height())
+                                        .arg(commitRect.x()).arg(commitRect.y()).arg(commitRect.width()).arg(commitRect.height())));
+                QCOMPARE(card->width(), ui::space(360));
+                QCOMPARE(card->height(), card->sizeHint().height());
+
+                // Narrower, until the room right of the commit card is under
+                // 240: under the cog, its right edge on the cog's, and moved
+                // up as far as the window's bottom margin asks.
+                f.window->setMinimumSize(1, 1);
+                const auto room = [&] {
+                    return host->width() - margins.right() - (commitCard->geometry().right() + 1 + ui::space(8));
+                };
+                for (int width = 945; width > 300 && room() >= ui::space(240); width -= 10) {
+                    f.window->resize(width, 1234);
+                    settle();
+                }
+                QVERIFY(room() < ui::space(240));
+                QVERIFY(commitCard->isVisible());
+                QVERIFY(card->isVisible());
+                const QRect cogRect = rectIn(cog, host);
+                const int under = cogRect.bottom() + 1 + ui::space(6);
+                const int bottom = host->height() - margins.bottom();
+                QTRY_COMPARE(card->y(), under + card->height() > bottom ? qMax(margins.top(), bottom - card->height()) : under);
+                QCOMPARE(card->x(), qMax(margins.left(), cogRect.right() + 1 - card->width()));
+                QCOMPARE(card->width(), qMin(ui::space(360), host->width() - margins.left() - margins.right()));
+            }
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
+    }
+
+    // The two cards together: a press on the agent card leaves the commit
+    // card open; whatever closes the commit card, the history, the layout
+    // switch and another repository close the agent card; a press on the
+    // message box closes it and goes on to the box.
+    void theAgentCardLivesWithTheCommitCard()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        CommitPopover *commitCard = f.popover();
+        const auto openBoth = [&] {
+            QVERIFY(f.openCard());
+            QTest::mouseClick(commitCard->agentButton(), Qt::LeftButton);
+            settle();
+            QVERIFY(card->isVisible());
+        };
+
+        openBoth();
+        // A press on the agent card, where nothing but the card is.
+        const QPoint inside = card->mapTo(f.window.get(), QPoint(card->width() - 4, card->height() - 4));
+        clickAt(f.window.get(), inside);
+        settle();
+        QVERIFY(card->isVisible());
+        QVERIFY(commitCard->isVisible());
+        QTest::mouseClick(card->copyButtons().first(), Qt::LeftButton);
+        settle();
+        QVERIFY(commitCard->isVisible());
+
+        // Escape from the commit card's editor closes both.
+        commitCard->editor()->setFocus();
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(commitCard->editor()));
+        QVERIFY(card->isVisible());
+        QTest::keyClick(commitCard->editor(), Qt::Key_Escape);
+        settle();
+        QVERIFY(!commitCard->isVisible());
+        QVERIFY(!card->isVisible());
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(f.rail()->list()));
+
+        // The tile.
+        openBoth();
+        QTest::mouseClick(f.tile(), Qt::LeftButton);
+        settle();
+        QVERIFY(!commitCard->isVisible());
+        QVERIFY(!card->isVisible());
+
+        // The history.
+        openBoth();
+        QTest::mouseClick(f.bar()->historyTab(), Qt::LeftButton);
+        settle();
+        QVERIFY(!card->isVisible());
+        f.window->setMode(MainWindow::CommitMode);
+        settle();
+
+        // Ctrl+B, from Mini to Docked and back.
+        openBoth();
+        QTest::keyClick(commitCard->editor(), Qt::Key_B, Qt::ControlModifier);
+        settle();
+        QCOMPARE(f.window->paneLayout(), PaneLayout::Docked);
+        QVERIFY(!card->isVisible());
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QTest::keyClick(card, Qt::Key_B, Qt::ControlModifier);
+        settle();
+        QCOMPARE(f.window->paneLayout(), PaneLayout::Mini);
+        QVERIFY(!card->isVisible());
+        // Saved, as the keys save it, so the windows of the tests after this
+        // one start Docked again.
+        f.window->setPaneLayout(PaneLayout::Docked);
+        settle();
+
+        // A press on the message box: closed, and the box has the keyboard.
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        MessageEdit *box = f.pageEditor();
+        clickAt(f.window.get(), box->mapTo(f.window.get(), QPoint(ui::space(20), box->height() - ui::space(10))));
+        settle();
+        QVERIFY(!card->isVisible());
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(box));
+
+        // Another repository.
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QTemporaryDir other;
+        QVERIFY(other.isValid());
+        QVERIFY(git(other.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(commit(other.path(), QStringLiteral("other"), 1));
+        QVERIFY(f.window->openRepository(other.path()));
+        settle();
+        QVERIFY(!card->isVisible());
+    }
+
+    // A refresh under an open agent card — F5, and the file watcher after an
+    // edit — in Docked and in Mini: the card (and the commit card) stay, the
+    // other-model field keeps its unsaved text and the keyboard, nothing is
+    // saved, and the list did refresh.
+    void theAgentCardSurvivesARefresh()
+    {
+        for (const bool mini : {false, true}) {
+            WindowFixture f = mainWindow();
+            QVERIFY(f.window);
+            QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+            QVERIFY(activate(f.window.get()));
+            QVERIFY(writeFakeClaude(f.tools->path()));
+            AgentScope scope(f.tools->path());
+            AgentPopover *card = f.agentCard();
+            if (mini) {
+                QVERIFY(f.openCard());
+                QTest::mouseClick(f.popover()->agentButton(), Qt::LeftButton);
+            } else {
+                QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+            }
+            settle();
+            QVERIFY(card->isVisible());
+            QTest::mouseClick(card->otherModelButton(), Qt::LeftButton);
+            settle();
+            QLineEdit *field = card->otherModelField();
+            QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(field));
+            QTest::keyClicks(field, QStringLiteral("claude-x"));
+            const auto unchanged = [&] {
+                return card->isVisible() && (!mini || f.popover()->isVisible()) && card->otherModelField() == field
+                    && field->isVisible() && field->text() == QStringLiteral("claude-x")
+                    && QApplication::focusWidget() == field && !QSettings().childGroups().contains(QStringLiteral("agent"));
+            };
+            QVERIFY(unchanged());
+            QAbstractItemModel *rows = f.page()->proxy();
+            const int before = rows->rowCount();
+
+            // F5, over a file that was not there.
+            QVERIFY(writeFixture(QDir(f.repo->root()).filePath(QStringLiteral("zz-new.txt")), "new\n"));
+            QTest::keyClick(field, Qt::Key_F5);
+            settle();
+            QCOMPARE(rows->rowCount(), before + 1);
+            QVERIFY2(unchanged(), mini ? "Mini, F5" : "Docked, F5");
+
+            // The watcher: a.txt written back as committed drops out of the
+            // list once the debounce is over.
+            QVERIFY(writeFixture(QDir(f.repo->root()).filePath(QStringLiteral("a.txt")), "a\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(rows->rowCount(), before, 10000);
+            settle();
+            QVERIFY2(unchanged(), mini ? "Mini, watcher" : "Docked, watcher");
+            if (mini) {
+                // Saved as Docked again for the tests after this one.
+                f.window->setPaneLayout(PaneLayout::Docked);
+                settle();
+            }
+        }
+    }
+
+    // The keyboard is on the card the moment it opens, so Escape closes it at
+    // once; closing gives the keyboard back to where it was.
+    void theAgentCardTakesAndReturnsTheKeyboard()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        AgentScope scope(f.tools->path());
+        AgentPopover *card = f.agentCard();
+        QCOMPARE(f.window->paneLayout(), PaneLayout::Docked);
+
+        f.pageEditor()->setFocus();
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(f.pageEditor()));
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(card->isVisible());
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(card));
+        QTest::keyClick(card, Qt::Key_Escape);
+        settle();
+        QVERIFY(!card->isVisible());
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(f.pageEditor()));
+
+        QVERIFY(f.openCard());
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(f.popover()->editor()));
+        QTest::mouseClick(f.popover()->agentButton(), Qt::LeftButton);
+        settle();
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(card));
+        QTest::keyClick(card, Qt::Key_Escape);
+        settle();
+        QVERIFY(!card->isVisible());
+        QVERIFY(f.popover()->isVisible()); // one Escape, one card
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(f.popover()->editor()));
+    }
+
+    // --screenshot-menu agent opens the card under the cog of the layout it
+    // pictures, and writes no agent setting.
+    void theScreenshotMenuOpensTheAgentCard()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make)");
+        QTemporaryDir repoDir, themeDir, home, tools, work;
+        QVERIFY(repoDir.isValid() && themeDir.isValid() && home.isValid() && tools.isValid() && work.isValid());
+        const QString repo = repoDir.path();
+        QVERIFY(git(repo, {"init", "-q", "-b", "main"}));
+        QVERIFY(writeFixture(QDir(repo).filePath(QStringLiteral("a.txt")), "a\n"));
+        QVERIFY(git(repo, {"add", "-A"}));
+        QVERIFY(git(repo, {"commit", "-q", "-m", "first"}, 1));
+        QVERIFY(writeFixture(QDir(repo).filePath(QStringLiteral("a.txt")), "a changed\n"));
+        QVERIFY(writeFixture(QDir(themeDir.path()).filePath(QStringLiteral("colors.toml")),
+                             "accent = \"#ff00ff\"\nbackground = \"#101010\"\nforeground = \"#eeeeee\"\n"));
+        const QString gitBinary = QStandardPaths::findExecutable(QStringLiteral("git"));
+        QVERIFY(QFile::link(gitBinary, QDir(tools.path()).filePath(QStringLiteral("git"))));
+        QVERIFY(writeFakeClaude(tools.path()));
+
+        int run = 0;
+        const auto shoot = [&](const QStringList &flags, QStringList *keys) {
+            const QString config = QDir(work.path()).filePath(QStringLiteral("config%1").arg(++run));
+            const QString png = QDir(work.path()).filePath(QStringLiteral("shot%1.png").arg(run));
+            QProcess p;
+            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+            env.insert(QStringLiteral("HOME"), home.path());
+            env.insert(QStringLiteral("XDG_CONFIG_HOME"), config);
+            env.insert(QStringLiteral("OMAGIT_THEME_DIR"), themeDir.path());
+            env.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+            env.insert(QStringLiteral("PATH"), tools.path());
+            p.setProcessEnvironment(env);
+            p.start(binary, QStringList{QStringLiteral("--no-fetch"), QStringLiteral("--screenshot"), png,
+                                        QStringLiteral("--screenshot-size"), QStringLiteral("945x1234")}
+                                + flags + QStringList{repo});
+            if (!p.waitForFinished(30000) || p.exitCode() != 0)
+                return QImage();
+            *keys = QSettings(QDir(config).filePath(QStringLiteral("omagit/omagit.conf")), QSettings::IniFormat).allKeys();
+            keys->sort();
+            return QImage(png);
+        };
+        // The columns an accent frame runs down for 150 px or more: two per
+        // side of each open card.
+        const auto frameColumns = [](const QImage &image) {
+            int columns = 0;
+            for (int x = 0; x < image.width(); ++x) {
+                int longest = 0, runLength = 0;
+                for (int y = 0; y < image.height(); ++y) {
+                    runLength = image.pixelColor(x, y) == QColor(QStringLiteral("#ff00ff")) ? runLength + 1 : 0;
+                    longest = qMax(longest, runLength);
+                }
+                if (longest >= 150)
+                    ++columns;
+            }
+            return columns;
+        };
+        const QString menu = QStringLiteral("--screenshot-menu");
+        QStringList plainKeys, keys;
+        const QImage plain = shoot({}, &plainKeys);
+        QVERIFY(!plain.isNull());
+        QCOMPARE(frameColumns(plain), 0);
+        const QImage docked = shoot({menu, QStringLiteral("agent")}, &keys);
+        QVERIFY(!docked.isNull());
+        QCOMPARE(frameColumns(docked), 4);
+        QCOMPARE(keys, plainKeys);
+        QVERIFY(keys.filter(QStringLiteral("agent")).isEmpty());
+
+        const QImage commitOnly = shoot({QStringLiteral("--mini"), menu, QStringLiteral("commit")}, &keys);
+        QVERIFY(!commitOnly.isNull());
+        const QImage mini = shoot({QStringLiteral("--mini"), menu, QStringLiteral("agent")}, &keys);
+        QVERIFY(!mini.isNull());
+        QVERIFY2(frameColumns(mini) > frameColumns(commitOnly),
+                 qPrintable(QStringLiteral("%1 %2").arg(frameColumns(mini)).arg(frameColumns(commitOnly))));
+        QVERIFY(keys.filter(QStringLiteral("agent")).isEmpty());
+        const QImage history = shoot({QStringLiteral("--history"), menu, QStringLiteral("agent")}, &keys);
+        QVERIFY(!history.isNull());
+        QCOMPARE(frameColumns(history), 0);
     }
 
     // --- UiHelpers: the kit primitives --------------------------------------
@@ -5683,6 +6720,105 @@ esac
             QCOMPARE(popoverMetrics(live), atTwelve);
 
             live.window.reset(); // the window goes before the theme it follows
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
+    }
+
+    // The agent card after a live text-size change measures like one built
+    // at the new size: its width, margins, rows, track, notes and — with no
+    // agent installed — its command rows.
+    void theAgentCardFollowsALiveTextSizeChange()
+    {
+        QTemporaryDir dir, home, tools, bare;
+        QVERIFY(dir.isValid() && home.isValid() && tools.isValid() && bare.isValid());
+        const QString toml = QDir(dir.path()).filePath(QStringLiteral("shell.toml"));
+        QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+        const QString gitBinary = QStandardPaths::findExecutable(QStringLiteral("git"));
+        QVERIFY(!gitBinary.isEmpty());
+        QVERIFY(QFile::link(gitBinary, QDir(bare.path()).filePath(QStringLiteral("git"))));
+        QVERIFY(writeFakeClaude(tools.path()));
+        QVERIFY(QFile::link(gitBinary, QDir(tools.path()).filePath(QStringLiteral("git"))));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+            AgentScope scope(tools.path());
+            CommitMessageAgent::saveChoice(AgentChoice{QStringLiteral("claude"), QStringLiteral("opus"), QStringLiteral("high")});
+
+            // A card open in either state: the installed one with the fake
+            // claude, the other with git alone on PATH.
+            const auto open = [&](WindowFixture &f, bool installed) {
+                ScopedEnv path("PATH", (installed ? tools : bare).path().toUtf8());
+                f.window->resize(945, 1234);
+                QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+                QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showAgentMenu"));
+                settle();
+                QVERIFY(f.agentCard()->isVisible());
+            };
+            WindowFixture live = mainWindow();
+            QVERIFY(live.window);
+            open(live, true);
+            WindowFixture liveBare = mainWindow();
+            QVERIFY(liveBare.window);
+            open(liveBare, false);
+
+            const auto matchesAFreshWindow = [&] {
+                for (const bool installed : {true, false}) {
+                    WindowFixture fresh = mainWindow();
+                    QVERIFY(fresh.window);
+                    open(fresh, installed);
+                    const AgentPopover *card = (installed ? live : liveBare).agentCard();
+                    QTRY_COMPARE(agentCardMetrics(card), agentCardMetrics(fresh.agentCard()));
+                    QCOMPARE(card->geometry(), fresh.agentCard()->geometry());
+                    const QStringList metrics = agentCardMetrics(card);
+                    const int pad = ui::space(10) - 2;
+                    QVERIFY(metrics.contains(QStringLiteral("margins=%1,%1,%1,%1").arg(pad)));
+                    QVERIFY(metrics.contains(QStringLiteral("width=%1").arg(ui::space(360))));
+                    QVERIFY(metrics.contains(QStringLiteral("notePx=%1").arg(OmarchyTheme::instance()->captionFont().pixelSize()))
+                            || !installed);
+                    QVERIFY(metrics.contains(QStringLiteral("noteBold=0")));
+                    if (installed) {
+                        QVERIFY(metrics.contains(QStringLiteral("row=%1").arg(ui::space(28))));
+                        QVERIFY(metrics.contains(QStringLiteral("picker=%1").arg(ui::space(28))));
+                        QVERIFY(metrics.contains(QStringLiteral("pickerTop=%1").arg(ui::space(10) + ui::space(22))));
+                        QVERIFY(metrics.contains(QStringLiteral("track=%1").arg(ui::space(44))));
+                        QVERIFY(metrics.contains(QStringLiteral("stop0=%1").arg(ui::space(28))));
+                        QVERIFY(metrics.contains(QStringLiteral("stopY=%1").arg(ui::space(12))));
+                    } else {
+                        QVERIFY(metrics.contains(QStringLiteral("notePx=%1").arg(qRound(OmarchyTheme::instance()->fontBase() * 11 / 12.0))));
+                        QVERIFY(metrics.contains(QStringLiteral("command=%1").arg(ui::space(30))));
+                        QVERIFY(metrics.contains(QStringLiteral("copy=%1").arg(ui::space(24))));
+                    }
+                    fresh.window.reset();
+                }
+            };
+
+            matchesAFreshWindow();
+            const QStringList atTwelve = agentCardMetrics(live.agentCard());
+            const QStringList bareAtTwelve = agentCardMetrics(liveBare.agentCard());
+            QVERIFY(atTwelve.contains(QStringLiteral("width=360")));
+
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 16\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 16, 10000);
+            settle();
+            matchesAFreshWindow();
+            QVERIFY(agentCardMetrics(live.agentCard()).contains(QStringLiteral("width=480")));
+            QVERIFY(agentCardMetrics(live.agentCard()).contains(QStringLiteral("row=37")));
+            QVERIFY(live.agentCard()->isVisible()); // a text size is no reason to close
+
+            QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+            QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 12, 10000);
+            settle();
+            matchesAFreshWindow();
+            QCOMPARE(agentCardMetrics(live.agentCard()), atTwelve);
+            QCOMPARE(agentCardMetrics(liveBare.agentCard()), bareAtTwelve);
+
+            live.window.reset(); // the windows go before the theme they follow
+            liveBare.window.reset();
         }
         g_theme.reset(new OmarchyTheme);
         g_theme->apply(*qApp);

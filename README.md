@@ -34,11 +34,17 @@ history with a branch graph, and plugs into the Nautilus context menu as
   brings your own text back, and a click on the spinner stops the run. The message is one
   imperative subject line naming the essence of the change and, when the change delivers
   more than one thing of value, a bullet per thing — as many as there are, none for details
-  or files. The cog at the right of the MESSAGE label picks the **agent** — Claude Code or
-  Codex, whichever is installed (Omarchy's default agent to begin with) — the **model** and
-  the **reasoning** level. Models and levels are what the CLI itself names: `claude --help`'s
-  model aliases and `--effort` levels, `codex debug models`' catalog with each model's own
-  levels; *Other…* takes any model by name. The agent runs without tools or a saved session
+  or files. The cog at the right of the MESSAGE label opens the **agent settings**, a card
+  hanging under it (beside the Mini commit card when opened from its cog): AGENT picks Claude Code or Codex, whichever is installed (Omarchy's
+  default agent to begin with, and named as such), MODEL lists the models with the id the
+  CLI takes and a tick on the chosen one, REASONING is a track of the levels (click a stop,
+  or Left/Right). Models and levels are what the CLI itself names: `claude --help`'s model
+  aliases and `--effort` levels, `codex debug models`' catalog with each model's own levels;
+  *Other model…* opens a field that takes any model by name (Return saves it, Escape backs
+  out). Every choice is saved the moment it is made; *Generate now* closes the card and asks
+  at once, Escape, the cog again or a click elsewhere just close it. With no agent installed
+  the card says so and offers `omarchy default agent claude` / `codex`, each with a copy
+  button. The agent runs without tools or a saved session
   (`claude -p --tools ""`, `codex exec --ephemeral --sandbox read-only`); the choice lives
   under `[agent]` in `~/.config/omagit/omagit.conf`.
 - **Branch dropdown**: the branch name in the top bar is a button; clicking it lists the
@@ -151,7 +157,7 @@ history with a branch graph, and plugs into the Nautilus context menu as
   beside it — MESSAGE with the agent cog and the sparkle, how many of the listed files are
   selected, *Amend last commit* and a primary Commit. It is the commit page's own message
   (the same text and undo history, the agent streaming into it) and its own Amend, agent
-  menu and commit, so nothing typed in one place is missing in the other. The card grows
+  settings and commit, so nothing typed in one place is missing in the other. The card grows
   upwards with its text, up to a third of the window. Escape, a second click on the tile, a
   click elsewhere in the window, a successful commit, the history, the Docked layout and
   another repository close it; the rail stays usable while it is open — selecting,
@@ -197,7 +203,9 @@ omagit [path]            # any directory or file inside a repository (default: c
 
 `--history` opens the history view, `--amend` starts with *Amend last commit* ticked,
 `--mini` starts in the Mini layout, `--full` with the diff pane hidden, and `--no-fetch` leaves the network alone.
-`--mini --screenshot-menu commit` pictures the Mini layout with its commit popover open.
+`--mini --screenshot-menu commit` pictures the Mini layout with its commit popover open;
+`--screenshot-menu agent` the agent settings under the page's cog, and with `--mini` under
+the commit popover's cog (the popover opens too).
 
 The footer's info button or **Ctrl+K** opens the keybindings panel, styled after Omarchy's
 own Super+K menu: type to filter, ↑/↓ move the cursor, **Enter** runs the highlighted
@@ -217,7 +225,8 @@ Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 was taken on — two positive numbers, only together with `--screenshot`, and anything else is
 a usage error; `--screenshot-menu
 branch|repo|agent|keybindings|merge|login|commit` opens that panel first and includes it in the picture
-(`commit` is the Mini layout's commit popover, so it goes with `--mini`; elsewhere it opens nothing), `--screenshot-keys
+(`commit` is the Mini layout's commit popover, so it goes with `--mini`; elsewhere it opens nothing;
+`agent` opens nothing in the history), `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
 and `@changesTree` in that list focus the list on show, so the keys reach it),
@@ -283,6 +292,7 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/RemoteSync.*` | Fetch / pull / push, the ahead/behind counts, automatic fetching with backoff, git-dir watch |
 | `src/AskPass.*` | Omagit as its own askpass helper: the socket git's and ssh's prompts arrive on, what they mean, one sign-in per operation, and the client side of `--askpass` |
 | `src/BadgeButton.*` | Tool button with a count badge, busy dots and a pop-in animation |
+| `src/Segmented.*` | The painted segmented control: segments with a glyph, a label and a count pill inside one shared frame, at their own widths or stretched equally (the top bar's tabs, the agent picker) |
 | `src/TopBar.*` | The window's top row: repository and branch chips, the painted Changes / History tab segments, the sync buttons with their "more" menu, the layout toggles — and the seven folding levels that fit them into the width |
 | `src/TickMenu.*` | Menu whose checked entries carry an accent tick at the right edge instead of a checkbox (branch, repository, "more" and diff menus) |
 | `src/BranchMenu.*` | The searchable branch dropdown (the top bar's branch chip, both sides of the merge view) |
@@ -303,6 +313,7 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/DesktopExec.*` | A file's default application, read from its desktop entry, and launching it detached |
 | `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips, the commit's hash in history mode, Refresh and the commit tile |
 | `src/CommitPopover.*` | The Mini layout's commit popover: an overlay beside the rail's commit tile sharing the commit page's message document, mirroring its Amend, generate and Commit controls, anchored to the tile and closed by Escape, outside presses and leaving the Mini commit view |
+| `src/AgentPopover.*` | The agent settings card under a cog (the page's, or the commit popover's): agent picker, model rows, the other-model field, the reasoning level track and Generate now, or the install commands when no agent is installed; every choice saved through the commit page at once |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
 | `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |
 | `nautilus/omagit.py` | Nautilus "Open in Omagit" menu provider |

@@ -10,8 +10,6 @@
 #include <QSet>
 #include <QWidget>
 
-#include <functional>
-
 class ChangesTreeModel;
 class QAbstractItemView;
 class QButtonGroup;
@@ -19,7 +17,6 @@ class QCheckBox;
 class QHBoxLayout;
 class QLabel;
 class QLayout;
-class QMenu;
 class QPushButton;
 class QSortFilterProxyModel;
 class QSpacerItem;
@@ -56,6 +53,7 @@ public:
         int checked = 0; // the files the commit would take
         int shown = 0;   // the rows the list shows
         QString generateText, generateTip; // the generate button in the message box's corner
+        bool generating = false; // an agent is writing the message; the generate button stops it
     };
 
     explicit CommitPage(GitRepo *repo, QWidget *parent = nullptr);
@@ -64,7 +62,7 @@ public:
     // whoever shows it elsewhere shares the text and its undo stack.
     QTextDocument *messageDocument() const;
     CommitControls commitControls() const;
-    // The cog's tooltip, for a cog elsewhere that opens the same menu.
+    // The cog's tooltip, for a cog elsewhere that opens the same settings.
     static QString agentButtonTip();
 
     // The Mini rail shows the same files, through the same selection: the
@@ -130,6 +128,8 @@ public:
     QToolButton *treeButton() const { return m_treeButton; }
     QToolButton *tableButton() const { return m_tableButton; }
     QToolButton *unversionedButton() const { return m_unversioned; }
+    // The cog at the right of the MESSAGE label, the agent popover's anchor.
+    QToolButton *agentButton() const { return m_agentButton; }
 
     void applyTheme();
 
@@ -148,10 +148,12 @@ public slots:
     // Asks the chosen coding agent for a message describing the checked
     // changes (Ctrl+G); clicking again while it runs stops it.
     void generateMessage();
-    // The agent menu, hanging from the page's own cog.
-    void showAgentMenu();
-    // The same menu, hanging from the bottom-right corner of `anchor`.
-    void showAgentMenuAt(QWidget *anchor);
+    // Saves the agent, model and reasoning level the agent popover picked, and
+    // puts them on the generate button's tooltip.
+    void applyAgentChoice(const AgentChoice &choice);
+    // A cog was pressed, the page's own or one showing the page elsewhere:
+    // says so through agentSettingsRequested(), hanging from `anchor`.
+    void requestAgentSettings(QWidget *anchor);
 
 signals:
     void refreshRequested();
@@ -164,6 +166,9 @@ signals:
     void statusMessage(const QString &text, int ms);
     // Something commitControls() reports may have changed.
     void commitControlsChanged();
+    // A cog was pressed — the page's own or one showing the page elsewhere
+    // (the Mini commit card's): the agent settings, hanging from `anchor`.
+    void agentSettingsRequested(QWidget *anchor);
 
 private:
     // The sections of the page, top to bottom, as the constructor builds them.
@@ -212,12 +217,6 @@ private:
     void onTreeExpanded(const QModelIndex &index, bool expanded);
     // The repo-relative path of the canonical current file, empty when none is.
     QString currentPath() const;
-    // The cog menu's three sections.
-    void addAgentSection(QMenu *menu, const AgentChoice &choice, const std::function<void(const AgentChoice &)> &save);
-    void addModelSection(QMenu *menu, const AgentSpec &agent, const AgentCatalog &catalog, const AgentChoice &choice,
-                         const std::function<void(const AgentChoice &)> &save);
-    void addReasoningSection(QMenu *menu, const QStringList &efforts, const AgentChoice &choice,
-                             const std::function<void(const AgentChoice &)> &save);
     void updateCommitButton();
     void setGenerating(bool on);
     // The one place the generate button's face changes, so the text and the

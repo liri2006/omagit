@@ -25,7 +25,7 @@ tile widths (Wide, Half, Third, Eighth).
 | 3 | Top bar restructure | done |
 | 4 | Files-view switcher | done |
 | 5 | Mini rail commit tile and popover | done |
-| 6 | Agent settings popover | |
+| 6 | Agent settings popover | done |
 | 7 | Stacked layouts | |
 
 ### 1. Kit primitives
@@ -167,11 +167,44 @@ page's layout or to the history.
 
 ### 6. Agent settings popover
 
-Self-contained, and the current one works, so it is last.
+The cog's `TickMenu` and its `QInputDialog` for "Other…" gave way to the
+design's card.
 
-- AGENT segmented control, MODEL rows with the CLI id and a tick, an
-  `Other model…` text button that opens a field only on demand, REASONING as a
-  level track, a full-width `Generate now` button.
+- `src/Segmented.*`: the top bar's private tab classes, extracted as
+  `SegmentButton` / `SegmentStrip` for N segments with a stretch mode
+  (`floor(w / n)` each, the last taking the remainder, content centred as
+  `kit.js` rounds it). The top bar uses them unchanged: Docked and History
+  screenshots at base 12 and 16 are pixel-identical to the build before.
+- `src/AgentPopover.*`: `QFrame#agentPopover`, an overlay of the central
+  widget like the commit card (2 px accent frame shared in the stylesheet),
+  `min(space(360), inner width)` wide, its right edge on the cog's, 6 px under
+  it, moved up in a short window; opened from the Mini commit card's cog it sits
+  8 px beside that card instead (`setBeside()`), when at least 240 px of room is
+  left there. AGENT is a stretched strip of the installed
+  agents with the Omarchy default named in a caption note; MODEL painted rows
+  (name, the CLI id in the 11 px small text ending 30 px in, the accent tick),
+  Default first and a typed-in model ahead of the catalog; `Other model…` a
+  ghost text button that turns into the regular field (Return saves, Escape
+  closes the field before the card); REASONING a painted level track (Default
+  plus the model's levels, click or Left/Right), left out when the model has
+  none; a hairline and the default `Generate now  Ctrl+G`. Nothing installed:
+  the robot, the headline, INSTALL ONE and two `QFrame#commandRow`s whose copy
+  buttons put the bare command on the clipboard.
+- The page stays the owner: `CommitPage::applyAgentChoice()` saves and
+  refreshes the generate button, both cogs emit
+  `agentSettingsRequested(anchor)`, and the window toggles the card at that
+  anchor (`--screenshot-menu agent` in Docked and Mini). Every choice is saved
+  at once and the card is rebuilt from `savedChoice()`, the keyboard kept on
+  the part that had it; no new settings key. The card takes the keyboard as
+  it opens and gives it back as it closes.
+- Dismissal: Escape, the cog again, a press elsewhere in the window, Generate
+  now, the cog hiding (the commit card closing, History, Docked/Mini) and
+  another repository. The commit card treats a press on the agent card as its
+  own (`CommitPopover::setCompanion()`).
+
+Not in this phase: keyboard focus for the agent picker's segments (they stay
+pointer-only, like the top bar's tabs), the design's 0.3-alpha track line (the
+theme's hairline is used), and anything about the agents themselves.
 
 ### 7. Stacked layouts
 

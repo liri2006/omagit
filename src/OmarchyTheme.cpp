@@ -653,11 +653,11 @@ QToolButton[compact="true"] { padding: 5px 14px 5px 0; }
    A toolbar one is only fixed sideways and keeps the vertical padding of
    the text buttons it stands beside, so the row comes out one height.
    Ghost ones carry no chrome of their own until the pointer is on them. */
-QToolButton#iconButton { padding: 0; }
+QToolButton#iconButton, QToolButton#ghostButton { padding: 0; }
 QToolButton#iconButton[toolbar="true"] { padding: 5px 0; }
-QToolButton#iconButton[ghost="true"] { background: transparent; border: 1px solid transparent; }
-QToolButton#iconButton[ghost="true"]:hover { background: %fill8%; border-color: %bd25%; }
-QToolButton#iconButton[ghost="true"]:pressed { background: %fill22%; border-color: %bd25%; }
+QToolButton#iconButton[ghost="true"], QToolButton#ghostButton { background: transparent; border: 1px solid transparent; }
+QToolButton#iconButton[ghost="true"]:hover, QToolButton#ghostButton:hover, QToolButton#ghostButton:focus { background: %fill8%; border-color: %bd25%; }
+QToolButton#iconButton[ghost="true"]:pressed, QToolButton#ghostButton:pressed { background: %fill22%; border-color: %bd25%; }
 QToolButton#iconButton[ghost="true"]:checked { background: %fill18%; color: %acc%; border-color: %fill18%; }
 QToolButton#iconButton[ghost="true"]:disabled { background: transparent; border-color: transparent; }
 QToolButton#cornerButton { background: transparent; border: 1px solid transparent; padding: 1px 3px; color: %dim%; }
@@ -699,8 +699,11 @@ QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 QStatusBar { background: %bg%; color: %dim%; border-top: 1px solid %hair%; }
 QStatusBar::item { border: none; }
 QLabel#sectionLabel, QLabel#dimLabel { color: %dim%; font-size: %caption%px; font-weight: bold; }
-/* The commit popover's hint: small and regular, unlike the bold captions. */
-QLabel#commitPopoverHint { color: %dim%; font-size: %small%px; font-weight: normal; }
+/* The commit popover's hint and the agent popover's small lines: small and
+   regular, unlike the bold captions; the agent popover's notes beside its
+   section captions are caption-sized, and regular too. */
+QLabel#commitPopoverHint, QLabel#agentPopoverSmall { color: %dim%; font-size: %small%px; font-weight: normal; }
+QLabel#agentPopoverNote { color: %dim%; font-size: %caption%px; font-weight: normal; }
 QLabel#captionLabel { font-size: %caption%px; font-weight: bold; }
 QLabel#bigLabel { font-size: %big%px; }
 QToolButton#keybindingsButton, QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
@@ -729,8 +732,13 @@ QLineEdit#promptField, QLineEdit#promptField:hover, QLineEdit#promptField:focus 
 }
 QLabel#promptIcon { color: %dim%; font-size: %icon%px; }
 QDialog#keybindingsPanel { background: %bg%; border: 2px solid %acc%; }
-/* The Mini layout's commit popover: an overlay framed like the other popups. */
-QFrame#commitPopover { background: %bg%; border: 2px solid %acc%; }
+/* The Mini layout's commit popover and the agent settings: overlays framed
+   like the other popups. */
+QFrame#commitPopover, QFrame#agentPopover { background: %bg%; border: 2px solid %acc%; }
+/* An install command in the agent settings, with its copy button inside. */
+QFrame#commandRow { background: %fill4%; border: 1px solid %bd25%; }
+/* Generate now reads from the left, like the design's primary buttons. */
+QPushButton#agentGenerate { text-align: left; }
 QLineEdit#keybindingsSearch, QLineEdit#keybindingsSearch:hover, QLineEdit#keybindingsSearch:focus {
     background: transparent; border: none; padding: 0; font-size: %heading%px; font-weight: 500;
 }

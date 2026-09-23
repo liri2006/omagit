@@ -2,6 +2,7 @@
 #include "BadgeButton.h"
 #include "OmarchyTheme.h"
 #include "PaneLayout.h"
+#include "Segmented.h"
 #include "TickMenu.h"
 #include "UiHelpers.h"
 
@@ -9,7 +10,6 @@
 #include <QButtonGroup>
 #include <QFontMetrics>
 #include <QMenu>
-#include <QPainter>
 #include <QResizeEvent>
 #include <QStyle>
 #include <QToolButton>
@@ -31,10 +31,6 @@ constexpr int kGroupGap = 16;     // the clearance the tabs keep from either gro
 constexpr int kDividerPad = 10;   // on either side of the divider
 constexpr int kDividerHeight = 16;
 constexpr int kTogglesGap = 4;
-constexpr int kSegmentPad = 12;   // inside a tab segment, left and right
-constexpr int kSegmentGap = 6;    // between its glyph, its label and its pill
-constexpr int kSegmentGlyph = 14; // the least room a tab glyph gets
-constexpr int kPillHeight = 14, kPillPad = 4;
 constexpr int kFoldedRepo = 28;   // the bare folder chip
 constexpr int kIconForm = 28;     // a sync button showing its glyph alone, and more
 constexpr int kBranchFloor = 72;  // the least of the branch name the last level keeps
@@ -99,197 +95,6 @@ void setTextOnce(QToolButton *b, const QString &text)
         b->setText(text);
 }
 
-// ---------------------------------------------------------------- tabs
-
-// One page tab. It paints its fill, its glyph, its label and its count pill
-// itself: the shared frame around the pair stays a single line that way, and
-// the fonts come from the theme rather than from the application stylesheet,
-// which is what decides a plain QToolButton's.
-class TabSegment : public QToolButton
-{
-public:
-    // The fill under the pointer is painted here, so the segment has to hear
-    // about the pointer arriving and leaving.
-    TabSegment() { setAttribute(Qt::WA_Hover); }
-
-    void setGlyph(uint code, const QString &fallback)
-    {
-        m_glyph = code;
-        m_fallback = fallback;
-        refreshGlyph();
-    }
-    void refreshGlyph()
-    {
-        m_glyphText = ui::icon(m_glyph, m_fallback).trimmed(); // QAbstractButton has an icon() of its own
-        updateGeometry();
-        update();
-    }
-    // Folded: the glyph and the pill, without the label.
-    void setLabelled(bool on)
-    {
-        if (m_labelled == on)
-            return;
-        m_labelled = on;
-        updateGeometry();
-        update();
-    }
-    bool isLabelled() const { return m_labelled; }
-    void setCount(int count)
-    {
-        count = qMax(0, count);
-        if (m_count == count)
-            return;
-        m_count = count;
-        updateGeometry();
-        update();
-    }
-    int count() const { return m_count; }
-
-    QSize sizeHint() const override
-    {
-        const QFontMetrics fm(OmarchyTheme::instance()->uiFont());
-        // The height a text button of the row comes to: the stylesheet's 5 px
-        // of padding and its 1 px border above and below the text. The bar
-        // measures the buttons themselves and places the strip on their
-        // height, so this is only what the pair asks for on its own.
-        return QSize(2 * space(kSegmentPad) + contentWidth(), fm.height() + 2 * (5 + 1));
-    }
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        const OmarchyTheme *t = OmarchyTheme::instance();
-        const bool selected = isChecked();
-        QPainter p(this);
-        // Selected stays selected under the pointer: the tab says where you are.
-        p.fillRect(rect(), selected ? t->selectedFill() : (underMouse() ? t->hoverFill() : t->normalFill()));
-
-        const QColor fg = selected ? t->accent() : t->text();
-        const QFont plain = t->uiFont();
-        QFont label = plain;
-        label.setBold(selected);
-        p.setPen(fg);
-
-        int x = space(kSegmentPad);
-        {
-            p.setFont(plain);
-            const int w = glyphBox();
-            // TextDontClip: the box is the room the glyph takes in the row, not
-            // a crop of it.
-            p.drawText(QRect(x, 0, w, height()), Qt::AlignCenter | Qt::TextDontClip, m_glyphText);
-            x += w;
-        }
-        if (m_labelled && !text().isEmpty()) {
-            p.setFont(label);
-            x += space(kSegmentGap);
-            const int w = QFontMetrics(label).horizontalAdvance(text());
-            p.drawText(QRect(x, 0, w, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
-            x += w;
-        }
-        if (m_count > 0) {
-            x += space(kSegmentGap);
-            const int w = pillWidth(), h = space(kPillHeight);
-            const QRect pill(x, (height() - h) / 2, w, h);
-            p.setPen(Qt::NoPen);
-            p.setBrush(selected ? t->accent() : t->fill(0.14));
-            p.drawRect(pill);
-            p.setFont(pillFont());
-            p.setPen(selected ? t->window() : t->text());
-            p.drawText(pill, Qt::AlignCenter, countText());
-        }
-    }
-
-private:
-    QString countText() const { return m_count > 999 ? QStringLiteral("999+") : QString::number(m_count); }
-
-    // The room the glyph gets. A Nerd Font glyph's ink hangs over the advance
-    // its font metrics report — the History clock is half a pixel column wider
-    // on either side — so the box is the design's icon width at the least, and
-    // the paint is never clipped to it.
-    int glyphBox() const
-    {
-        return qMax(QFontMetrics(OmarchyTheme::instance()->uiFont()).horizontalAdvance(m_glyphText),
-                    space(kSegmentGlyph));
-    }
-
-    QFont pillFont() const
-    {
-        QFont f = OmarchyTheme::instance()->captionFont();
-        f.setBold(true);
-        return f;
-    }
-
-    int pillWidth() const
-    {
-        return qMax(space(kPillHeight), QFontMetrics(pillFont()).horizontalAdvance(countText()) + 2 * space(kPillPad));
-    }
-
-    // The label is measured bold, the weight it wears while selected, so the
-    // strip does not change width when the selection moves between the tabs.
-    int contentWidth() const
-    {
-        const OmarchyTheme *t = OmarchyTheme::instance();
-        QFont bold = t->uiFont();
-        bold.setBold(true);
-        int w = glyphBox();
-        if (m_labelled && !text().isEmpty())
-            w += space(kSegmentGap) + QFontMetrics(bold).horizontalAdvance(text());
-        if (m_count > 0)
-            w += space(kSegmentGap) + pillWidth();
-        return w;
-    }
-
-    uint m_glyph = 0;
-    QString m_fallback;
-    QString m_glyphText;
-    bool m_labelled = true;
-    int m_count = 0;
-};
-
-// The frame the two tabs share: one border around the pair and one divider
-// between them, painted here so neither segment doubles a line of its own.
-// The segments sit inside those lines, which is where the extra 3 px of the
-// size hint go.
-class TabStrip : public QWidget
-{
-public:
-    TabStrip(TabSegment *first, TabSegment *second)
-        : m_first(first), m_second(second)
-    {
-        first->setParent(this);
-        second->setParent(this);
-    }
-
-    QSize sizeHint() const override
-    {
-        const QSize a = m_first->sizeHint(), b = m_second->sizeHint();
-        return QSize(a.width() + b.width() + 3, qMax(a.height(), b.height()) + 2);
-    }
-
-protected:
-    void resizeEvent(QResizeEvent *) override
-    {
-        const int h = qMax(0, height() - 2);
-        const int first = qBound(0, m_first->sizeHint().width(), qMax(0, width() - 3));
-        m_first->setGeometry(1, 1, first, h);
-        m_second->setGeometry(2 + first, 1, qMax(0, width() - 3 - first), h);
-    }
-
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter p(this);
-        p.setPen(QPen(OmarchyTheme::instance()->normalBorder(), 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRect(rect().adjusted(0, 0, -1, -1));
-        const int x = 1 + m_first->width();
-        p.drawLine(x, 1, x, height() - 2);
-    }
-
-private:
-    TabSegment *m_first;
-    TabSegment *m_second;
-};
-
 // The controls' row. The tabs follow the window's centre rather than a
 // layout's idea of it, so the bar places every control by hand and only needs
 // the row to hand each resize back.
@@ -308,11 +113,6 @@ protected:
 private:
     std::function<void()> m_onResize;
 };
-
-TabSegment *segment(QToolButton *button)
-{
-    return static_cast<TabSegment *>(button);
-}
 
 } // namespace
 
@@ -333,15 +133,13 @@ TopBar::TopBar(QWidget *parent)
     m_branchButton->setAccessibleName(m_branchLabel);
 
     // The page tabs: one segmented control, exclusive like a mode switch.
-    auto *changes = toolButton<TabSegment>(tr("Changes"), tr("Pending changes and commit dialog (Ctrl+1)"));
-    changes->setGlyph(kCommit, tr("C"));
-    auto *history = toolButton<TabSegment>(tr("History"), tr("Commit history of the repository (Ctrl+2)"));
-    history->setGlyph(kHistory, tr("H"));
-    m_changesTab = changes;
-    m_historyTab = history;
+    m_changesTab = toolButton<SegmentButton>(tr("Changes"), tr("Pending changes and commit dialog (Ctrl+1)"));
+    m_changesTab->setGlyph(kCommit, tr("C"));
+    m_historyTab = toolButton<SegmentButton>(tr("History"), tr("Commit history of the repository (Ctrl+2)"));
+    m_historyTab->setGlyph(kHistory, tr("H"));
     auto *tabs = new QButtonGroup(this);
     tabs->setExclusive(true);
-    for (QToolButton *b : {m_changesTab, m_historyTab}) {
+    for (QToolButton *b : QList<QToolButton *>{m_changesTab, m_historyTab}) {
         b->setCheckable(true);
         b->setAccessibleName(b->text()); // the plain name, without the glyph or the count
         tabs->addButton(b);
@@ -349,7 +147,7 @@ TopBar::TopBar(QWidget *parent)
     m_changesTab->setChecked(true);
     connect(m_changesTab, &QToolButton::clicked, this, &TopBar::commitModeRequested);
     connect(m_historyTab, &QToolButton::clicked, this, &TopBar::historyModeRequested);
-    m_tabs = new TabStrip(changes, history);
+    m_tabs = new SegmentStrip({m_changesTab, m_historyTab});
     m_tabs->setParent(m_row);
 
     // Pull / Push / Fetch act on the whole repository, so they are the same in
@@ -446,15 +244,15 @@ void TopBar::setBranchLabel(const QString &label)
 
 void TopBar::setChangesCount(int count)
 {
-    if (segment(m_changesTab)->count() == qMax(0, count))
+    if (m_changesTab->count() == qMax(0, count))
         return;
-    segment(m_changesTab)->setCount(count);
+    m_changesTab->setCount(count);
     measure();
 }
 
 int TopBar::changesCount() const
 {
-    return segment(m_changesTab)->count();
+    return m_changesTab->count();
 }
 
 void TopBar::setCommitMode(bool commit)
@@ -475,8 +273,8 @@ void TopBar::applyTheme()
         c.probe->setFont(theme->uiFont());
     m_more->setText(icon(kDots, QStringLiteral("…")).trimmed());
     m_diffToggle->setText(icon(kDockRight, tr("D")).trimmed());
-    segment(m_changesTab)->refreshGlyph();
-    segment(m_historyTab)->refreshGlyph();
+    m_changesTab->refreshGlyph();
+    m_historyTab->refreshGlyph();
     m_rootLayout->setSpacing(space(kBarGap));
     measure();
     updateMoreMark();
@@ -517,8 +315,8 @@ void TopBar::measure()
     m_metrics.more = iconFormWidth();
 
     for (const bool labels : {false, true}) {
-        segment(m_changesTab)->setLabelled(labels);
-        segment(m_historyTab)->setLabelled(labels);
+        m_changesTab->setLabelled(labels);
+        m_historyTab->setLabelled(labels);
         (labels ? m_metrics.tabsLabels : m_metrics.tabsGlyphs) = m_tabs->sizeHint().width();
     }
     m_metrics.toggles = widthOf(m_layoutButton) + space(kTogglesGap) + widthOf(m_diffToggle);
@@ -622,8 +420,8 @@ void TopBar::apply(int level, int branchLabelWidth)
     m_more->setVisible(!m_foldedSync.isEmpty());
     updateMoreMark();
 
-    segment(m_changesTab)->setLabelled(fold.tabLabels);
-    segment(m_historyTab)->setLabelled(fold.tabLabels);
+    m_changesTab->setLabelled(fold.tabLabels);
+    m_historyTab->setLabelled(fold.tabLabels);
 }
 
 void TopBar::place(int level, int branchLabelWidth)

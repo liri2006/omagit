@@ -52,6 +52,9 @@ constexpr uint kSparkle = 0xF0674, kCog = 0xF0493, kRobot = 0xF06A9;
 constexpr uint kInfo = 0xF02FC;
 // md-eye: the unversioned files are shown (the button is on) or hidden.
 constexpr uint kEye = 0xF0208;
+// md-check: the tick of a chosen entry (TickMenu, the agent popover's model
+// rows); md-content_copy: copies a command to the clipboard.
+constexpr uint kCheck = 0xF012C, kContentCopy = 0xF018F;
 
 // The frames of the generate button while an agent thinks: a braille spinner
 // when the font has one, a turning circle otherwise.

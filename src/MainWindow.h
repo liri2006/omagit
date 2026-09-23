@@ -13,6 +13,7 @@
 
 class BadgeButton;
 class CommitPage;
+class AgentPopover;
 class CommitPopover;
 class DiffPane;
 class Footer;
@@ -94,6 +95,8 @@ private slots:
     // Asks the chosen coding agent for a message describing the checked
     // changes (Ctrl+G); clicking again while it runs stops it.
     void generateMessage();
+    // The agent settings under the cog of the current layout
+    // (--screenshot-menu agent); nothing in the history.
     void showAgentMenu();
 
 protected:
@@ -201,6 +204,7 @@ private:
     QWidget *m_left;
     MiniRail *m_rail;
     CommitPopover *m_commitPopover; // the Mini layout's commit controls, an overlay of the central widget
+    AgentPopover *m_agentPopover;   // the agent settings, an overlay hanging from a cog
     QFileSystemWatcher *m_watcher; // the working tree root, the index and the changed files
     QString m_indexFile;
     bool m_diffVisible = true;

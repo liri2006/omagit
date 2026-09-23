@@ -5,6 +5,8 @@
 #include <QString>
 #include <QWidget>
 
+#include "Segmented.h"
+
 class BadgeButton;
 class QMenu;
 class QToolButton;
@@ -120,8 +122,8 @@ private:
     QToolButton *m_repoButton;
     QToolButton *m_branchButton;
     QWidget *m_tabs;  // the frame around the two segments
-    QToolButton *m_changesTab;
-    QToolButton *m_historyTab;
+    SegmentButton *m_changesTab;
+    SegmentButton *m_historyTab;
     BadgeButton *m_pull;
     BadgeButton *m_push;
     BadgeButton *m_fetch;

@@ -1,6 +1,7 @@
 #include "TickMenu.h"
 
 #include "OmarchyTheme.h"
+#include "UiHelpers.h"
 
 #include <QAction>
 #include <QFontMetrics>
@@ -9,8 +10,7 @@
 #include <QWidgetAction>
 
 namespace {
-constexpr uint kTick = 0xF012C; // md-check
-constexpr int kEdge = 14;       // matches the item's left padding
+constexpr int kEdge = 14; // matches the item's left padding
 } // namespace
 
 TickMenu::TickMenu(QWidget *parent)
@@ -21,7 +21,7 @@ TickMenu::TickMenu(QWidget *parent)
 int TickMenu::tickReserve()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
-    const QString g = theme->glyph(kTick);
+    const QString g = theme->glyph(ui::kCheck);
     if (g.isEmpty())
         return 0;
     return QFontMetrics(theme->uiFont()).horizontalAdvance(g) + 10;
@@ -31,7 +31,7 @@ void TickMenu::paintEvent(QPaintEvent *event)
 {
     QMenu::paintEvent(event);
     const OmarchyTheme *theme = OmarchyTheme::instance();
-    const QString tick = theme->glyph(kTick);
+    const QString tick = theme->glyph(ui::kCheck);
     if (tick.isEmpty())
         return;
     QPainter p(this);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QFrame>
+#include <QPointer>
 #include <QString>
 
 class CommitPage;
@@ -34,6 +35,9 @@ public:
     // The rail whose commit tile the card hangs beside. Presses on the rail
     // leave the card open.
     void setAnchor(MiniRail *rail);
+    // An overlay that opens from this card (the agent settings): a press on
+    // it, while it is shown, counts as a press on the card.
+    void setCompanion(QWidget *companion);
 
     MessageEdit *editor() const { return m_editor; }
     QToolButton *agentButton() const { return m_agentButton; }
@@ -81,6 +85,7 @@ private:
 
     CommitPage *m_page;
     MiniRail *m_rail = nullptr;
+    QPointer<QWidget> m_companion;
     QVBoxLayout *m_layout;
     QSpacerItem *m_editorGap;
     QSpacerItem *m_hintGap;
