@@ -68,6 +68,16 @@ void BadgeButton::setMark(const QString &text, const QColor &color)
     emit badgeChanged();
 }
 
+QString BadgeButton::markText() const
+{
+    return m_mark;
+}
+
+QColor BadgeButton::markColor() const
+{
+    return m_markColor;
+}
+
 void BadgeButton::setBusy(bool busy)
 {
     if (busy == m_busy)

@@ -55,6 +55,9 @@ constexpr uint kEye = 0xF0208;
 // md-check: the tick of a chosen entry (TickMenu, the agent popover's model
 // rows); md-content_copy: copies a command to the clipboard.
 constexpr uint kCheck = 0xF012C, kContentCopy = 0xF018F;
+// md-file_compare: the stacked layout's Diff tab; md-undo: amending, in the
+// action bar's options menu; md-dots_horizontal: the more and options menus.
+constexpr uint kDiff = 0xF08AA, kUndo = 0xF054C, kDotsHorizontal = 0xF01D8;
 
 // The frames of the generate button while an agent thinks: a braille spinner
 // when the font has one, a turning circle otherwise.
@@ -114,6 +117,13 @@ QWidget *hairline(Qt::Orientation orientation = Qt::Horizontal);
 
 // A dim caption inside a menu, like the section labels of the dialog.
 QAction *addMenuHeader(QMenu *menu, const QString &text);
+
+// A button's drop-down menu that stays inside the button's window: where it
+// would run past the window's right edge it hangs from the button's right
+// edge instead, and where it would run past the bottom it opens upwards —
+// what Qt does at the edges of the screen, at the edges of the tile the user
+// reads it against.
+void keepMenuInWindow(QMenu *menu, QWidget *button);
 
 // The shared geometry of the window's tables: one row of a file or commit
 // list, and the narrowest the column taking up the leftover width may get —

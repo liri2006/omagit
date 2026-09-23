@@ -167,6 +167,24 @@ history with a branch graph, and plugs into the Nautilus context menu as
   (with the pane showing, a double-click opens the file in its own program instead).
   Right-clicking a file offers *Open with …*, naming the program the desktop would use
   for it (from `xdg-mime`).
+- **Stacked** below 700 px (scaled with the text size, like every design pixel): the body
+  shows one thing at a time, picked by three tabs — **Changes *n* | Diff | History**. Changes
+  and History fill the body with their page; Diff is the Mini rail beside the diff pane, with
+  the files of the mode of the moment (the commit tile and its popover included). The window
+  opens on the tab its layout stands for (Mini is Diff), Ctrl+B and Ctrl+Shift+B switch
+  between the page and Diff, and a double-click on a file shows its diff. It is presentation
+  only: the Docked/Mini choice, the hidden diff pane and the left section's width are left
+  as they were and come back as the window widens — the selection, the scroll offsets and
+  the place in the diff too. The top bar folds on its own three levels there (tab labels,
+  then glyphs, then the branch name elides): the repository is a bare folder, Pull and Push
+  become one **sync dropdown** carrying both counts (`↓2 ↑1`, the walking dots while one
+  runs, Merge's mark in the corner) whose menu lists Pull, Push, Fetch and Merge…, and the
+  layout toggles hide. **More** is there at every stacked width, and on any row it also
+  carries Refresh, Open repository…, Clone… and Keybindings after whatever sync buttons are
+  folded into it. The commit page's action bar folds too: an **options** `…` at the left
+  (Check all / Uncheck all, Show unversioned files, Amend last commit, Generate message or
+  Stop generating) and Commit across the rest of the row. While nobody has picked a files
+  view, the list is compact when stacked and the table otherwise, without saving either.
 - Looks like an Omarchy system program: the UI follows the shell's control kit (square
   corners, one flat background, 1px hairline borders and foreground-alpha fills for
   normal/hover/selected states, accent-coloured selection, Nerd Font glyph icons, the shell's
@@ -202,7 +220,7 @@ omagit [path]            # any directory or file inside a repository (default: c
 ```
 
 `--history` opens the history view, `--amend` starts with *Amend last commit* ticked,
-`--mini` starts in the Mini layout, `--full` with the diff pane hidden, and `--no-fetch` leaves the network alone.
+`--mini` starts in the Mini layout (in a window under the stacking width, the Diff tab), `--full` with the diff pane hidden, and `--no-fetch` leaves the network alone.
 `--mini --screenshot-menu commit` pictures the Mini layout with its commit popover open;
 `--screenshot-menu agent` the agent settings under the page's cog, and with `--mini` under
 the commit popover's cog (the popover opens too).
@@ -224,9 +242,11 @@ Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 945x612` gives the window a fixed size first, so a picture does not depend on the desktop it
 was taken on — two positive numbers, only together with `--screenshot`, and anything else is
 a usage error; `--screenshot-menu
-branch|repo|agent|keybindings|merge|login|commit` opens that panel first and includes it in the picture
+branch|repo|agent|keybindings|merge|login|commit|sync|more|options` opens that panel first and includes it in the picture
 (`commit` is the Mini layout's commit popover, so it goes with `--mini`; elsewhere it opens nothing;
-`agent` opens nothing in the history), `--screenshot-keys
+`agent` opens nothing in the history; `sync` and `options` are the stacked layout's sync dropdown
+and action-bar menus and open nothing on a wider window, `more` only where the More button is
+shown), `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
 and `@changesTree` in that list focus the list on show, so the keys reach it),
@@ -281,7 +301,18 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
   screen, the mirrored controls and generate button, commits and amends against scratch
   repositories, Ctrl+Enter in both layouts, the keybindings row, the screenshot flag run
   through the built binary, and the rail and the card measured again after a live
-  12 → 16 → 12 change against a window built fresh.
+  12 → 16 → 12 change against a window built fresh. The stacked layouts have a group too:
+  the top bar's three stacked levels (exact thresholds, the clamp, the branch floor, the size
+  hints, the controls it shows and hides, and a canonical ordinary row after unstacking), the
+  three tabs and their silent synchronisation, a segment strip hiding and showing a segment,
+  the sync dropdown's counts, busy dots and Merge mark and its menu, the fuller More menu,
+  the window crossing the stacking width (thresholds, visibility, splitter widths, the
+  preference setters' mappings and no settings written), the startup tab for each flag and a
+  restored narrow Mini geometry, tabs and keys and double-clicks moving between the
+  presentations without reloading, the commit and agent cards on the Diff tab, the
+  screenshot slots and their guards, the folded action bar and its options menu, the
+  width-driven files-view default, selection, scroll and diff position kept across every
+  transition and a refresh, and all of it after a live 12 → 16 → 12 change.
 
 ## Layout
 
@@ -293,7 +324,7 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/AskPass.*` | Omagit as its own askpass helper: the socket git's and ssh's prompts arrive on, what they mean, one sign-in per operation, and the client side of `--askpass` |
 | `src/BadgeButton.*` | Tool button with a count badge, busy dots and a pop-in animation |
 | `src/Segmented.*` | The painted segmented control: segments with a glyph, a label and a count pill inside one shared frame, at their own widths or stretched equally (the top bar's tabs, the agent picker) |
-| `src/TopBar.*` | The window's top row: repository and branch chips, the painted Changes / History tab segments, the sync buttons with their "more" menu, the layout toggles — and the seven folding levels that fit them into the width |
+| `src/TopBar.*` | The window's top row: repository and branch chips, the painted Changes / Diff / History tab segments, the sync buttons with their "more" menu (and the window's Refresh, Open, Clone and Keybindings), the layout toggles — and the seven folding levels that fit them into the width; stacked, its own three levels with the sync dropdown |
 | `src/TickMenu.*` | Menu whose checked entries carry an accent tick at the right edge instead of a checkbox (branch, repository, "more" and diff menus) |
 | `src/BranchMenu.*` | The searchable branch dropdown (the top bar's branch chip, both sides of the merge view) |
 | `src/MergeDialog.*` | The merge view: source/destination pickers with swap, the merge-tree verdict, merge and abort |
@@ -305,11 +336,11 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/ChangesTreeModel.*` | The directory tree over that flat list: three columns, derived directory check states written back in one batch, and a rebuild on every change of the list's shape |
 | `src/HistoryModel.*` | Commit list model with incremental lane-graph layout |
 | `src/HistoryView.*` | History view: filter, commit table with graph and ref chips, details, files |
-| `src/MainWindow.*` | Window shell: the top bar above the body, modes and sync operations, Docked/Mini layouts, the pages and the diff pane, branches, merging, repositories and the working-tree watch |
-| `src/CommitPage.*` | The commit dialog page: message box with the coding-agent flow, the changes list in its three presentations (table, compact and tree, with their delegates and the switcher), its context menu, options and the Commit button |
+| `src/MainWindow.*` | Window shell: the top bar above the body, modes and sync operations, Docked/Mini layouts and the stacked presentation below the stacking width (its tabs, keys and transitions), the pages and the diff pane, branches, merging, repositories and the working-tree watch |
+| `src/CommitPage.*` | The commit dialog page: message box with the coding-agent flow, the changes list in its three presentations (table, compact and tree, with their delegates and the switcher), its context menu, options and the Commit button — folded into the stacked action bar's options menu below the stacking width |
 | `src/DiffPane.*` | The right pane: Prev/Next and the two-pane / whitespace / syntax toggles above the diff view, with their remembered settings |
 | `src/Footer.*` | The footer bar: the repository path or the latest message, and the keybindings button |
-| `src/UiHelpers.*` | The shell's Nerd Font glyphs and the small widget factories the sections share (section and dim labels, tool / small / dropdown buttons, hairline, menu headers) |
+| `src/UiHelpers.*` | The shell's Nerd Font glyphs and the small widget factories the sections share (section and dim labels, tool / small / dropdown buttons, hairline, menu headers, a drop-down menu kept inside its window) |
 | `src/DesktopExec.*` | A file's default application, read from its desktop entry, and launching it detached |
 | `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips, the commit's hash in history mode, Refresh and the commit tile |
 | `src/CommitPopover.*` | The Mini layout's commit popover: an overlay beside the rail's commit tile sharing the commit page's message document, mirroring its Amend, generate and Commit controls, anchored to the tile and closed by Escape, outside presses and leaving the Mini commit view |

@@ -272,6 +272,47 @@ QAction *addMenuHeader(QMenu *menu, const QString &text)
     return action;
 }
 
+namespace {
+class MenuInWindow : public QObject
+{
+public:
+    MenuInWindow(QMenu *menu, QWidget *button)
+        : QObject(menu), m_button(button)
+    {
+        menu->installEventFilter(this);
+    }
+
+protected:
+    // The Show event comes after popup() has placed the menu and before the
+    // window system maps it: the one moment it can still be moved.
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::Show)
+            return false;
+        auto *menu = static_cast<QMenu *>(watched);
+        const QWidget *window = m_button->window();
+        const QRect area(window->mapToGlobal(QPoint(0, 0)), window->size());
+        const QRect button(m_button->mapToGlobal(QPoint(0, 0)), m_button->size());
+        QPoint pos = menu->pos();
+        if (pos.x() + menu->width() > area.x() + area.width())
+            pos.setX(qMax(area.x(), button.x() + button.width() - menu->width()));
+        if (pos.y() + menu->height() > area.y() + area.height() && button.y() - menu->height() >= area.y())
+            pos.setY(button.y() - menu->height());
+        if (pos != menu->pos())
+            menu->move(pos);
+        return false;
+    }
+
+private:
+    QWidget *m_button;
+};
+} // namespace
+
+void keepMenuInWindow(QMenu *menu, QWidget *button)
+{
+    new MenuInWindow(menu, button);
+}
+
 // The shell's list row: 2.33 × the base font, so the rows grow with the text size.
 int tableRowHeight()
 {

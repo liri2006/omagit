@@ -4,6 +4,7 @@
 #include "GitRepo.h"
 #include "PaneLayout.h"
 #include "RemoteSync.h"
+#include "TopBar.h"
 
 #include <QKeySequence>
 #include <QMainWindow>
@@ -17,7 +18,6 @@ class AgentPopover;
 class CommitPopover;
 class DiffPane;
 class Footer;
-class TopBar;
 class HistoryView;
 class MiniRail;
 class QFileSystemWatcher;
@@ -43,6 +43,14 @@ public:
     // the Mini layout switches to Docked).
     void setDiffPaneVisible(bool on, bool persist = true);
     bool diffPaneVisible() const { return m_diffVisible; }
+    // Below the stacking width the body shows one thing at a time — the page
+    // of the mode, or the Diff tab: the Mini rail beside the diff pane. It is
+    // presentation only: the two preferences above stay what they were, and
+    // come back as the window widens again.
+    bool isStacked() const { return m_stacked; }
+    // Shows or leaves the Diff tab; nothing at all outside the stacked width.
+    void setDiffTab(bool on);
+    bool diffTab() const { return m_diffTab; }
     // Ticks the "Amend last commit" box (like `git commit --amend`).
     void setAmend(bool on);
     // Automatic fetching keeps the Pull count current; off leaves the network alone.
@@ -98,9 +106,16 @@ private slots:
     // The agent settings under the cog of the current layout
     // (--screenshot-menu agent); nothing in the history.
     void showAgentMenu();
+    // The stacked sync dropdown's menu, the more menu and the stacked action
+    // bar's options menu (--screenshot-menu sync|more|options); each only
+    // where its button is on screen.
+    void showSyncMenu();
+    void showMoreMenu();
+    void showOptionsMenu();
 
 protected:
     void changeEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
 
@@ -160,6 +175,18 @@ private:
     QList<Binding> bindings();
     void installShortcuts();
     void applyPanes();
+    // Classifies the window's width and, when that changed, stacks or
+    // unstacks the presentation (see isStacked()).
+    void updateStacking();
+    // The left section's share of the splitter: remembered, or 45% of it.
+    void applySplitterSizes();
+    // Whether the Mini rail is on screen: the Mini layout, or the Diff tab.
+    bool railShowing() const;
+    // A tab of the top bar, or Ctrl+1 / Ctrl+2: Changes and History are the
+    // two modes (never set again when already on), Diff the stacked tab.
+    void showTab(TopBar::Tab tab);
+    // The top bar's tabs say what the body shows.
+    void syncTab();
     // "full" (pre-0.4) and window/leftFull (pre-0.3) become Docked + hidden diff.
     void migrateLayoutSettings();
     static int autoFetchSecondsSetting();
@@ -208,6 +235,8 @@ private:
     QFileSystemWatcher *m_watcher; // the working tree root, the index and the changed files
     QString m_indexFile;
     bool m_diffVisible = true;
+    bool m_stacked = false; // the window is narrower than the stacking width
+    bool m_diffTab = false; // stacked: the Diff tab, rather than the mode's page
     SyncButtons m_syncButtons;     // the top bar's
     BadgeButton *m_mergeButton;    // the top bar's, marked while a merge waits
     QString m_initialSelection;

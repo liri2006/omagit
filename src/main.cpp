@@ -81,11 +81,11 @@ int main(int argc, char *argv[])
     QCommandLineOption selectOpt(QStringLiteral("select"), QStringLiteral("Pre-select the given repo-relative path."), QStringLiteral("path"));
     QCommandLineOption historyOpt(QStringLiteral("history"), QStringLiteral("Open the history view instead of the commit dialog."));
     QCommandLineOption fullOpt(QStringLiteral("full"), QStringLiteral("Start with the diff pane hidden: the left section fills the window."));
-    QCommandLineOption miniOpt(QStringLiteral("mini"), QStringLiteral("Start in the Mini layout: a rail of file miniatures next to the diff pane."));
+    QCommandLineOption miniOpt(QStringLiteral("mini"), QStringLiteral("Start in the Mini layout: a rail of file miniatures next to the diff pane (in a narrow window, the stacked Diff tab)."));
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge, login or clone panel, or the Mini layout's commit popover, before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login|clone|commit"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge, login or clone panel, the Mini layout's commit popover, or the stacked layout's sync, more or options menu, before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login|clone|commit|sync|more|options"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -205,6 +205,9 @@ int main(int argc, char *argv[])
                     : menu == QLatin1String("clone")             ? "showCloneDialog"
                     : menu == QLatin1String("login")             ? "showLoginDialog"
                     : menu == QLatin1String("commit")            ? "showCommitPopover"
+                    : menu == QLatin1String("sync")              ? "showSyncMenu"
+                    : menu == QLatin1String("more")              ? "showMoreMenu"
+                    : menu == QLatin1String("options")           ? "showOptionsMenu"
                                                                  : "showBranchMenu";
                 QMetaObject::invokeMethod(&window, slot);
             });

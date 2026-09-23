@@ -4,6 +4,7 @@
 #include "MessageEdit.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
+#include "TickMenu.h"
 #include "UiHelpers.h"
 
 #include <QAction>
@@ -44,6 +45,9 @@ int actionBarGap()
 {
     return space(8);
 }
+
+// The stacked action bar's gap between the options button and Commit.
+constexpr int kStackedActionGap = 6;
 
 // The eye's filter, and with it the check-all box of the table's header: the
 // box stands for the rows the list is showing, so with the unversioned files
@@ -550,7 +554,8 @@ QTextDocument *CommitPage::messageDocument() const
 CommitPage::CommitControls CommitPage::commitControls() const
 {
     CommitControls c;
-    c.commitText = m_commitButton->text();
+    // The card's button always has the key on it, whatever the page's says.
+    c.commitText = commitButtonText(true);
     c.commitName = m_commitButton->accessibleName();
     c.commitTip = m_commitButton->toolTip();
     c.commitEnabled = m_commitButton->isEnabled();
@@ -851,12 +856,24 @@ QWidget *CommitPage::buildChangesTree()
 }
 
 // The action bar: "Amend last commit" at the left, where it stands by the
-// Commit button it renames, and that button at the right.
+// Commit button it renames, and that button at the right. Stacked, the
+// options button stands at the left instead, with Amend in its menu, and
+// Commit takes the rest of the row.
 QLayout *CommitPage::buildActionBar()
 {
     m_actionBar = new QHBoxLayout;
     m_actionBar->setContentsMargins(0, 0, 0, 0);
     m_actionBar->setSpacing(sectionGap());
+    m_optionsButton = iconButton(kDotsHorizontal, QStringLiteral("…"), tr("Options"), IconButtonSize::Toolbar, false);
+    m_optionsButton->setAccessibleName(tr("Options"));
+    m_optionsButton->setPopupMode(QToolButton::InstantPopup);
+    m_optionsMenu = new TickMenu(m_optionsButton);
+    m_optionsMenu->setToolTipsVisible(true);
+    m_optionsButton->setMenu(m_optionsMenu);
+    connect(m_optionsMenu, &QMenu::aboutToShow, this, &CommitPage::fillOptionsMenu);
+    keepMenuInWindow(m_optionsMenu, m_optionsButton); // the row is at the window's bottom
+    m_optionsButton->hide(); // until the window stacks
+    m_actionBar->addWidget(m_optionsButton);
     m_amend = new QCheckBox(tr("Amend last commit"));
     // The label is the row's to shorten (updateAmendLabel), so the long one is
     // no floor under the page: a checkbox asks for its whole label and never
@@ -864,7 +881,8 @@ QLayout *CommitPage::buildActionBar()
     m_amend->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     connect(m_amend, &QCheckBox::toggled, this, &CommitPage::onAmendToggled);
     m_actionBar->addWidget(m_amend, 1);
-    m_actionBar->addStretch();
+    m_actionStretch = new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum); // addStretch()'s own
+    m_actionBar->addItem(m_actionStretch);
     m_commitButton = new QPushButton;
     m_commitButton->setDefault(true);
     m_commitButton->setCursor(Qt::PointingHandCursor);
@@ -1124,7 +1142,8 @@ void CommitPage::applyTheme()
     layout()->setSpacing(actionBarGap());
     m_sectionsLayout->setSpacing(headerGap());
     m_changesLayout->setSpacing(headerGap());
-    m_actionBar->setSpacing(sectionGap());
+    m_actionBar->setSpacing(m_stacked ? space(kStackedActionGap) : sectionGap());
+    m_optionsButton->setText(icon(kDotsHorizontal, QStringLiteral("…")).trimmed());
     m_messageSplitter->setHandleWidth(sectionGap());
     m_changesDivider->setFixedHeight(space(18));
     m_toolsDivider->setFixedHeight(space(18));
@@ -1168,6 +1187,75 @@ void CommitPage::updateAmendLabel()
     m_amend->setText(width() >= wide ? full : tr("Amend"));
     // Only the label and its box answer a click, not the empty half of the row.
     m_amend->setMaximumWidth(m_amend->sizeHint().width());
+}
+
+void CommitPage::setStacked(bool on)
+{
+    if (m_stacked == on)
+        return;
+    m_stacked = on;
+    applyActionBarForm();
+    updateCommitButton(); // the key comes off or back on
+    // The width's own files view, while nobody has picked one: a saved choice
+    // (readable or not) and a --files-view run are the user's, and stay.
+    if (!m_filesViewLocked && !QSettings().contains(settings::kWindowFilesView)) {
+        // Compact and Table are the same table, so the scroll offset carries
+        // over; setFilesView() would scroll to the current row instead.
+        const QPoint offset = scrollOffset();
+        setFilesView(on ? FilesView::Compact : FilesView::Table, false);
+        setScrollOffset(offset);
+    }
+}
+
+// Stacked: the options button, the design's 6 px, and Commit stretching over
+// what Amend and the stretch between them had. Otherwise the row as built:
+// Amend and its stretch, the section gap, and Commit at its own width.
+void CommitPage::applyActionBarForm()
+{
+    m_optionsButton->setVisible(m_stacked);
+    m_amend->setVisible(!m_stacked);
+    if (m_stacked)
+        m_actionStretch->changeSize(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    else
+        m_actionStretch->changeSize(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum);
+    m_actionBar->setStretchFactor(m_commitButton, m_stacked ? 1 : 0);
+    m_commitButton->setSizePolicy(m_stacked ? QSizePolicy::Expanding : QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_actionBar->setSpacing(m_stacked ? space(kStackedActionGap) : sectionGap());
+    m_actionBar->invalidate();
+    updateAmendLabel();
+}
+
+// What the stacked row keeps behind "…": the page's own controls, read as
+// they are at the moment the menu opens, each entry taking the path the
+// control itself takes.
+void CommitPage::fillOptionsMenu()
+{
+    m_optionsMenu->clear();
+    const bool all =
+        m_proxy->headerData(ChangesModel::Check, Qt::Horizontal, Qt::CheckStateRole).toInt() == Qt::Checked;
+    QAction *check = m_optionsMenu->addAction(icon(kCheck) + (all ? tr("Uncheck all") : tr("Check all")));
+    check->setToolTip(tr("Check every file for the commit, or none when all are checked (Ctrl+Shift+Space)"));
+    check->setEnabled(m_proxy->rowCount() > 0);
+    connect(check, &QAction::triggered, this, &CommitPage::toggleAllChecked);
+
+    QAction *unversioned = m_optionsMenu->addAction(icon(kEye) + tr("Show unversioned files"));
+    unversioned->setCheckable(true);
+    unversioned->setChecked(m_unversioned->isChecked());
+    unversioned->setToolTip(m_unversioned->toolTip());
+    connect(unversioned, &QAction::triggered, m_unversioned, &QAbstractButton::click);
+
+    QAction *amend = m_optionsMenu->addAction(icon(kUndo, QStringLiteral("A  ")) + tr("Amend last commit"));
+    amend->setCheckable(true);
+    amend->setChecked(m_amend->isChecked());
+    amend->setEnabled(m_amend->isEnabled());
+    amend->setToolTip(m_amend->toolTip());
+    connect(amend, &QAction::triggered, m_amend, &QAbstractButton::click);
+
+    m_optionsMenu->addSeparator();
+    QAction *generate =
+        m_optionsMenu->addAction(icon(kSparkle) + (m_agent->running() ? tr("Stop generating") : tr("Generate message")));
+    generate->setToolTip(m_message->cornerButton()->toolTip());
+    connect(generate, &QAction::triggered, this, &CommitPage::generateMessage);
 }
 
 FileChange CommitPage::currentChange(bool *ok) const
@@ -1329,16 +1417,28 @@ void CommitPage::setMergeState(const MergeState &merge, const Commit &head)
 // The button says how many files it would commit, and ends with the key that
 // presses it. The two counts are spelled out: no translation catalogue is
 // loaded, so %n would come out as "file(s)".
+QString CommitPage::commitWording() const
+{
+    const int checked = m_model->checkedCount();
+    return m_amend->isChecked() ? tr("Amend")
+        : m_merging             ? tr("Commit merge")
+        : checked == 0          ? tr("Commit")
+        : checked == 1          ? tr("Commit 1 file")
+                                : tr("Commit %1 files").arg(checked);
+}
+
+// The stacked row's button spans the window, so the key would sit far from
+// the wording; the design leaves it off there, and the card keeps it.
+QString CommitPage::commitButtonText(bool withKey) const
+{
+    return icon(kCommit) + commitWording() + (withKey ? QStringLiteral("  ⏎") : QString());
+}
+
 void CommitPage::updateCommitButton()
 {
     const bool amend = m_amend->isChecked();
-    const int checked = m_model->checkedCount();
-    const QString what = amend           ? tr("Amend")
-                         : m_merging     ? tr("Commit merge")
-                         : checked == 0  ? tr("Commit")
-                         : checked == 1  ? tr("Commit 1 file")
-                                         : tr("Commit %1 files").arg(checked);
-    m_commitButton->setText(icon(kCommit) + what + QStringLiteral("  ⏎"));
+    const QString what = commitWording();
+    m_commitButton->setText(commitButtonText(!m_stacked));
     // Read out as the wording alone: the glyph and the key that presses it are
     // no part of the name of the button.
     m_commitButton->setAccessibleName(what);

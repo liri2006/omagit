@@ -176,23 +176,49 @@ void SegmentStrip::setStretch(bool on)
         s->setCentred(on);
     updateGeometry();
     if (isVisible())
-        resizeEvent(nullptr);
+        layoutSegments();
+}
+
+void SegmentStrip::setSegmentVisible(SegmentButton *segment, bool on)
+{
+    if (!m_segments.contains(segment))
+        return;
+    segment->setVisible(on);
+    updateGeometry();
+    layoutSegments();
+    update();
+}
+
+QList<SegmentButton *> SegmentStrip::participating() const
+{
+    QList<SegmentButton *> out;
+    for (SegmentButton *s : m_segments)
+        if (!s->isHidden())
+            out << s;
+    return out;
 }
 
 QSize SegmentStrip::sizeHint() const
 {
+    const QList<SegmentButton *> shown = participating();
     int width = 0, height = 0;
-    for (const SegmentButton *s : m_segments) {
+    for (const SegmentButton *s : shown) {
         const QSize hint = s->sizeHint();
         width += hint.width();
         height = qMax(height, hint.height());
     }
-    return QSize(width + int(m_segments.size()) + 1, height + 2);
+    return QSize(width + int(shown.size()) + 1, height + 2);
 }
 
 void SegmentStrip::resizeEvent(QResizeEvent *)
 {
-    const int n = int(m_segments.size());
+    layoutSegments();
+}
+
+void SegmentStrip::layoutSegments()
+{
+    const QList<SegmentButton *> shown = participating();
+    const int n = int(shown.size());
     if (n == 0)
         return;
     const int h = qMax(0, height() - 2);
@@ -203,7 +229,7 @@ void SegmentStrip::resizeEvent(QResizeEvent *)
         for (int i = 0; i < n; ++i) {
             const int x = i * each + 1;
             const int w = i == n - 1 ? width() - 1 - x : each - 1;
-            m_segments.at(i)->setGeometry(x, 1, qMax(0, w), h);
+            shown.at(i)->setGeometry(x, 1, qMax(0, w), h);
         }
         return;
     }
@@ -211,8 +237,8 @@ void SegmentStrip::resizeEvent(QResizeEvent *)
     for (int i = 0; i < n; ++i) {
         // Room left for this one and the lines after it.
         const int room = qMax(0, width() - x - (n - i));
-        const int w = i == n - 1 ? room : qBound(0, m_segments.at(i)->sizeHint().width(), room);
-        m_segments.at(i)->setGeometry(x, 1, w, h);
+        const int w = i == n - 1 ? room : qBound(0, shown.at(i)->sizeHint().width(), room);
+        shown.at(i)->setGeometry(x, 1, w, h);
         x += w + 1;
     }
 }
@@ -223,8 +249,9 @@ void SegmentStrip::paintEvent(QPaintEvent *)
     p.setPen(QPen(OmarchyTheme::instance()->normalBorder(), 1));
     p.setBrush(Qt::NoBrush);
     p.drawRect(rect().adjusted(0, 0, -1, -1));
-    for (int i = 1; i < m_segments.size(); ++i) {
-        const int x = m_segments.at(i)->x() - 1;
+    const QList<SegmentButton *> shown = participating();
+    for (int i = 1; i < shown.size(); ++i) {
+        const int x = shown.at(i)->x() - 1;
         p.drawLine(x, 1, x, height() - 2);
     }
 }

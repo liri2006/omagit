@@ -10,8 +10,10 @@
 #include <QButtonGroup>
 #include <QFontMetrics>
 #include <QMenu>
+#include <QPainter>
 #include <QResizeEvent>
 #include <QStyle>
+#include <QTimerEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -20,8 +22,6 @@
 using namespace ui;
 
 namespace {
-constexpr uint kDots = 0xF01D8; // md-dots_horizontal
-
 // The design's distances (design/figma-gen/screens.js topBar() and kit.js
 // segmented()), in 12 px-base pixels: every one of them goes through space().
 constexpr int kBarGap = 6;        // between the row and its hairline
@@ -34,6 +34,7 @@ constexpr int kTogglesGap = 4;
 constexpr int kFoldedRepo = 28;   // the bare folder chip
 constexpr int kIconForm = 28;     // a sync button showing its glyph alone, and more
 constexpr int kBranchFloor = 72;  // the least of the branch name the last level keeps
+constexpr int kSyncDropdown = 92; // the stacked sync dropdown at its narrowest, whatever its size hint says
 
 // How the row folds, from everything spelled out to the narrowest form. The
 // first level that fits the width wins.
@@ -58,6 +59,15 @@ constexpr Fold kFolds[] = {
     {false, false, false, 0, true},
 };
 constexpr int kFoldCount = int(sizeof(kFolds) / sizeof(kFolds[0]));
+
+// Stacked, the row has three levels of its own. The repository is the bare
+// folder at every one of them and the right group is the sync dropdown and
+// More, so only the tabs and the branch name are left to fold:
+//
+//   0  tab labels
+//   1  tab glyphs
+//   2  tab glyphs; the branch elides
+constexpr int kStackedFoldCount = 3;
 
 // What a control takes sideways, its fixed width included: the layout toggles
 // are as wide as ui::iconButton() made them, whatever their glyph measures.
@@ -114,6 +124,201 @@ private:
     std::function<void()> m_onResize;
 };
 
+// The dropdown's inline content (screens.js topBar(), the SyncDropdown group),
+// in 12 px-base pixels from its left edge. The design's positions are the
+// least each field gets: a wider count pushes whatever follows it along.
+constexpr int kDownX = 8, kPullX = 24, kUpX = 38, kChevronX = 68;
+constexpr int kArrowGap = 16;  // from an arrow to its count
+constexpr int kFieldGap = 4;   // the least room after a count
+constexpr int kEndPad = 10;    // after the chevron's box
+constexpr int kMarkRoom = 6;   // keeps Merge's corner mark clear of the chevron
+constexpr int kGlyphBox = 14;  // the least room a glyph gets, as a tab's
+constexpr int kBusyStepMs = 350; // BadgeButton's walking dots, at their cadence
+
+// Pull and Push in one control for the stacked row: ↓2 ↑1 and a chevron,
+// painted over the base button's chrome, and a menu with the four actions.
+// It keeps no state of its own: the counts, the busy state and Merge's mark
+// are read off the buttons it stands for whenever they change.
+class SyncDropdown : public BadgeButton
+{
+    Q_OBJECT
+public:
+    SyncDropdown(BadgeButton *pull, BadgeButton *push, BadgeButton *merge)
+        : m_pull(pull), m_push(push), m_merge(merge)
+    {
+        for (BadgeButton *source : {pull, push})
+            connect(source, &BadgeButton::badgeChanged, this, [this] { followSources(); });
+        connect(merge, &BadgeButton::badgeChanged, this, [this] { followMark(); });
+    }
+
+    // The theme's colours and glyphs, and Merge's mark as it is now.
+    void refresh()
+    {
+        followMark();
+        updateWidth();
+        update();
+    }
+
+    // The design's width, or more when a count or the mark needs the room.
+    int preferredWidth() const { return m_preferredWidth; }
+
+signals:
+    void widthChanged();
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        // The chrome, and Merge's mark in the corner where a badge would be.
+        BadgeButton::paintEvent(event);
+        const OmarchyTheme *t = OmarchyTheme::instance();
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        const QFont plain = t->uiFont();
+        const int h = height();
+        const auto glyph = [&](int x, const QString &text, const QColor &colour) {
+            p.setFont(plain);
+            p.setPen(colour);
+            // TextDontClip: the box is the room the glyph takes, not a crop of it.
+            p.drawText(QRect(x, 0, glyphBox(text), h), Qt::AlignCenter | Qt::TextDontClip, text);
+        };
+        const Fields f = fields();
+        glyph(space(kDownX), downText(), t->text());
+        paintCount(&p, space(kPullX), m_pull);
+        glyph(f.up, upText(), t->text());
+        paintCount(&p, f.push, m_push);
+        QColor dim = t->text();
+        dim.setAlphaF(0.7);
+        glyph(f.chevron, chevronText(), dim);
+    }
+
+    void timerEvent(QTimerEvent *event) override
+    {
+        if (event->timerId() == m_busyTimer) {
+            m_busyPhase = (m_busyPhase + 1) % 3;
+            update();
+            return;
+        }
+        BadgeButton::timerEvent(event);
+    }
+
+private:
+    // Where the fields after Pull's count start, and where the content ends.
+    struct Fields {
+        int up, push, chevron, end;
+    };
+
+    static QString downText() { return ui::icon(kArrowDown, QStringLiteral("↓")).trimmed(); }
+    static QString upText() { return ui::icon(kArrowUp, QStringLiteral("↑")).trimmed(); }
+    static QString chevronText() { return chevron().trimmed(); }
+
+    static int glyphBox(const QString &text)
+    {
+        return qMax(QFontMetrics(OmarchyTheme::instance()->uiFont()).horizontalAdvance(text), space(kGlyphBox));
+    }
+
+    // Two digits and 99+ past them (the menu spells the number out).
+    static QString countText(int n) { return n > 99 ? QStringLiteral("99+") : QString::number(n); }
+
+    static QFont countFont(bool bold)
+    {
+        QFont font = OmarchyTheme::instance()->uiFont();
+        font.setBold(bold);
+        return font;
+    }
+
+    // A side's field: its count in the bold font, whichever font paints it,
+    // or the walking dots' room while it is busy.
+    static int countAdvance(const BadgeButton *source)
+    {
+        if (source->isBusy())
+            return space(kGlyphBox);
+        return QFontMetrics(countFont(true)).horizontalAdvance(countText(source->count()));
+    }
+
+    Fields fields() const
+    {
+        Fields f;
+        const int pullEnd = space(kPullX) + countAdvance(m_pull);
+        f.up = qMax(space(kUpX), pullEnd + space(kFieldGap));
+        f.push = f.up + space(kArrowGap);
+        const int pushEnd = f.push + countAdvance(m_push);
+        f.chevron = qMax(space(kChevronX), pushEnd + space(kFieldGap));
+        f.end = f.chevron + glyphBox(chevronText());
+        return f;
+    }
+
+    // Recomputed whenever a count, a busy state, the mark or the theme
+    // changes; the bar relays itself out when the answer does.
+    void updateWidth()
+    {
+        const int w = qMax(space(kSyncDropdown), fields().end + space(kEndPad))
+            + (markText().isEmpty() ? 0 : space(kMarkRoom));
+        if (w == m_preferredWidth)
+            return;
+        m_preferredWidth = w;
+        emit widthChanged();
+    }
+
+    // One timer for both sides: it runs while either of them is busy.
+    void followSources()
+    {
+        const bool busy = m_pull->isBusy() || m_push->isBusy();
+        if (busy && !m_busyTimer) {
+            m_busyPhase = 0;
+            m_busyTimer = startTimer(kBusyStepMs);
+        } else if (!busy && m_busyTimer) {
+            killTimer(m_busyTimer);
+            m_busyTimer = 0;
+        }
+        updateWidth();
+        update();
+    }
+
+    void followMark()
+    {
+        setMark(m_merge->markText(), m_merge->markColor());
+        updateWidth();
+    }
+
+    // A side's count, or the walking dots while it is busy, each in a box of
+    // its own advance so nothing it paints reaches the next field.
+    void paintCount(QPainter *p, int x, const BadgeButton *source) const
+    {
+        const OmarchyTheme *t = OmarchyTheme::instance();
+        if (source->isBusy()) {
+            const qreal r = space(3) / 2.0, step = space(4);
+            const qreal y = height() / 2.0;
+            p->setPen(Qt::NoPen);
+            for (int i = 0; i < 3; ++i) {
+                p->setBrush(i == m_busyPhase ? t->accent() : t->mutedText());
+                p->drawEllipse(QPointF(x + space(2) + step * i, y), r, r);
+            }
+            return;
+        }
+        const int n = source->count();
+        const QFont font = countFont(n > 0);
+        const QString text = countText(n);
+        p->setFont(font);
+        p->setPen(n > 0 ? t->accent() : t->text());
+        p->drawText(QRect(x, 0, QFontMetrics(font).horizontalAdvance(text), height()),
+                    Qt::AlignLeft | Qt::AlignVCenter | Qt::TextDontClip, text);
+    }
+
+    BadgeButton *m_pull;
+    BadgeButton *m_push;
+    BadgeButton *m_merge;
+    int m_busyTimer = 0;
+    int m_busyPhase = 0;
+    int m_preferredWidth = 0;
+};
+
+// The bar keeps the dropdown as its base class; this is the one place that
+// asks it for more.
+int dropdownWidth(const BadgeButton *dropdown)
+{
+    return static_cast<const SyncDropdown *>(dropdown)->preferredWidth();
+}
+
 } // namespace
 
 TopBar::TopBar(QWidget *parent)
@@ -133,22 +338,27 @@ TopBar::TopBar(QWidget *parent)
     m_branchButton->setAccessibleName(m_branchLabel);
 
     // The page tabs: one segmented control, exclusive like a mode switch.
+    // Diff stands between the two while stacked and is left out otherwise.
     m_changesTab = toolButton<SegmentButton>(tr("Changes"), tr("Pending changes and commit dialog (Ctrl+1)"));
     m_changesTab->setGlyph(kCommit, tr("C"));
+    m_diffTab = toolButton<SegmentButton>(tr("Diff"), tr("The diff of the current file, with the file rail (Ctrl+Shift+B)"));
+    m_diffTab->setGlyph(kDiff, tr("D"));
     m_historyTab = toolButton<SegmentButton>(tr("History"), tr("Commit history of the repository (Ctrl+2)"));
     m_historyTab->setGlyph(kHistory, tr("H"));
     auto *tabs = new QButtonGroup(this);
     tabs->setExclusive(true);
-    for (QToolButton *b : QList<QToolButton *>{m_changesTab, m_historyTab}) {
+    for (QToolButton *b : QList<QToolButton *>{m_changesTab, m_diffTab, m_historyTab}) {
         b->setCheckable(true);
         b->setAccessibleName(b->text()); // the plain name, without the glyph or the count
         tabs->addButton(b);
     }
     m_changesTab->setChecked(true);
-    connect(m_changesTab, &QToolButton::clicked, this, &TopBar::commitModeRequested);
-    connect(m_historyTab, &QToolButton::clicked, this, &TopBar::historyModeRequested);
-    m_tabs = new SegmentStrip({m_changesTab, m_historyTab});
+    connect(m_changesTab, &QToolButton::clicked, this, [this] { emit tabRequested(Tab::Changes); });
+    connect(m_diffTab, &QToolButton::clicked, this, [this] { emit tabRequested(Tab::Diff); });
+    connect(m_historyTab, &QToolButton::clicked, this, [this] { emit tabRequested(Tab::History); });
+    m_tabs = new SegmentStrip({m_changesTab, m_diffTab, m_historyTab});
     m_tabs->setParent(m_row);
+    m_tabs->setSegmentVisible(m_diffTab, false);
 
     // Pull / Push / Fetch act on the whole repository, so they are the same in
     // both modes. The Pull badge is the number of commits waiting on the
@@ -181,6 +391,31 @@ TopBar::TopBar(QWidget *parent)
     m_more->setMenu(m_moreMenu);
     m_more->hide();
     connect(m_moreMenu, &QMenu::aboutToShow, this, &TopBar::fillMoreMenu);
+    keepMenuInWindow(m_moreMenu, m_more);
+
+    // The stacked row's one sync control. Its text stays empty and it never
+    // carries a count badge of its own: it paints the two counts inline.
+    auto *dropdown = new SyncDropdown(m_pull, m_push, m_merge);
+    m_syncDropdown = dropdown;
+    m_syncDropdown->setParent(m_row);
+    m_syncDropdown->setCursor(Qt::PointingHandCursor);
+    m_syncDropdown->setFocusPolicy(Qt::NoFocus);
+    m_syncDropdown->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_syncDropdown->setAccessibleName(tr("Sync"));
+    m_syncDropdown->setToolTip(tr("Pull, push, fetch or merge (Ctrl+P, Ctrl+Shift+P, Ctrl+F, Ctrl+Shift+M)"));
+    m_syncDropdown->setPopupMode(QToolButton::InstantPopup);
+    m_syncMenu = new TickMenu(m_syncDropdown);
+    m_syncMenu->setToolTipsVisible(true);
+    m_syncDropdown->setMenu(m_syncMenu);
+    m_syncDropdown->hide();
+    // A wider count or Merge's mark widens it, and the row makes room. The
+    // bar's own size hints count the dropdown too.
+    connect(dropdown, &SyncDropdown::widthChanged, this, [this] {
+        updateGeometry();
+        relayout();
+    });
+    connect(m_syncMenu, &QMenu::aboutToShow, this, &TopBar::fillSyncMenu);
+    keepMenuInWindow(m_syncMenu, m_syncDropdown);
 
     m_divider = hairline(Qt::Vertical);
     m_divider->setParent(m_row);
@@ -255,11 +490,30 @@ int TopBar::changesCount() const
     return m_changesTab->count();
 }
 
-void TopBar::setCommitMode(bool commit)
+void TopBar::setCurrentTab(Tab tab)
 {
-    QSignalBlocker a(m_changesTab), b(m_historyTab);
-    m_changesTab->setChecked(commit);
-    m_historyTab->setChecked(!commit);
+    QToolButton *const target = tab == Tab::Changes ? static_cast<QToolButton *>(m_changesTab)
+        : tab == Tab::Diff                         ? m_diffTab
+                                                   : m_historyTab;
+    // The group unchecks the others; the window's own word asks for nothing.
+    QSignalBlocker a(m_changesTab), b(m_diffTab), c(m_historyTab);
+    target->setChecked(true);
+}
+
+TopBar::Tab TopBar::currentTab() const
+{
+    if (m_diffTab->isChecked())
+        return Tab::Diff;
+    return m_historyTab->isChecked() ? Tab::History : Tab::Changes;
+}
+
+void TopBar::setStacked(bool on)
+{
+    if (m_stacked == on)
+        return;
+    m_stacked = on;
+    m_tabs->setSegmentVisible(m_diffTab, on);
+    measure();
 }
 
 void TopBar::applyTheme()
@@ -271,10 +525,12 @@ void TopBar::applyTheme()
         b->setFont(theme->uiFont());
     for (const SyncControl &c : std::as_const(m_syncControls))
         c.probe->setFont(theme->uiFont());
-    m_more->setText(icon(kDots, QStringLiteral("…")).trimmed());
+    m_more->setText(icon(kDotsHorizontal, QStringLiteral("…")).trimmed());
     m_diffToggle->setText(icon(kDockRight, tr("D")).trimmed());
     m_changesTab->refreshGlyph();
+    m_diffTab->refreshGlyph();
     m_historyTab->refreshGlyph();
+    static_cast<SyncDropdown *>(m_syncDropdown)->refresh();
     m_rootLayout->setSpacing(space(kBarGap));
     measure();
     updateMoreMark();
@@ -314,8 +570,11 @@ void TopBar::measure()
     }
     m_metrics.more = iconFormWidth();
 
+    // The Diff segment takes part only while stacked, and the strip measures
+    // the segments taking part.
     for (const bool labels : {false, true}) {
         m_changesTab->setLabelled(labels);
+        m_diffTab->setLabelled(labels);
         m_historyTab->setLabelled(labels);
         (labels ? m_metrics.tabsLabels : m_metrics.tabsGlyphs) = m_tabs->sizeHint().width();
     }
@@ -329,8 +588,26 @@ void TopBar::measure()
     relayout();
 }
 
+int TopBar::levelCount() const
+{
+    return m_stacked ? kStackedFoldCount : kFoldCount;
+}
+
+bool TopBar::elides(int level) const
+{
+    return m_stacked ? level == kStackedFoldCount - 1 : kFolds[level].branchElides;
+}
+
+bool TopBar::tabLabels(int level) const
+{
+    return m_stacked ? level == 0 : kFolds[level].tabLabels;
+}
+
 int TopBar::rightGroupWidth(int level) const
 {
+    // Stacked: the dropdown and More, whatever the level.
+    if (m_stacked)
+        return dropdownWidth(m_syncDropdown) + space(kSyncGap) + m_metrics.more;
     const Fold &fold = kFolds[level];
     int w = 0;
     for (int i = 0; i < m_syncControls.size(); ++i) {
@@ -346,10 +623,10 @@ int TopBar::rightGroupWidth(int level) const
 
 int TopBar::totalWidth(int level, int branchLabelWidth) const
 {
-    const Fold &fold = kFolds[level];
-    const int left = (fold.repoLabel ? m_metrics.repoFull : m_metrics.repoFolded) + space(kChipGap)
+    const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
+    const int left = (repoLabel ? m_metrics.repoFull : m_metrics.repoFolded) + space(kChipGap)
         + m_metrics.branchChrome + branchLabelWidth;
-    const int tabs = fold.tabLabels ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
+    const int tabs = tabLabels(level) ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
     return left + space(kGroupGap) + tabs + space(kGroupGap) + rightGroupWidth(level);
 }
 
@@ -368,7 +645,7 @@ QSize TopBar::sizeHint() const
 // instead of forcing a width on the window.
 QSize TopBar::minimumSizeHint() const
 {
-    return QSize(totalWidth(kFoldCount - 1, minBranchLabel()), m_metrics.height + space(kBarGap) + 1);
+    return QSize(totalWidth(levelCount() - 1, minBranchLabel()), m_metrics.height + space(kBarGap) + 1);
 }
 
 void TopBar::resizeEvent(QResizeEvent *event)
@@ -380,8 +657,9 @@ void TopBar::resizeEvent(QResizeEvent *event)
 void TopBar::relayout()
 {
     const int width = m_row->width();
-    m_level = kFoldCount - 1;
-    for (int i = 0; i < kFoldCount - 1; ++i) {
+    const int count = levelCount();
+    m_level = count - 1;
+    for (int i = 0; i < count - 1; ++i) {
         if (totalWidth(i, m_metrics.branchLabel) <= width) {
             m_level = i;
             break;
@@ -389,7 +667,7 @@ void TopBar::relayout()
     }
     // Only the last level elides, and only by as much as it has to.
     int label = m_metrics.branchLabel;
-    if (kFolds[m_level].branchElides)
+    if (elides(m_level))
         label = qBound(minBranchLabel(), width - totalWidth(m_level, 0), m_metrics.branchLabel);
     apply(m_level, label);
     place(m_level, label);
@@ -399,34 +677,47 @@ void TopBar::relayout()
 // measuring and applying stay apart, so no candidate text reaches the screen.
 void TopBar::apply(int level, int branchLabelWidth)
 {
-    const Fold &fold = kFolds[level];
-    setTextOnce(m_repoButton, fold.repoLabel ? icon(kFolder) + m_repositoryName + chevron()
-                                             : icon(kFolder, tr("…")).trimmed());
+    const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
+    setTextOnce(m_repoButton, repoLabel ? icon(kFolder) + m_repositoryName + chevron()
+                                        : icon(kFolder, tr("…")).trimmed());
     const QString label = branchLabelWidth < m_metrics.branchLabel
         ? m_branchButton->fontMetrics().elidedText(m_branchLabel, Qt::ElideRight, branchLabelWidth)
         : m_branchLabel;
     setTextOnce(m_branchButton, icon(kBranch) + label + chevron());
 
+    // Stacked, all four belong to the dropdown: none of them is folded into
+    // More, which is there anyway for its own entries.
     m_foldedSync.clear();
-    for (int i = 0; i < m_syncControls.size(); ++i) {
-        const SyncControl &c = m_syncControls.at(i);
-        const bool shown = i < fold.syncShown;
-        setTextOnce(c.button, fold.syncLabels ? c.full : c.iconText);
-        setCompact(c.button, !fold.syncLabels); // the icon form's narrower padding
-        c.button->setVisible(shown);
-        if (!shown)
-            m_foldedSync << c.button;
+    if (m_stacked) {
+        for (const SyncControl &c : std::as_const(m_syncControls))
+            c.button->setVisible(false);
+        m_more->setVisible(true);
+        m_syncDropdown->setVisible(true);
+        m_divider->setVisible(false);
+        m_layoutButton->setVisible(false);
+        m_diffToggle->setVisible(false);
+    } else {
+        const Fold &fold = kFolds[level];
+        for (int i = 0; i < m_syncControls.size(); ++i) {
+            const SyncControl &c = m_syncControls.at(i);
+            const bool shown = i < fold.syncShown;
+            setTextOnce(c.button, fold.syncLabels ? c.full : c.iconText);
+            setCompact(c.button, !fold.syncLabels); // the icon form's narrower padding
+            c.button->setVisible(shown);
+            if (!shown)
+                m_foldedSync << c.button;
+        }
+        m_more->setVisible(!m_foldedSync.isEmpty());
+        m_syncDropdown->setVisible(false);
     }
-    m_more->setVisible(!m_foldedSync.isEmpty());
     updateMoreMark();
 
-    m_changesTab->setLabelled(fold.tabLabels);
-    m_historyTab->setLabelled(fold.tabLabels);
+    for (SegmentButton *tab : {m_changesTab, m_diffTab, m_historyTab})
+        tab->setLabelled(tabLabels(level));
 }
 
 void TopBar::place(int level, int branchLabelWidth)
 {
-    const Fold &fold = kFolds[level];
     const int height = m_row->height(), width = m_row->width();
     const auto put = [height](QWidget *w, int x, int width) {
         const int h = qMin(height, w->sizeHint().height());
@@ -434,17 +725,30 @@ void TopBar::place(int level, int branchLabelWidth)
         w->show();
     };
 
+    const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
     int x = 0;
-    put(m_repoButton, x, fold.repoLabel ? m_metrics.repoFull : m_metrics.repoFolded);
-    x += (fold.repoLabel ? m_metrics.repoFull : m_metrics.repoFolded) + space(kChipGap);
+    put(m_repoButton, x, repoLabel ? m_metrics.repoFull : m_metrics.repoFolded);
+    x += (repoLabel ? m_metrics.repoFull : m_metrics.repoFolded) + space(kChipGap);
     const int branch = m_metrics.branchChrome + branchLabelWidth;
     put(m_branchButton, x, branch);
     const int leftEnd = x + branch;
 
     // The right group hangs off the right edge, in the order it reads in:
-    // the sync buttons, the more menu, the divider, then the two toggles.
+    // the sync buttons, the more menu, the divider, then the two toggles —
+    // or, stacked, the sync dropdown and More.
     x = width - rightGroupWidth(level);
     const int rightStart = x;
+    if (m_stacked) {
+        // As tall as the row: the design's dropdown is the row's height.
+        const int dropdown = dropdownWidth(m_syncDropdown);
+        m_syncDropdown->setGeometry(x, 0, dropdown, height);
+        m_syncDropdown->show();
+        x += dropdown + space(kSyncGap);
+        put(m_more, x, m_metrics.more);
+        placeTabs(leftEnd, rightStart, level);
+        return;
+    }
+    const Fold &fold = kFolds[level];
     for (int i = 0; i < m_syncControls.size(); ++i) {
         if (i >= fold.syncShown)
             continue;
@@ -466,9 +770,15 @@ void TopBar::place(int level, int branchLabelWidth)
     x += widthOf(m_layoutButton) + space(kTogglesGap);
     put(m_diffToggle, x, widthOf(m_diffToggle));
 
-    // The tabs sit in the middle of the whole bar, nudged aside as far as they
-    // have to be to keep clear of either group.
-    const int tabs = fold.tabLabels ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
+    placeTabs(leftEnd, rightStart, level);
+}
+
+// The tabs sit in the middle of the whole bar, nudged aside as far as they
+// have to be to keep clear of either group.
+void TopBar::placeTabs(int leftEnd, int rightStart, int level)
+{
+    const int height = m_row->height(), width = m_row->width();
+    const int tabs = tabLabels(level) ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
     const int low = leftEnd + space(kGroupGap), high = rightStart - space(kGroupGap) - tabs;
     m_tabs->setGeometry(qMax(low, qMin(qRound((width - tabs) / 2.0), high)), 0, tabs, height);
     m_tabs->show();
@@ -486,19 +796,54 @@ void TopBar::updateMoreMark()
     m_more->setMark(counts ? QStringLiteral("•") : QString(), OmarchyTheme::instance()->accent());
 }
 
-// The folded buttons as menu entries, with the badge counts spelled out.
+void TopBar::addSyncEntry(QMenu *menu, const SyncControl &c, const QString &label)
+{
+    QString text = c.iconText.isEmpty() ? label : c.iconText + QStringLiteral("  ") + label;
+    if (c.button->count() > 0)
+        text += QStringLiteral("  (%1)").arg(c.button->count());
+    QAction *a = menu->addAction(text);
+    a->setToolTip(c.button->toolTip());
+    a->setEnabled(c.button->isEnabled());
+    connect(a, &QAction::triggered, c.button, &QAbstractButton::click);
+}
+
+// The folded buttons as menu entries, with the badge counts spelled out, then
+// what the window has no other button for on a narrow row.
 void TopBar::fillMoreMenu()
 {
     m_moreMenu->clear();
     for (const SyncControl &c : std::as_const(m_syncControls)) {
-        if (!m_foldedSync.contains(c.button))
-            continue;
-        QString text = c.iconText.isEmpty() ? c.label : c.iconText + QStringLiteral("  ") + c.label;
-        if (c.button->count() > 0)
-            text += QStringLiteral("  (%1)").arg(c.button->count());
-        QAction *a = m_moreMenu->addAction(text);
-        a->setToolTip(c.button->toolTip());
-        a->setEnabled(c.button->isEnabled());
-        connect(a, &QAction::triggered, c.button, &QAbstractButton::click);
+        if (m_foldedSync.contains(c.button))
+            addSyncEntry(m_moreMenu, c, c.label);
+    }
+    if (!m_foldedSync.isEmpty())
+        m_moreMenu->addSeparator();
+    const auto add = [this](uint glyph, const QString &label, const QString &tip, void (TopBar::*signal)()) {
+        QAction *a = m_moreMenu->addAction(icon(glyph) + label);
+        a->setToolTip(tip);
+        connect(a, &QAction::triggered, this, signal);
+    };
+    add(kRefresh, tr("Refresh"), tr("Re-read the repository (F5)"), &TopBar::refreshRequested);
+    add(kFolderOpen, tr("Open repository…"), tr("Pick a folder inside a git repository (Ctrl+O)"),
+        &TopBar::openRepositoryRequested);
+    add(kFetch, tr("Clone…"), tr("Download a repository from a URL or GitHub (Ctrl+Shift+O)"), &TopBar::cloneRequested);
+    m_moreMenu->addSeparator();
+    add(kInfo, tr("Keybindings"), tr("Every keyboard shortcut (Ctrl+K)"), &TopBar::keybindingsRequested);
+}
+
+// The stacked row's four sync actions: the buttons' own clicks, in the order
+// they stand in on a wide row, Merge (which opens a view) after a separator.
+void TopBar::fillSyncMenu()
+{
+    m_syncMenu->clear();
+    for (const SyncControl &c : std::as_const(m_syncControls)) {
+        if (c.button == m_merge) {
+            m_syncMenu->addSeparator();
+            addSyncEntry(m_syncMenu, c, tr("Merge…"));
+        } else {
+            addSyncEntry(m_syncMenu, c, c.label);
+        }
     }
 }
+
+#include "TopBar.moc"

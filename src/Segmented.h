@@ -65,6 +65,11 @@ public:
     void setStretch(bool on);
     bool isStretch() const { return m_stretch; }
     QList<SegmentButton *> segments() const { return m_segments; }
+    // The one way a segment leaves the strip or comes back (the top bar's
+    // Diff tab): the hint, the placement and the dividers all follow the
+    // segments taking part, and are laid out again at once, even when the
+    // strip's own rectangle stays where it is.
+    void setSegmentVisible(SegmentButton *segment, bool on);
 
     QSize sizeHint() const override;
 
@@ -73,6 +78,12 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    // The segments taking part, in their order: those not hidden on purpose.
+    // isHidden() rather than isVisible(), so the answer is the same while an
+    // ancestor (the bar, the card) is hidden.
+    QList<SegmentButton *> participating() const;
+    void layoutSegments();
+
     QList<SegmentButton *> m_segments;
     bool m_stretch = false;
 };

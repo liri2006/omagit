@@ -35,6 +35,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QSettings>
 #include <QShortcut>
@@ -53,6 +54,9 @@ constexpr int kRecentMax = 15;
 constexpr int kDefaultWidth = 1400, kDefaultHeight = 850;
 constexpr int kBodySpacing = 8;         // between the rail and the splitter, and everywhere else
 constexpr int kLeftSharePercent = 45;   // of the window, before the user drags the splitter
+// Narrower than this (design pixels, so it follows the text size) the body
+// stacks: one presentation at a time, picked by the top bar's tabs.
+constexpr int kStackWidth = 700;
 constexpr int kWatchDebounceMs = 500;   // a burst of file changes ends in one refresh
 // How long the footer keeps a message: a done deed, something that took a
 // while, a failure, and a job still waiting for the user.
@@ -143,8 +147,12 @@ void MainWindow::buildUi()
     // it is there in every layout, and folds itself as the window narrows.
     m_topBar = new TopBar;
     rootLayout->addWidget(m_topBar);
-    connect(m_topBar, &TopBar::commitModeRequested, this, [this] { setMode(CommitMode); });
-    connect(m_topBar, &TopBar::historyModeRequested, this, [this] { setMode(HistoryMode); });
+    connect(m_topBar, &TopBar::tabRequested, this, &MainWindow::showTab);
+    // The more menu's own entries: what a narrow row has no other button for.
+    connect(m_topBar, &TopBar::refreshRequested, this, &MainWindow::refresh);
+    connect(m_topBar, &TopBar::openRepositoryRequested, this, &MainWindow::openRepositoryDialog);
+    connect(m_topBar, &TopBar::cloneRequested, this, &MainWindow::showCloneDialog);
+    connect(m_topBar, &TopBar::keybindingsRequested, this, &MainWindow::showKeybindings);
     connect(m_topBar->layoutButton(), &QToolButton::clicked, this, [this](bool mini) {
         setPaneLayout(mini ? PaneLayout::Mini : PaneLayout::Docked);
     });
@@ -184,7 +192,14 @@ void MainWindow::buildUi()
     m_commitPage = new CommitPage(m_repo);
     connect(m_commitPage, &CommitPage::currentRowChanged, this, &MainWindow::onCurrentRowChanged);
     connect(m_commitPage, &CommitPage::openRequested, this, &MainWindow::openInEditor);
-    connect(m_commitPage, &CommitPage::showDiffPaneRequested, this, [this] { setDiffPaneVisible(true); });
+    // Stacked, the diff a double-click asks for is the Diff tab; the saved
+    // preference is not what hides it there.
+    connect(m_commitPage, &CommitPage::showDiffPaneRequested, this, [this] {
+        if (m_stacked)
+            setDiffTab(true);
+        else
+            setDiffPaneVisible(true);
+    });
     connect(m_commitPage, &CommitPage::discardRequested, this, &MainWindow::discardChange);
     connect(m_commitPage, &CommitPage::refreshRequested, this, &MainWindow::refresh);
     connect(m_commitPage, &CommitPage::amendToggled, this, &MainWindow::onAmendToggled);
@@ -198,7 +213,10 @@ void MainWindow::buildUi()
     connect(m_history, &HistoryView::currentFileChanged, this, &MainWindow::showHistoryDiff);
     connect(m_history, &HistoryView::refreshRequested, this, &MainWindow::refresh);
     connect(m_history->filesTable(), &QTableView::doubleClicked, this, [this] {
-        if (!m_diffVisible)
+        // Stacked first: the preference may say shown while the pane is not.
+        if (m_stacked)
+            setDiffTab(true);
+        else if (!m_diffVisible)
             setDiffPaneVisible(true);
     });
     m_stack->addWidget(m_history);
@@ -226,8 +244,9 @@ void MainWindow::buildUi()
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1); // the diff pane takes window resizes
     // The left width is chosen on first show (see showEvent) and remembered.
+    // Not while stacked: a left page filling the body is no width to keep.
     connect(splitter, &QSplitter::splitterMoved, this, [this] {
-        if (m_shown && m_left->isVisible())
+        if (m_shown && m_left->isVisible() && !m_stacked)
             QSettings().setValue(settings::kWindowLeftWidth, m_splitter->sizes().first());
     });
 
@@ -341,8 +360,10 @@ QList<MainWindow::Binding> MainWindow::bindings()
     // window folds half of them into the more menu.
     list << Binding{{QKeySequence(Qt::CTRL | Qt::Key_K)}, {}, tr("Keybindings"), {},
                     [this] { showKeybindings(); }, {}, nullptr, false}
-         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_1)}, {}, tr("Commit view"), {}, [this] { setMode(CommitMode); }}
-         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_2)}, {}, tr("History view"), {}, [this] { setMode(HistoryMode); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_1)}, {}, tr("Commit view"), {},
+                    [this] { showTab(TopBar::Tab::Changes); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_2)}, {}, tr("History view"), {},
+                    [this] { showTab(TopBar::Tab::History); }}
          // Ctrl+1 and Ctrl+2 are the views; the branches are the third "panel".
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_3)}, {}, tr("Branches"), {}, [this] { showBranchMenu(); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_R)}, {}, tr("Recent repositories"), {}, [this] { showRepoMenu(); }}
@@ -357,11 +378,21 @@ QList<MainWindow::Binding> MainWindow::bindings()
          << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P)}, {}, tr("Push"), {}, [this] { m_sync->push(); }, {}, m_sync}
          << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M)}, {}, tr("Merge branches"), {},
                     [this] { showMergeDialog(); }}
+         // Stacked, both are the Diff tab and nothing is saved: the layout
+         // toggles are hidden there, and the preferences are for the width
+         // the window comes back to.
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_B)}, {}, tr("Docked / Mini layout"), {}, [this] {
-                        setPaneLayout(m_layout == PaneLayout::Mini ? PaneLayout::Docked : PaneLayout::Mini);
+                        if (m_stacked)
+                            setDiffTab(!m_diffTab);
+                        else
+                            setPaneLayout(m_layout == PaneLayout::Mini ? PaneLayout::Docked : PaneLayout::Mini);
                     }}
-         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B)}, {}, tr("Show / hide diff pane"), {},
-                    [this] { setDiffPaneVisible(!m_diffVisible); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B)}, {}, tr("Show / hide diff pane"), {}, [this] {
+                        if (m_stacked)
+                            setDiffTab(!m_diffTab);
+                        else
+                            setDiffPaneVisible(!m_diffVisible);
+                    }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Q)}, {}, tr("Quit"), {}, [this] { close(); }};
 
     // The commit view. Ctrl+Return is the window's, not the Commit button's:
@@ -451,7 +482,8 @@ void MainWindow::showKeybindings()
 
 void MainWindow::focusHistoryFilter()
 {
-    setMode(HistoryMode);
+    // Through the tab, so a stacked Diff tab gives way to the filter's page.
+    showTab(TopBar::Tab::History);
     m_history->focusFilter();
 }
 
@@ -473,7 +505,7 @@ void MainWindow::commitKeys()
 {
     if (m_commitPopover->isVisible())
         m_commitPopover->commit();
-    else if (m_mode == CommitMode && m_layout == PaneLayout::Mini)
+    else if (m_mode == CommitMode && railShowing())
         showCommitPopover();
     else if (m_mode == CommitMode)
         m_commitPage->clickCommit();
@@ -481,9 +513,55 @@ void MainWindow::commitKeys()
 
 void MainWindow::showCommitPopover()
 {
-    if (m_layout != PaneLayout::Mini || m_mode != CommitMode)
+    if (!railShowing() || m_mode != CommitMode)
         return;
     m_commitPopover->popup();
+}
+
+bool MainWindow::railShowing() const
+{
+    return m_stacked ? m_diffTab : m_layout == PaneLayout::Mini;
+}
+
+void MainWindow::showTab(TopBar::Tab tab)
+{
+    if (tab == TopBar::Tab::Diff) {
+        setDiffTab(true);
+    } else {
+        const Mode mode = tab == TopBar::Tab::Changes ? CommitMode : HistoryMode;
+        if (mode != m_mode)
+            setMode(mode);
+        setDiffTab(false);
+    }
+    syncTab(); // a click the window did not follow leaves the tab it was on
+}
+
+void MainWindow::syncTab()
+{
+    m_topBar->setCurrentTab(m_stacked && m_diffTab ? TopBar::Tab::Diff
+                            : m_mode == CommitMode ? TopBar::Tab::Changes
+                                                   : TopBar::Tab::History);
+}
+
+void MainWindow::setDiffTab(bool on)
+{
+    if (!m_stacked || m_diffTab == on)
+        return;
+    // The cards hang from the rail, which is leaving; the commit card's
+    // dismissal puts the keyboard on the rail's list, so it goes first and
+    // the keyboard moves on below, to the page coming forward.
+    if (!on) {
+        m_agentPopover->dismiss();
+        m_commitPopover->dismiss();
+    }
+    m_diffTab = on;
+    applyPanes();
+    if (on)
+        m_rail->list()->setFocus(Qt::OtherFocusReason);
+    else if (m_mode == CommitMode)
+        m_commitPage->activeListView()->setFocus(Qt::OtherFocusReason);
+    else
+        m_history->filesTable()->setFocus(Qt::OtherFocusReason);
 }
 
 void MainWindow::setMode(Mode mode)
@@ -496,7 +574,7 @@ void MainWindow::setMode(Mode mode)
     m_rail->setCommitTileVisible(mode == CommitMode);
     m_mode = mode;
     m_stack->setCurrentWidget(mode == CommitMode ? static_cast<QWidget *>(m_commitPage) : m_history);
-    m_topBar->setCommitMode(mode == CommitMode); // it blocks its own segments
+    syncTab(); // it blocks its own segments
     if (mode == CommitMode) {
         m_rail->setCommitLabel(QString(), QString()); // the hash belonged to a commit of the history
         m_rail->setSource(m_commitPage->proxy(), m_commitPage->table()->selectionModel());
@@ -527,6 +605,9 @@ void MainWindow::setPaneLayout(PaneLayout layout, bool persist)
     if (layout != PaneLayout::Mini)
         m_commitPopover->dismiss();
     m_layout = layout;
+    // Stacked, the layout is what the Diff tab stands for: Mini shows it.
+    if (m_stacked)
+        m_diffTab = layout == PaneLayout::Mini;
     if (layout == PaneLayout::Mini && !m_diffVisible)
         setDiffPaneVisible(true, persist); // the rail only makes sense next to the diff
     applyPanes();
@@ -539,6 +620,13 @@ void MainWindow::setPaneLayout(PaneLayout layout, bool persist)
 void MainWindow::setDiffPaneVisible(bool on, bool persist)
 {
     m_diffVisible = on;
+    // Stacked, hiding the diff leaves the Diff tab, cards and all; showing it
+    // leaves the tab alone (the rail is not what was asked for).
+    if (m_stacked && !on && m_diffTab) {
+        m_agentPopover->dismiss();
+        m_commitPopover->dismiss();
+        m_diffTab = false;
+    }
     if (!on && m_layout == PaneLayout::Mini)
         setPaneLayout(PaneLayout::Docked, persist);
     applyPanes();
@@ -546,14 +634,19 @@ void MainWindow::setDiffPaneVisible(bool on, bool persist)
         QSettings().setValue(settings::kWindowDiffPane, on);
 }
 
-// Shows the panes and buttons the current layout and diff toggle call for.
+// Shows the panes and buttons the current layout and diff toggle call for —
+// or, stacked, the one presentation of the moment. The toggles go on saying
+// what the preferences are; the top bar hides them while stacked.
 void MainWindow::applyPanes()
 {
     const bool mini = m_layout == PaneLayout::Mini;
-    m_left->setVisible(!mini);
-    m_rail->setVisible(mini);
-    m_diffPane->setVisible(m_diffVisible);
-    m_commitPage->setDiffPaneVisible(m_diffVisible);
+    const bool rail = railShowing();
+    const bool diff = m_stacked ? m_diffTab : m_diffVisible;
+    m_left->setVisible(!rail);
+    m_rail->setVisible(rail);
+    m_diffPane->setVisible(diff);
+    m_commitPage->setDiffPaneVisible(diff);
+    syncTab();
     // Both toggles live in the top bar's right corner, whatever the layout.
     QToolButton *const diffToggle = m_topBar->diffToggle();
     QToolButton *const layoutButton = m_topBar->layoutButton();
@@ -595,22 +688,60 @@ void MainWindow::changeEvent(QEvent *event)
         m_sync->nudge();
 }
 
+// The first evaluation comes with the first show: a hidden window's resize()
+// and restoreGeometry() hold their resize event back until then, so it sees
+// the restored preferences and every flag main() applied before show().
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    updateStacking();
+}
+
+void MainWindow::updateStacking()
+{
+    const bool stacked = width() < space(kStackWidth);
+    if (stacked == m_stacked)
+        return;
+    m_stacked = stacked;
+    if (stacked) {
+        // The layout the user works in picks the tab the window opens on.
+        m_diffTab = m_layout == PaneLayout::Mini;
+    } else {
+        // The Diff tab is gone with the width; the cards hung from it.
+        m_agentPopover->dismiss();
+        m_commitPopover->dismiss();
+        m_diffTab = false;
+    }
+    m_topBar->setStacked(stacked);
+    m_commitPage->setStacked(stacked);
+    applyPanes();
+    // Back to Docked beside the diff: the left section's own width again, not
+    // the whole body it had while stacked.
+    if (!stacked && m_shown && m_left->isVisibleTo(this))
+        applySplitterSizes();
+}
+
+// Neither pane has a minimum width of its own, so the splitter's first
+// layout would split the window evenly; give the left section its
+// remembered width (or 45%) instead. The splitter may not be laid out yet,
+// so its width comes from the window's, less the rail.
+void MainWindow::applySplitterSizes()
+{
+    const QMargins m = centralWidget()->layout()->contentsMargins();
+    const int total = width() - m.left() - m.right()
+        - (m_rail->isVisibleTo(this) ? MiniRail::railWidth() + kBodySpacing : 0);
+    const int rightMin = m_diffPane->isVisibleTo(this) ? 1 + m_splitter->handleWidth() : 0;
+    const int wanted = QSettings().value(settings::kWindowLeftWidth, total * kLeftSharePercent / 100).toInt();
+    const int left = qBound(1, wanted, qMax(1, total - rightMin));
+    m_splitter->setSizes({left, qMax(1, total - left)});
+}
+
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
     if (!m_shown) {
         m_shown = true;
-        // Neither pane has a minimum width of its own, so the splitter's first
-        // layout would split the window evenly; give the left section its
-        // remembered width (or 45%) instead. The splitter has not been laid
-        // out yet, so its width comes from the window's, less the rail.
-        const QMargins m = centralWidget()->layout()->contentsMargins();
-        const int total = width() - m.left() - m.right()
-            - (m_rail->isVisibleTo(this) ? MiniRail::railWidth() + kBodySpacing : 0);
-        const int rightMin = m_diffPane->isVisibleTo(this) ? 1 + m_splitter->handleWidth() : 0;
-        const int wanted = QSettings().value(settings::kWindowLeftWidth, total * kLeftSharePercent / 100).toInt();
-        const int left = qBound(1, wanted, qMax(1, total - rightMin));
-        m_splitter->setSizes({left, qMax(1, total - left)});
+        applySplitterSizes();
     }
     m_sync->setActive(!isMinimized());
 }
@@ -634,6 +765,10 @@ void MainWindow::applyTheme()
     // The layout toggle's glyph says which layout is on, so it is the window's
     // to put back after the top bar has re-fetched the glyphs it owns itself.
     applyPanes();
+    // The stacking width is in design pixels: a new text size may move the
+    // window across it. Not before the first show, which classifies it anyway.
+    if (m_shown)
+        updateStacking();
     // The captions of every section, wherever they were built.
     for (QLabel *l : findChildren<QLabel *>()) {
         if (l->objectName() == QLatin1String("sectionLabel") || l->objectName() == QLatin1String("dimLabel"))
@@ -1295,19 +1430,39 @@ void MainWindow::generateMessage()
     m_commitPage->generateMessage();
 }
 
-// The agent settings under the cog of the layout of the moment: the page's
-// in Docked, the commit card's in Mini (opening the card first). The history
-// has no cog.
+// The agent settings under the cog on screen: the page's beside the page, the
+// commit card's beside the rail (opening the card first). The history has no
+// cog.
 void MainWindow::showAgentMenu()
 {
     if (m_mode != CommitMode)
         return;
-    if (m_layout == PaneLayout::Mini) {
+    if (railShowing()) {
         showCommitPopover();
         m_agentPopover->popup(m_commitPopover->agentButton());
     } else {
         m_agentPopover->popup(m_commitPage->agentButton());
     }
+}
+
+void MainWindow::showSyncMenu()
+{
+    if (m_stacked)
+        m_topBar->syncDropdown()->showMenu();
+}
+
+void MainWindow::showMoreMenu()
+{
+    if (m_topBar->moreButton()->isVisible())
+        m_topBar->moreButton()->showMenu();
+}
+
+// The page may be behind the Diff tab or the history: a hidden button's menu
+// would hang from nowhere.
+void MainWindow::showOptionsMenu()
+{
+    if (m_stacked && m_commitPage->optionsButton()->isVisible())
+        m_commitPage->optionsButton()->showMenu();
 }
 
 void MainWindow::showStatus(const QString &text, int ms)

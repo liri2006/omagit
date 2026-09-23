@@ -25,6 +25,9 @@ public:
     int count() const { return m_count; }
     // A text badge in a colour of its own, e.g. "!" in red; empty clears it.
     void setMark(const QString &text, const QColor &color);
+    // The mark as it was set, so another control can wear the same one.
+    QString markText() const;
+    QColor markColor() const;
     void setBusy(bool busy);
     bool isBusy() const { return m_busy; }
 

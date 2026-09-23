@@ -22,6 +22,11 @@ class QVBoxLayout;
 // repository label, then the tab labels, and only when nothing else is left
 // does the branch name elide. The bar owns the controls and their
 // presentation; the window keeps the git side of them.
+//
+// Stacked (setStacked(), the window's narrowest widths) is a presentation of
+// its own: a third tab, Diff, between the two; the four sync buttons give way
+// to one sync dropdown carrying both counts; More is always there; the layout
+// toggles go. It folds in three steps of its own.
 class TopBar : public QWidget
 {
     Q_OBJECT
@@ -40,17 +45,29 @@ public:
     void setChangesCount(int count);
     int changesCount() const;
 
-    void setCommitMode(bool commit);
+    // The body's presentation the tabs stand for. Diff is only offered while
+    // stacked; the window decides which is current and says so here, which
+    // asks for nothing back.
+    enum class Tab { Changes, Diff, History };
+    Q_ENUM(Tab)
+    void setCurrentTab(Tab tab);
+    Tab currentTab() const;
+
+    // The narrow presentation; see the class comment.
+    void setStacked(bool on);
+    bool isStacked() const { return m_stacked; }
 
     QToolButton *repoButton() const { return m_repoButton; }     // the repository menu's anchor
     QToolButton *branchButton() const { return m_branchButton; } // the branch menu's anchor
     QToolButton *changesTab() const { return m_changesTab; }
+    QToolButton *diffTab() const { return m_diffTab; }
     QToolButton *historyTab() const { return m_historyTab; }
     BadgeButton *fetchButton() const { return m_fetch; }
     BadgeButton *pullButton() const { return m_pull; }
     BadgeButton *pushButton() const { return m_push; }
     BadgeButton *mergeButton() const { return m_merge; }
     BadgeButton *moreButton() const { return m_more; }
+    BadgeButton *syncDropdown() const { return m_syncDropdown; } // the stacked form of the four
     QToolButton *layoutButton() const { return m_layoutButton; } // Docked/Mini, checked in Mini
     QToolButton *diffToggle() const { return m_diffToggle; }     // checked while the diff pane shows
 
@@ -58,16 +75,21 @@ public:
     // measures the row again.
     void applyTheme();
 
-    // 0 spells everything out, 6 is the narrowest form; what the current width
-    // fits (see the table in TopBar.cpp).
+    // 0 spells everything out, 6 is the narrowest form (2 while stacked); what
+    // the current width fits (see the tables in TopBar.cpp).
     int foldLevel() const { return m_level; }
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 
 signals:
-    void commitModeRequested();
-    void historyModeRequested();
+    // A tab was clicked: the window routes it to a mode or to the Diff tab.
+    void tabRequested(TopBar::Tab tab);
+    // The more menu's own entries, beyond the folded sync buttons.
+    void refreshRequested();
+    void openRepositoryRequested();
+    void cloneRequested();
+    void keybindingsRequested();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -112,17 +134,28 @@ private:
     int totalWidth(int level, int branchLabelWidth) const;
     int rightGroupWidth(int level) const;
     int minBranchLabel() const;
+    // How many levels the presentation of the moment has, and whether its
+    // level `level` elides the branch name and shows the tab labels.
+    int levelCount() const;
+    bool elides(int level) const;
+    bool tabLabels(int level) const;
     void apply(int level, int branchLabelWidth);
     void place(int level, int branchLabelWidth);
+    void placeTabs(int leftEnd, int rightStart, int level);
     void updateMoreMark();
     void fillMoreMenu();
+    void fillSyncMenu();
+    // A menu entry standing for a sync button: its glyph, `label` and the
+    // count, enabled and explained as the button is, clicking it.
+    void addSyncEntry(QMenu *menu, const SyncControl &c, const QString &label);
 
     QVBoxLayout *m_rootLayout;
     QWidget *m_row;   // the controls, placed by hand: the tabs follow the window's centre
     QToolButton *m_repoButton;
     QToolButton *m_branchButton;
-    QWidget *m_tabs;  // the frame around the two segments
+    SegmentStrip *m_tabs;  // the frame around the segments
     SegmentButton *m_changesTab;
+    SegmentButton *m_diffTab;  // stacked only
     SegmentButton *m_historyTab;
     BadgeButton *m_pull;
     BadgeButton *m_push;
@@ -130,6 +163,8 @@ private:
     BadgeButton *m_merge;
     BadgeButton *m_more;
     QMenu *m_moreMenu;
+    BadgeButton *m_syncDropdown; // a SyncDropdown (TopBar.cpp)
+    QMenu *m_syncMenu;
     QWidget *m_divider;
     QToolButton *m_layoutButton;
     QToolButton *m_diffToggle;
@@ -143,4 +178,5 @@ private:
     QString m_branchLabel;
     Metrics m_metrics;
     int m_level = 0;
+    bool m_stacked = false;
 };

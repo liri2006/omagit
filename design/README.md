@@ -26,7 +26,7 @@ tile widths (Wide, Half, Third, Eighth).
 | 4 | Files-view switcher | done |
 | 5 | Mini rail commit tile and popover | done |
 | 6 | Agent settings popover | done |
-| 7 | Stacked layouts | |
+| 7 | Stacked layouts | done |
 
 ### 1. Kit primitives
 
@@ -208,19 +208,48 @@ theme's hairline is used), and anything about the agents themselves.
 
 ### 7. Stacked layouts
 
-The tiling end of the design (the `s` / `xs` levels of `screens.js`), left out
-of phase 3 on purpose. Depends only on phase 3, so it can be pulled forward.
+The tiling end of the design (the `s` / `xs` levels of `screens.js`).
 
-- Below the stacking width the splitter gives way to tabs: `Changes n | Diff |
-  History` in the top bar, the Diff tab showing the Mini rail beside the diff;
-  the layout toggles hide there.
-- Pull and Push fold into one sync dropdown carrying both counts (`↓2 ↑1`), its
-  menu listing Pull, Push, Fetch and Merge…; More gains Refresh, Open
-  repository…, Clone… and Keybindings.
-- The action bar's options `…` menu (Select all, Show unversioned files, Amend
-  last commit, Generate message) and the full-width Commit button.
-- Switching by window width, scaled with the text size like every other design
-  pixel.
+- Under `space(700)` of window width the body stacks, as a presentation only:
+  `MainWindow` keeps the Docked/Mini and diff-pane preferences (and the left
+  width) and derives what is shown from them and a temporary Diff-tab flag.
+  Changes and History fill the body; Diff is the existing Mini rail beside the
+  diff pane, on the mode's files. No widget is reparented and no model reset:
+  stacking, unstacking and tab switches keep the selection, the scroll offsets
+  and the place in the diff. The first classification is the first show's
+  resize event, after every startup flag; unstacking into Docked puts the
+  left width back (`applySplitterSizes()`, factored out of the first show).
+- Tabs, not modes: `TopBar::Tab` (Changes, Diff, History) with
+  `setCurrentTab()` / `tabRequested()`. Changes and History (and Ctrl+1/2)
+  change the mode only when it is another one; Diff, Ctrl+B and Ctrl+Shift+B
+  (stacked) and a double-click on a file are the Diff tab, saving nothing.
+  The commit card and the agent card follow the rail: on the Diff tab in the
+  commit view, closed on leaving it or unstacking.
+- `SegmentStrip::setSegmentVisible()`: the Diff segment takes part only while
+  stacked; hint, placement and dividers count the segments not hidden.
+- The top bar's three stacked levels (tab labels, glyphs, the branch eliding
+  to its 72 px), the bare folder, and on the right a 92 px **sync dropdown**
+  (`↓n ↑n ⌄` painted inline, walking dots while one side is busy, 99+ for
+  three digits, Merge's mark in its corner) and More, which is always there
+  and keeps its one width. The layout toggles hide. Its menu: Pull, Push,
+  Fetch, Merge…, each the button's own click.
+- More also carries Refresh, Open repository…, Clone… and Keybindings after
+  the folded sync buttons, on every row.
+- The stacked action bar: the options `…` (Check all / Uncheck all, Show
+  unversioned files, Amend last commit, Generate message / Stop generating,
+  each the page's own path) and Commit across the rest of the row, without
+  the `⏎` (the card's keeps it).
+- While `window/filesView` is unset (and no `--files-view`), the list is
+  compact stacked and the table otherwise, never saved.
+- A drop-down of the right group or of the action bar stays inside the
+  window (`ui::keepMenuInWindow()`).
+- `--screenshot-menu sync|more|options`.
+
+Not in this phase: History's icon-only All branches control, its folded files
+button and the details date; the footer's `xs` status text; the design's
+height classes and shallow windows; a compact diff toolbar or forced unified
+view; the action bar's Abort button and hint; right-aligned shortcut hints in
+menus (tooltips carry them); repository search; a MiniRail redesign.
 
 Not in any phase yet: a search prompt in the repo menu (it exists in Figma,
 but is new functionality in the app).

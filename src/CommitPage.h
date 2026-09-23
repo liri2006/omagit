@@ -17,6 +17,7 @@ class QCheckBox;
 class QHBoxLayout;
 class QLabel;
 class QLayout;
+class QMenu;
 class QPushButton;
 class QSortFilterProxyModel;
 class QSpacerItem;
@@ -121,6 +122,11 @@ public:
     void clickCommit();
     // Whether the diff pane shows, for what a double-click on a file does.
     void setDiffPaneVisible(bool on) { m_diffPaneVisible = on; }
+    // The window's narrow presentation: the action bar folds Amend into the
+    // options menu and Commit takes the rest of the row, and, while nobody has
+    // chosen a files view, the list turns compact. Nothing of it is saved.
+    void setStacked(bool on);
+    bool isStacked() const { return m_stacked; }
 
     // The three files-view buttons, for the tests and for anyone who wants to
     // press one without going through the accessible names.
@@ -130,6 +136,8 @@ public:
     QToolButton *unversionedButton() const { return m_unversioned; }
     // The cog at the right of the MESSAGE label, the agent popover's anchor.
     QToolButton *agentButton() const { return m_agentButton; }
+    // The stacked action bar's "…" at the left of Commit.
+    QToolButton *optionsButton() const { return m_optionsButton; }
 
     void applyTheme();
 
@@ -218,6 +226,14 @@ private:
     // The repo-relative path of the canonical current file, empty when none is.
     QString currentPath() const;
     void updateCommitButton();
+    // What the commit is, in words: "Commit 2 files", "Amend", "Commit merge".
+    QString commitWording() const;
+    // The commit button's text: its glyph and the wording, and outside the
+    // stacked row the key that presses it.
+    QString commitButtonText(bool withKey) const;
+    // The action bar's two forms; see setStacked().
+    void applyActionBarForm();
+    void fillOptionsMenu();
     void setGenerating(bool on);
     // The one place the generate button's face changes, so the text and the
     // tooltip are both current whenever commitControlsChanged() goes out.
@@ -256,6 +272,10 @@ private:
     QLayout *m_sectionsLayout;    // MESSAGE and CHANGES, over the action bar
     QLayout *m_changesLayout;     // CHANGES: its header row over the list, a scaled gap apart
     QHBoxLayout *m_actionBar;     // the bottom row, a scaled gap under the list
+    QSpacerItem *m_actionStretch = nullptr; // between Amend and Commit on the ordinary row
+    QToolButton *m_optionsButton = nullptr; // stacked only
+    QMenu *m_optionsMenu = nullptr;
+    bool m_stacked = false;
     bool m_messageSizedByHand = false; // the user dragged the handle this session
     int m_messageRestHeight = -1;      // the pane's height before any text grew it
     QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning
