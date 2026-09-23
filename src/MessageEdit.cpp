@@ -11,6 +11,7 @@
 
 namespace {
 constexpr int kInset = 3; // between the frame and the button
+constexpr int kClaimWidth = 1 << 16; // wider than any other box of the document can be
 } // namespace
 
 MessageEdit::MessageEdit(QWidget *parent)
@@ -44,6 +45,9 @@ void MessageEdit::applyTheme()
     // the frame and the padding, about kInset + the padding).
     setViewportMargins(0, 0, side + 2 * kInset + 4, 0);
     placeButton();
+    // A theme change re-measures every box of a shared document, the hidden
+    // ones too; the one on screen takes the wrapping back afterwards.
+    scheduleWrapClaim();
 }
 
 void MessageEdit::replaceText(const QString &text, bool join)
@@ -98,6 +102,44 @@ void MessageEdit::showEvent(QShowEvent *event)
     // Text can arrive before there is a laid-out window to measure against
     // (`--amend` fills the box at startup), so ask once more now.
     scheduleHeightCheck();
+    scheduleWrapClaim();
+}
+
+// A new font re-wraps the document in every box that shows it, the hidden one
+// too, which takes the wrapping width over when it is the wider of the two.
+void MessageEdit::changeEvent(QEvent *event)
+{
+    QPlainTextEdit::changeEvent(event);
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange)
+        scheduleWrapClaim();
+}
+
+// After whatever else the same turn of the event loop does to the fonts and
+// the geometry, so the box on screen has the last word.
+void MessageEdit::scheduleWrapClaim()
+{
+    if (m_wrapClaimQueued)
+        return;
+    m_wrapClaimQueued = true;
+    QTimer::singleShot(0, this, [this] {
+        m_wrapClaimQueued = false;
+        claimWrapWidth();
+    });
+}
+
+// QPlainTextDocumentLayout takes its width from the first box that laid it
+// out, and from another one only when that one is wider — so a narrower box
+// sharing the document would wrap at the other box's width. Being briefly
+// wider than anything makes this box the one the layout listens to; the real
+// width, set right after in the same call, is then the width it wraps at.
+// Nothing is painted in between.
+void MessageEdit::claimWrapWidth()
+{
+    if (!isVisible())
+        return;
+    const QSize size = this->size();
+    resize(kClaimWidth, size.height());
+    resize(size);
 }
 
 void MessageEdit::scheduleHeightCheck()

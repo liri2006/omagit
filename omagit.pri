@@ -44,6 +44,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/DesktopExec.cpp \
     $$PWD/src/DiffPane.cpp \
     $$PWD/src/CommitPage.cpp \
+    $$PWD/src/CommitPopover.cpp \
     $$PWD/src/Footer.cpp \
     $$PWD/src/MainWindow.cpp
 
@@ -70,6 +71,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/UiHelpers.h \
     $$PWD/src/DiffPane.h \
     $$PWD/src/CommitPage.h \
+    $$PWD/src/CommitPopover.h \
     $$PWD/src/Footer.h \
     $$PWD/src/MainWindow.h \
     $$PWD/src/Settings.h

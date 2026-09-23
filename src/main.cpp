@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge, login or clone panel before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login|clone"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge, login or clone panel, or the Mini layout's commit popover, before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login|clone|commit"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -204,6 +204,7 @@ int main(int argc, char *argv[])
                     : menu == QLatin1String("merge")             ? "showMergeDialog"
                     : menu == QLatin1String("clone")             ? "showCloneDialog"
                     : menu == QLatin1String("login")             ? "showLoginDialog"
+                    : menu == QLatin1String("commit")            ? "showCommitPopover"
                                                                  : "showBranchMenu";
                 QMetaObject::invokeMethod(&window, slot);
             });

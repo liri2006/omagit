@@ -13,6 +13,7 @@
 
 class BadgeButton;
 class CommitPage;
+class CommitPopover;
 class DiffPane;
 class Footer;
 class TopBar;
@@ -29,6 +30,7 @@ public:
     enum Mode { CommitMode, HistoryMode };
 
     explicit MainWindow(GitRepo *repo, QWidget *parent = nullptr);
+    ~MainWindow() override;
 
     void setMode(Mode mode);
     Mode mode() const { return m_mode; }
@@ -56,6 +58,10 @@ public:
 public slots:
     void refresh();
     void setInitialSelection(const QString &path) { m_initialSelection = path; }
+    // The commit popover beside the Mini rail's commit tile (the tile, Ctrl+Enter,
+    // --screenshot-menu commit). Only in the Mini layout's commit view; opening
+    // it while it is open only puts the keyboard back in its message box.
+    void showCommitPopover();
 
 private slots:
     void showKeybindings();
@@ -121,6 +127,9 @@ private:
         bool panelRuns;              // false: the panel lists the row but does not run it
         bool listed = true;          // false: the shortcut works but the panel leaves it out
     };
+    // Ctrl+Enter: commits from the popover when it is open, opens it in the
+    // Mini layout, presses the page's Commit button in the Docked one.
+    void commitKeys();
     // Where the user was before a refresh: the scroll offsets of the two file
     // lists and the place in the diff.
     struct ViewState {
@@ -191,6 +200,7 @@ private:
     QSplitter *m_splitter;
     QWidget *m_left;
     MiniRail *m_rail;
+    CommitPopover *m_commitPopover; // the Mini layout's commit controls, an overlay of the central widget
     QFileSystemWatcher *m_watcher; // the working tree root, the index and the changed files
     QString m_indexFile;
     bool m_diffVisible = true;

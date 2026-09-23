@@ -3,6 +3,7 @@
 #include "OmarchyTheme.h"
 #include "UiHelpers.h"
 
+#include <QCoreApplication>
 #include <QEvent>
 #include <QFileInfo>
 #include <QKeyEvent>
@@ -21,6 +22,51 @@ constexpr int kRowHeight = 46, kTile = 32, kTileRadius = 5;
 constexpr int kBadgeSize = 13, kBadgeInsetX = 8, kBadgeRise = 5;
 constexpr int kNumberHeight = 12, kNumberPadding = 6, kNumberRadius = 3;
 constexpr int kNumberInsetX = 4, kNumberRise = 7;
+// The commit tile's square and its glyph, in design pixels (ui::space()).
+constexpr int kCommitSquare = 40, kCommitGlyph = 16;
+// The gap the design keeps on either side of the separator above the tile.
+constexpr int kCommitGap = 8;
+
+// The font of the circular badges: the miniatures' status letter and the
+// commit tile's count. Physical pixels, like the badges themselves: they sit
+// beside the miniatures, which do not scale either.
+QFont badgeFont()
+{
+    QFont f = OmarchyTheme::instance()->captionFont();
+    f.setBold(true);
+    f.setPixelSize(qMax(7, f.pixelSize() - 2));
+    return f;
+}
+
+// Where the badge for `text` goes: the 13 px circle whose right edge is at
+// `right` (one past its last pixel) and whose top is at `top`, widened into
+// a pill when the text needs more room than the circle has: the commit
+// tile's count. The pill keeps the circle's right edge and grows leftwards
+// over the tile, the way BadgeButton grows for two and three digits.
+QRect badgeRect(const QString &text, int right, int top)
+{
+    const int w = qMax(kBadgeSize, QFontMetrics(badgeFont()).horizontalAdvance(text) + 6);
+    return QRect(right - w, top, w, kBadgeSize);
+}
+
+// A filled circle, or pill, with `text` in the window colour: the
+// miniatures' status badge and the commit tile's count are the same mark in
+// different colours; the tile's `badge` comes from badgeRect(). Leaves the
+// badge font on the painter.
+void paintBadge(QPainter *p, const QRect &badge, const QColor &fill, const QString &text)
+{
+    p->setPen(Qt::NoPen);
+    p->setBrush(fill);
+    // The circle is drawn as one, so the miniatures' letters look exactly as
+    // they always have; only a wider badge becomes a rounded rectangle.
+    if (badge.width() == badge.height())
+        p->drawEllipse(badge);
+    else
+        p->drawRoundedRect(QRectF(badge), kBadgeSize / 2.0, kBadgeSize / 2.0);
+    p->setFont(badgeFont());
+    p->setPen(OmarchyTheme::instance()->window());
+    p->drawText(badge, Qt::AlignCenter, text);
+}
 
 // What a file is reduced to on a 32 px tile: its extension, or the first
 // letters of its name when it has none (Makefile, LICENSE, ...).
@@ -89,18 +135,14 @@ public:
         p->setPen(selected ? t->accent() : status);
         p->drawText(tile, Qt::AlignCenter, tileLabel(index));
 
-        const QRect badge(tile.right() - kBadgeInsetX, tile.top() - kBadgeRise, kBadgeSize, kBadgeSize);
-        p->setPen(Qt::NoPen);
-        p->setBrush(status);
-        p->drawEllipse(badge);
-        QFont bf = f;
-        bf.setPixelSize(qMax(7, f.pixelSize() - 2));
-        p->setFont(bf);
-        p->setPen(t->window());
         // The letter the tree and compact presentations put in their status
         // pills, so one list never spells a status differently from another.
         const auto kind = FileChange::Kind(index.data(ChangesModel::KindRole).toInt());
-        p->drawText(badge, Qt::AlignCenter, QString(ChangesModel::statusLetter(kind)));
+        // Always the circle: from a 16 px text size on, a letter plus the
+        // pill's padding would measure wider than it, and one letter fits.
+        const QRect badge(tile.right() - kBadgeInsetX, tile.top() - kBadgeRise, kBadgeSize, kBadgeSize);
+        paintBadge(p, badge, status, QString(ChangesModel::statusLetter(kind)));
+        const QFont bf = badgeFont();
 
         // Row number, bottom-left, mirroring the status badge
         const QString number = QString::number(index.row() + 1);
@@ -118,6 +160,97 @@ public:
 
 private:
     QListView *m_view;
+};
+
+// The commit tile at the bottom of the rail: an accent square with the commit
+// glyph, and the number of checked files in a badge on its top-right corner.
+// The widget is the rail's width and a badge's rise taller than the square,
+// which is painted centred at its bottom, so the badge's overhang lies inside
+// it — and the whole widget answers a click.
+class CommitTile : public QToolButton
+{
+public:
+    explicit CommitTile(QWidget *parent = nullptr)
+        : QToolButton(parent)
+    {
+        setObjectName(QStringLiteral("commitTile"));
+        setAccessibleName(QCoreApplication::translate("MiniRail", "Commit"));
+        setToolTip(QCoreApplication::translate("MiniRail", "Commit the checked files (Ctrl+Enter)"));
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setAttribute(Qt::WA_Hover);
+        applyMetrics();
+    }
+
+    void applyMetrics()
+    {
+        setFixedSize(MiniRail::railWidth(), ui::space(kCommitSquare) + kBadgeRise);
+        update();
+    }
+
+    // The painted square, in the widget's coordinates.
+    QRect square() const
+    {
+        const int side = ui::space(kCommitSquare);
+        return QRect((width() - side) / 2, height() - side, side, side);
+    }
+
+    // The count's badge, in the widget's coordinates: its right edge where
+    // the miniatures' circle would end on this square's corner. Null when
+    // nothing is checked and no badge is painted.
+    QRect badge() const
+    {
+        if (m_count <= 0)
+            return QRect();
+        const QRect sq = square();
+        return badgeRect(QString::number(m_count), sq.right() - kBadgeInsetX + kBadgeSize, sq.top() - kBadgeRise);
+    }
+
+    void setCount(int count)
+    {
+        if (m_count == count)
+            return;
+        m_count = count;
+        update();
+    }
+
+    void setActive(bool on)
+    {
+        if (m_active == on)
+            return;
+        m_active = on;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const OmarchyTheme *t = OmarchyTheme::instance();
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        const QRect sq = square();
+        // The accent itself at a low alpha, not the theme's foreground fills:
+        // the tile is the rail's one call to action.
+        QColor fill = t->accent();
+        fill.setAlphaF(isDown() ? 0.22 : (m_active || underMouse()) ? 0.18 : 0.08);
+        const qreal radius = kTileRadius * sq.width() / qreal(kTile); // the miniatures' rounding, scaled up
+        p.setPen(QPen(t->accent(), 1));
+        p.setBrush(fill);
+        p.drawRoundedRect(QRectF(sq).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+
+        QFont glyph = t->uiFont();
+        glyph.setPixelSize(ui::space(kCommitGlyph));
+        p.setFont(glyph);
+        p.setPen(t->accent());
+        p.drawText(sq, Qt::AlignCenter, ui::icon(ui::kCommit, QStringLiteral("C")).trimmed());
+
+        if (m_count > 0)
+            paintBadge(&p, badge(), t->accent(), QString::number(m_count));
+    }
+
+private:
+    int m_count = 0;
+    bool m_active = false;
 };
 
 } // namespace
@@ -166,6 +299,9 @@ void MiniRailList::mousePressEvent(QMouseEvent *event)
     const QModelIndex index = indexAt(event->pos());
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier) && index.isValid()) {
         toggleChecked(index);
+        // The list takes the keyboard as a plain click would, so Space goes on
+        // from here — on the current file, which the Ctrl+click left alone.
+        setFocus(Qt::MouseFocusReason);
         return;
     }
     QListView::mousePressEvent(event);
@@ -265,11 +401,17 @@ QToolButton *MiniRail::addButton(uint glyph, const QString &fallback, const QStr
     return b;
 }
 
+int MiniRail::railWidth()
+{
+    return ui::space(kWidth);
+}
+
 MiniRail::MiniRail(QWidget *parent)
     : QWidget(parent)
 {
-    setFixedWidth(kWidth);
+    setFixedWidth(railWidth());
     auto *layout = new QVBoxLayout(this);
+    m_layout = layout;
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
 
@@ -295,11 +437,92 @@ MiniRail::MiniRail(QWidget *parent)
     layout->addSpacing(4);
     layout->addWidget(m_refreshButton);
 
+    // The commit tile under a separator, the design's 8 px from Refresh above
+    // it and from the tile's square below it. The section is one widget so it
+    // comes and goes whole, its gaps included, and its own layout keeps the
+    // rail's spacing out of those two gaps.
+    m_commitSection = new QWidget;
+    auto *section = new QVBoxLayout(m_commitSection);
+    section->setContentsMargins(0, 0, 0, 0);
+    section->setSpacing(0);
+    m_ruleGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    section->addItem(m_ruleGap);
+    section->addWidget(ui::hairline());
+    m_tileGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    section->addItem(m_tileGap);
+    auto *tile = new CommitTile;
+    m_commitTile = tile;
+    connect(tile, &QToolButton::clicked, this, &MiniRail::commitRequested);
+    section->addWidget(tile);
+    layout->addWidget(m_commitSection);
+
     applyTheme();
+}
+
+QToolButton *MiniRail::commitTile() const
+{
+    return m_commitTile;
+}
+
+QRect MiniRail::commitBadgeRect() const
+{
+    return static_cast<CommitTile *>(m_commitTile)->badge();
+}
+
+void MiniRail::setCommitTileVisible(bool on)
+{
+    m_commitSection->setVisible(on);
+}
+
+void MiniRail::setCommitTileActive(bool on)
+{
+    static_cast<CommitTile *>(m_commitTile)->setActive(on);
+}
+
+// The gaps around the separator in scaled pixels. The one above it gives
+// back the rail's own spacing, which the layout puts between Refresh and the
+// section; the one below it gives back the badge's rise, which the tile
+// widget keeps above its square — so both measure to what is drawn.
+void MiniRail::applyCommitMetrics()
+{
+    m_ruleGap->changeSize(0, qMax(0, ui::space(kCommitGap) - m_layout->spacing()), QSizePolicy::Minimum,
+                          QSizePolicy::Fixed);
+    m_tileGap->changeSize(0, qMax(0, ui::space(kCommitGap) - kBadgeRise), QSizePolicy::Minimum, QSizePolicy::Fixed);
+    static_cast<CommitTile *>(m_commitTile)->applyMetrics();
+    m_commitSection->layout()->invalidate();
+}
+
+// Reads the check marks and nothing else: no selection, no sorting and no
+// model of its own, so the badge can never disagree with the list.
+void MiniRail::countChecked()
+{
+    int checked = 0;
+    if (QAbstractItemModel *model = m_badgeSource.data()) {
+        for (int row = 0, rows = model->rowCount(); row < rows; ++row)
+            if (model->index(row, ChangesModel::Check).data(Qt::CheckStateRole).toInt() == Qt::Checked)
+                ++checked;
+    }
+    m_checked = checked;
+    static_cast<CommitTile *>(m_commitTile)->setCount(checked);
 }
 
 void MiniRail::setSource(QAbstractItemModel *model, QItemSelectionModel *selection)
 {
+    // The badge's own connections follow the source; the list's are its own.
+    if (m_badgeSource != model) {
+        for (const QMetaObject::Connection &c : std::as_const(m_badgeConnections))
+            disconnect(c);
+        m_badgeConnections.clear();
+        m_badgeSource = model;
+        if (model) {
+            m_badgeConnections << connect(model, &QAbstractItemModel::dataChanged, this, &MiniRail::countChecked)
+                               << connect(model, &QAbstractItemModel::rowsInserted, this, &MiniRail::countChecked)
+                               << connect(model, &QAbstractItemModel::rowsRemoved, this, &MiniRail::countChecked)
+                               << connect(model, &QAbstractItemModel::modelReset, this, &MiniRail::countChecked)
+                               << connect(model, &QAbstractItemModel::layoutChanged, this, &MiniRail::countChecked);
+        }
+    }
+    countChecked();
     if (m_list->model() != model) {
         m_list->setModel(model);
         // Only once a model is set: QListView ignores a column its model does
@@ -322,7 +545,7 @@ void MiniRail::setCommitLabel(const QString &hash, const QString &tip)
 void MiniRail::updateHashLabel()
 {
     m_hashLabel->ensurePolished();
-    m_hashLabel->setText(m_hashLabel->fontMetrics().elidedText(m_hash, Qt::ElideRight, kWidth - 2));
+    m_hashLabel->setText(m_hashLabel->fontMetrics().elidedText(m_hash, Qt::ElideRight, railWidth() - 2));
     m_hashLabel->setToolTip(m_hash.isEmpty() ? QString() : QStringLiteral("%1\n%2").arg(m_hash, m_hashTip));
     m_hashLabel->setVisible(!m_hash.isEmpty());
     m_hashRule->setVisible(!m_hash.isEmpty());
@@ -330,9 +553,12 @@ void MiniRail::updateHashLabel()
 
 void MiniRail::applyTheme()
 {
+    setFixedWidth(railWidth());
+    applyCommitMetrics();
     m_hashLabel->setFont(OmarchyTheme::instance()->captionFont());
     updateHashLabel();
     for (const RailGlyph &g : std::as_const(m_glyphs))
         g.button->setText(ui::icon(g.code, g.fallback).trimmed());
     m_list->viewport()->update();
+    m_commitTile->update(); // its glyph and badge are looked up at paint time
 }

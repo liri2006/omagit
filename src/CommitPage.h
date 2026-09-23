@@ -26,6 +26,7 @@ class QSpacerItem;
 class QSplitter;
 class QStackedWidget;
 class QTableView;
+class QTextDocument;
 class QTimer;
 class QToolButton;
 class QTreeView;
@@ -44,7 +45,27 @@ public:
     // directories. Whichever is on, the flat list below is the same.
     enum class FilesView { Compact, Tree, Table };
 
+    // What the commit controls say at this moment, for a second face of them
+    // (the Mini layout's commit popover): read whole whenever
+    // commitControlsChanged() says something in it may have moved.
+    struct CommitControls {
+        QString commitText, commitName, commitTip; // the Commit button's text, accessible name, tooltip
+        bool commitEnabled = false;
+        bool amendChecked = false, amendEnabled = false;
+        QString amendTip;
+        int checked = 0; // the files the commit would take
+        int shown = 0;   // the rows the list shows
+        QString generateText, generateTip; // the generate button in the message box's corner
+    };
+
     explicit CommitPage(GitRepo *repo, QWidget *parent = nullptr);
+
+    // The message being written, one document for every box that edits it:
+    // whoever shows it elsewhere shares the text and its undo stack.
+    QTextDocument *messageDocument() const;
+    CommitControls commitControls() const;
+    // The cog's tooltip, for a cog elsewhere that opens the same menu.
+    static QString agentButtonTip();
 
     // The Mini rail shows the same files, through the same selection: the
     // proxy and the table's selection model are canonical in every view.
@@ -98,7 +119,7 @@ public:
     // A merge in progress decides what the Commit button says, whether the
     // amend box may be ticked, and puts git's proposed message in the box.
     void setMergeState(const MergeState &merge, const Commit &head);
-    // Presses Commit, as Ctrl+Enter on the button itself does.
+    // Presses Commit, the way the window's Ctrl+Enter does outside the Mini layout.
     void clickCommit();
     // Whether the diff pane shows, for what a double-click on a file does.
     void setDiffPaneVisible(bool on) { m_diffPaneVisible = on; }
@@ -120,11 +141,17 @@ public slots:
     void onAmendToggled(bool on);
     // Writes the checked files (or rewrites the last commit) with the message
     // in the box, asking first when that would rewrite published history.
-    void commit();
+    // True once the commit (or the amend) is made; false when there was no
+    // message, the user backed out of rewriting published history, or git
+    // failed — each of which the page has already told the user about.
+    bool commit();
     // Asks the chosen coding agent for a message describing the checked
     // changes (Ctrl+G); clicking again while it runs stops it.
     void generateMessage();
+    // The agent menu, hanging from the page's own cog.
     void showAgentMenu();
+    // The same menu, hanging from the bottom-right corner of `anchor`.
+    void showAgentMenuAt(QWidget *anchor);
 
 signals:
     void refreshRequested();
@@ -135,6 +162,8 @@ signals:
     void amendToggled(bool on);
     void modeRequested();          // bring the commit view forward
     void statusMessage(const QString &text, int ms);
+    // Something commitControls() reports may have changed.
+    void commitControlsChanged();
 
 private:
     // The sections of the page, top to bottom, as the constructor builds them.
@@ -191,6 +220,9 @@ private:
                              const std::function<void(const AgentChoice &)> &save);
     void updateCommitButton();
     void setGenerating(bool on);
+    // The one place the generate button's face changes, so the text and the
+    // tooltip are both current whenever commitControlsChanged() goes out.
+    void setGenerateFace(const QString &text, const QString &tip);
     void onMessageGenerated(bool ok, const QString &text);
 
     GitRepo *m_repo;
@@ -235,9 +267,9 @@ private:
     QString m_messageBefore;     // the text the user had before the agent started, for a failed run
     QLabel *m_changesLabel;      // CHANGES · checked / shown
     QWidget *m_changesDivider;   // between the eye and Refresh
-    QPushButton *m_commitButton;
+    QPushButton *m_commitButton = nullptr; // built after the message section
     QToolButton *m_unversioned;  // the eye: checked = unversioned files shown
-    QCheckBox *m_amend;
+    QCheckBox *m_amend = nullptr;
     QString m_headMessage;
     bool m_merging = false;      // a merge is in progress (MERGE_HEAD exists)
     QString m_mergeMessage;      // git's proposed message, put in the box while it is empty

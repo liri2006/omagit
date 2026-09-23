@@ -2,6 +2,7 @@
 #include "BadgeButton.h"
 #include "BranchMenu.h"
 #include "CommitPage.h"
+#include "CommitPopover.h"
 #include "DesktopExec.h"
 #include "DiffPane.h"
 #include "Footer.h"
@@ -94,6 +95,16 @@ MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     m_sync->setAutoFetchInterval(autoFetchSecondsSetting());
 
     QTimer::singleShot(0, this, &MainWindow::refresh);
+}
+
+// The commit popover goes first. Its message box borrows the commit page's
+// QTextDocument, which the page's own editor owns; the card is created after
+// the pages, so the central widget would otherwise delete the page, and the
+// document with it, while the card's editor still pointed at it.
+MainWindow::~MainWindow()
+{
+    delete m_commitPopover;
+    m_commitPopover = nullptr;
 }
 
 // "full" (pre-0.4) and window/leftFull (pre-0.3) meant the left section
@@ -241,6 +252,25 @@ void MainWindow::buildUi()
     // ---- Footer: sidebar toggle, repository and branch selectors, path and messages
     rootLayout->addWidget(m_footer);
 
+    // ---- The commit popover of the Mini layout: over the body, outside its
+    // layouts, beside the rail's commit tile. The page stays the owner of
+    // everything it shows; the card is lit on the tile while it is open.
+    m_commitPopover = new CommitPopover(m_commitPage, central);
+    m_commitPopover->setAnchor(m_rail);
+    connect(m_rail, &MiniRail::commitRequested, this, [this] {
+        if (m_commitPopover->isVisible())
+            m_commitPopover->dismiss();
+        else
+            showCommitPopover();
+    });
+    connect(m_commitPopover, &CommitPopover::opened, this, [this] { m_rail->setCommitTileActive(true); });
+    connect(m_commitPopover, &CommitPopover::dismissed, this, [this] {
+        m_rail->setCommitTileActive(false);
+        // The keyboard goes back to where the card was opened from; a change
+        // of layout or mode that closed the card moves it on afterwards.
+        m_rail->list()->setFocus(Qt::OtherFocusReason);
+    });
+
     // Every keybinding at once, now that the widgets they belong to exist.
     installShortcuts();
 
@@ -316,14 +346,16 @@ QList<MainWindow::Binding> MainWindow::bindings()
                     [this] { setDiffPaneVisible(!m_diffVisible); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Q)}, {}, tr("Quit"), {}, [this] { close(); }};
 
-    // The commit view. Ctrl+Return belongs to the Commit button itself.
-    // Space checks one file, so Ctrl+Shift+Space checks them all: a window
-    // shortcut, unlike lazygit's Ctrl+A, which is select-all in every text
-    // field and the diff. (Ctrl+Space is fcitx's input-method trigger.)
-    list << Binding{{}, QStringLiteral("CTRL + RETURN"), tr("Commit checked files"), commit, [this] {
-                        if (m_mode == CommitMode)
-                            m_commitPage->clickCommit();
-                    }}
+    // The commit view. Ctrl+Return is the window's, not the Commit button's:
+    // in the Mini layout the button is hidden and the keys open the commit
+    // popover instead (see commitKeys()). The keypad's Enter does the same,
+    // unlisted. Space checks one file, so Ctrl+Shift+Space checks them all: a
+    // window shortcut, unlike lazygit's Ctrl+A, which is select-all in every
+    // text field and the diff. (Ctrl+Space is fcitx's input-method trigger.)
+    list << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Return)}, QStringLiteral("CTRL + RETURN"),
+                    tr("Commit checked files"), tr("Commit view, Mini rail"), [this] { commitKeys(); }}
+         << unlisted({{QKeySequence(Qt::CTRL | Qt::Key_Enter)}, {}, tr("Commit checked files"),
+                      tr("Commit view, Mini rail"), [this] { commitKeys(); }})
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_G)}, {}, tr("Generate commit message"), commit,
                     [this] { generateMessage(); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A)}, {}, tr("Amend last commit"), commit,
@@ -419,8 +451,29 @@ void MainWindow::toggleAmend()
         m_commitPage->toggleAmend();
 }
 
+void MainWindow::commitKeys()
+{
+    if (m_commitPopover->isVisible())
+        m_commitPopover->commit();
+    else if (m_mode == CommitMode && m_layout == PaneLayout::Mini)
+        showCommitPopover();
+    else if (m_mode == CommitMode)
+        m_commitPage->clickCommit();
+}
+
+void MainWindow::showCommitPopover()
+{
+    if (m_layout != PaneLayout::Mini || m_mode != CommitMode)
+        return;
+    m_commitPopover->popup();
+}
+
 void MainWindow::setMode(Mode mode)
 {
+    // The card commits the changes list, which the history does not show.
+    if (mode != CommitMode)
+        m_commitPopover->dismiss();
+    m_rail->setCommitTileVisible(mode == CommitMode);
     m_mode = mode;
     m_stack->setCurrentWidget(mode == CommitMode ? static_cast<QWidget *>(m_commitPage) : m_history);
     m_topBar->setCommitMode(mode == CommitMode); // it blocks its own segments
@@ -447,6 +500,9 @@ void MainWindow::setMode(Mode mode)
 
 void MainWindow::setPaneLayout(PaneLayout layout, bool persist)
 {
+    // Before the rail it hangs from goes.
+    if (layout != PaneLayout::Mini)
+        m_commitPopover->dismiss();
     m_layout = layout;
     if (layout == PaneLayout::Mini && !m_diffVisible)
         setDiffPaneVisible(true, persist); // the rail only makes sense next to the diff
@@ -527,7 +583,7 @@ void MainWindow::showEvent(QShowEvent *event)
         // out yet, so its width comes from the window's, less the rail.
         const QMargins m = centralWidget()->layout()->contentsMargins();
         const int total = width() - m.left() - m.right()
-            - (m_rail->isVisibleTo(this) ? MiniRail::kWidth + kBodySpacing : 0);
+            - (m_rail->isVisibleTo(this) ? MiniRail::railWidth() + kBodySpacing : 0);
         const int rightMin = m_diffPane->isVisibleTo(this) ? 1 + m_splitter->handleWidth() : 0;
         const int wanted = QSettings().value(settings::kWindowLeftWidth, total * kLeftSharePercent / 100).toInt();
         const int left = qBound(1, wanted, qMax(1, total - rightMin));
@@ -550,6 +606,7 @@ void MainWindow::applyTheme()
     m_commitPage->applyTheme();
     m_history->applyTheme();
     m_rail->applyTheme();
+    m_commitPopover->applyTheme();
     // The layout toggle's glyph says which layout is on, so it is the window's
     // to put back after the top bar has re-fetched the glyphs it owns itself.
     applyPanes();
@@ -1135,6 +1192,8 @@ bool MainWindow::openRepository(const QString &path)
     if (root == m_repo->root())
         return true;
 
+    // The message and the controls on the card belong to the repository being left.
+    m_commitPopover->dismiss();
     m_initialSelection.clear();
     m_repo->setRoot(root); // RemoteSync follows through rootChanged
     // The amend state belonged to the old repository.

@@ -566,6 +566,8 @@ QString OmarchyTheme::buildStyleSheet() const
         {QStringLiteral("hair20"), border().name()},
         {QStringLiteral("disabled"), fill(0.45).name()},
         {QStringLiteral("caption"), QString::number(captionFont().pixelSize())},
+        // The design's regular 11 px small text, on the scale of ui::space().
+        {QStringLiteral("small"), QString::number(qRound(m_fontBase * 11 / 12.0))},
         // TickMenu paints its check mark at the right edge of the item, inside this padding.
         {QStringLiteral("tickpad"), QString::number(14 + TickMenu::tickReserve())},
         {QStringLiteral("family"), m_mono.family()},
@@ -697,6 +699,8 @@ QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 QStatusBar { background: %bg%; color: %dim%; border-top: 1px solid %hair%; }
 QStatusBar::item { border: none; }
 QLabel#sectionLabel, QLabel#dimLabel { color: %dim%; font-size: %caption%px; font-weight: bold; }
+/* The commit popover's hint: small and regular, unlike the bold captions. */
+QLabel#commitPopoverHint { color: %dim%; font-size: %small%px; font-weight: normal; }
 QLabel#captionLabel { font-size: %caption%px; font-weight: bold; }
 QLabel#bigLabel { font-size: %big%px; }
 QToolButton#keybindingsButton, QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
@@ -725,6 +729,8 @@ QLineEdit#promptField, QLineEdit#promptField:hover, QLineEdit#promptField:focus 
 }
 QLabel#promptIcon { color: %dim%; font-size: %icon%px; }
 QDialog#keybindingsPanel { background: %bg%; border: 2px solid %acc%; }
+/* The Mini layout's commit popover: an overlay framed like the other popups. */
+QFrame#commitPopover { background: %bg%; border: 2px solid %acc%; }
 QLineEdit#keybindingsSearch, QLineEdit#keybindingsSearch:hover, QLineEdit#keybindingsSearch:focus {
     background: transparent; border: none; padding: 0; font-size: %heading%px; font-weight: 500;
 }

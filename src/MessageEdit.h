@@ -47,15 +47,22 @@ signals:
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
     void insertFromMimeData(const QMimeData *source) override;
 
 private:
     void placeButton();
     void scheduleHeightCheck();
+    // Two boxes may edit one document (the commit page's and the Mini
+    // layout's popover), and its layout wraps at one width only: the one the
+    // box shown last has to be the one it wraps for.
+    void scheduleWrapClaim();
+    void claimWrapWidth();
 
     QToolButton *m_button;
     bool m_pasting = false;          // inside a paste-like edit
     bool m_pastePending = false;     // the queued check saw one
     bool m_heightCheckQueued = false;
+    bool m_wrapClaimQueued = false;
     int m_chars = 0;                 // characterCount() at the last check
 };

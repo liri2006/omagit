@@ -545,6 +545,33 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     setFilesView(viewFromKey(QSettings().value(settings::kWindowFilesView).toString(), nullptr), false);
 }
 
+QTextDocument *CommitPage::messageDocument() const
+{
+    return m_message->document();
+}
+
+CommitPage::CommitControls CommitPage::commitControls() const
+{
+    CommitControls c;
+    c.commitText = m_commitButton->text();
+    c.commitName = m_commitButton->accessibleName();
+    c.commitTip = m_commitButton->toolTip();
+    c.commitEnabled = m_commitButton->isEnabled();
+    c.amendChecked = m_amend->isChecked();
+    c.amendEnabled = m_amend->isEnabled();
+    c.amendTip = m_amend->toolTip();
+    c.checked = m_model->checkedCount();
+    c.shown = m_proxy->rowCount();
+    c.generateText = m_message->cornerButton()->text();
+    c.generateTip = m_message->cornerButton()->toolTip();
+    return c;
+}
+
+QString CommitPage::agentButtonTip()
+{
+    return tr("Which coding agent writes the commit message, with which model and reasoning level");
+}
+
 void CommitPage::setupAgent()
 {
     m_agent = new CommitMessageAgent(this);
@@ -561,7 +588,7 @@ void CommitPage::setupAgent()
     connect(m_spinner, &QTimer::timeout, this, [this] {
         const QStringList frames = spinnerFrames(m_message->font());
         m_spinnerFrame = (m_spinnerFrame + 1) % frames.size();
-        m_message->cornerButton()->setText(frames.at(m_spinnerFrame));
+        setGenerateFace(frames.at(m_spinnerFrame), m_message->cornerButton()->toolTip());
     });
 }
 
@@ -572,7 +599,7 @@ QLayout *CommitPage::buildMessageSection()
 {
     auto *messageRow = sectionHeaderRow(sectionLabel(tr("Message")));
     messageRow->addStretch();
-    m_agentButton = iconButton(kCog, tr("⚙"), tr("Which coding agent writes the commit message, with which model and reasoning level"));
+    m_agentButton = iconButton(kCog, tr("⚙"), agentButtonTip());
     connect(m_agentButton, &QToolButton::clicked, this, &CommitPage::showAgentMenu);
     messageRow->addWidget(m_agentButton, 0, Qt::AlignVCenter);
 
@@ -838,7 +865,9 @@ QLayout *CommitPage::buildActionBar()
     m_commitButton = new QPushButton;
     m_commitButton->setDefault(true);
     m_commitButton->setCursor(Qt::PointingHandCursor);
-    m_commitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
+    // No shortcut of its own: Ctrl+Enter is the window's, which presses this
+    // button, or opens the commit popover in the Mini layout where the button
+    // is hidden.
     connect(m_commitButton, &QPushButton::clicked, this, &CommitPage::commit);
     updateCommitButton(); // its wording counts the checked files
     m_actionBar->addWidget(m_commitButton);
@@ -1100,7 +1129,11 @@ void CommitPage::applyTheme()
         spacer.first->changeSize(space(spacer.second), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_changesTools->invalidate();
     applyTreeMetrics();
-    updateAmendLabel(); // the label's width moved with the font
+    // The glyphs of the generate and Commit buttons are looked up in the font
+    // of the moment; both go through the helpers that tell the popover.
+    if (!m_agent->running())
+        setGenerating(false);
+    updateCommitButton(); // also re-fits the amend label, whose width moved with the font
 }
 
 // The tree's own design pixels: the two narrow columns and the row height. It
@@ -1310,6 +1343,7 @@ void CommitPage::updateCommitButton()
                                : m_merging ? tr("Finish the merge: commit the checked (resolved) files together with what git merged on its own (Ctrl+Enter)")
                                            : tr("Commit the checked files (Ctrl+Enter)"));
     updateAmendLabel(); // a longer button leaves the checkbox less room
+    emit commitControlsChanged();
 }
 
 void CommitPage::onCheckedChanged()
@@ -1342,13 +1376,13 @@ void CommitPage::onAmendToggled(bool on)
     emit amendToggled(on); // the window refreshes and ticks the files of the commit
 }
 
-void CommitPage::commit()
+bool CommitPage::commit()
 {
     const QString message = m_message->toPlainText().trimmed();
     if (message.isEmpty()) {
         QMessageBox::warning(this, tr("Commit"), tr("Please enter a commit message."));
         m_message->setFocus();
-        return;
+        return false;
     }
     const QStringList paths = m_model->checkedPaths();
     const bool amend = m_amend->isChecked();
@@ -1362,7 +1396,7 @@ void CommitPage::commit()
                     .arg(published.join(QStringLiteral(", "))),
                 QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
             if (answer != QMessageBox::Yes)
-                return;
+                return false;
         }
     }
     QString error;
@@ -1370,7 +1404,7 @@ void CommitPage::commit()
     if (!ok) {
         QMessageBox::critical(this, amend ? tr("Amend failed") : tr("Commit failed"),
                               error.isEmpty() ? tr("git commit failed.") : error);
-        return;
+        return false;
     }
     const int count = m_model->checkedCount();
     const bool merged = m_merging;
@@ -1385,30 +1419,38 @@ void CommitPage::commit()
         emit statusMessage(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
         emit refreshRequested();
     }
+    return true;
 }
 
 // ---- Commit message from a coding agent -----------------------------------
 
 void CommitPage::setGenerating(bool on)
 {
-    QToolButton *b = m_message->cornerButton();
     const AgentChoice choice = CommitMessageAgent::savedChoice();
     const AgentSpec agent = CommitMessageAgent::spec(choice.agent);
     if (on) {
         m_spinnerFrame = 0;
-        b->setText(spinnerFrames(m_message->font()).first());
-        b->setToolTip(tr("%1 is writing the message… click to stop").arg(agent.name));
+        setGenerateFace(spinnerFrames(m_message->font()).first(),
+                        tr("%1 is writing the message… click to stop").arg(agent.name));
         m_spinner->start();
     } else {
         m_spinner->stop();
-        b->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
+        const QString sparkle = icon(kSparkle, QStringLiteral("✨")).trimmed();
         if (agent.isValid()) {
             const QString model = choice.model.isEmpty() ? tr("default model") : choice.model;
-            b->setToolTip(tr("Let %1 (%2) write a commit message for the checked changes (Ctrl+G)").arg(agent.name, model));
+            setGenerateFace(sparkle, tr("Let %1 (%2) write a commit message for the checked changes (Ctrl+G)").arg(agent.name, model));
         } else {
-            b->setToolTip(tr("Write a commit message with a coding agent — none is installed (Ctrl+G)"));
+            setGenerateFace(sparkle, tr("Write a commit message with a coding agent — none is installed (Ctrl+G)"));
         }
     }
+}
+
+void CommitPage::setGenerateFace(const QString &text, const QString &tip)
+{
+    QToolButton *b = m_message->cornerButton();
+    b->setText(text);
+    b->setToolTip(tip);
+    emit commitControlsChanged();
 }
 
 void CommitPage::generateMessage()
@@ -1472,6 +1514,11 @@ void CommitPage::onMessageGenerated(bool ok, const QString &text)
 // `codex debug models`; Codex has levels per model), or any model by name.
 void CommitPage::showAgentMenu()
 {
+    showAgentMenuAt(m_agentButton);
+}
+
+void CommitPage::showAgentMenuAt(QWidget *anchor)
+{
     TickMenu menu(this);
     menu.setToolTipsVisible(true);
     const AgentChoice choice = CommitMessageAgent::savedChoice();
@@ -1487,8 +1534,8 @@ void CommitPage::showAgentMenu()
         addModelSection(&menu, current, catalog, choice, save);
         addReasoningSection(&menu, catalog.effortsFor(choice.model), choice, save);
     }
-    // The cog sits at the right edge, so the menu hangs from its right corner.
-    menu.exec(m_agentButton->mapToGlobal(QPoint(m_agentButton->width() - menu.sizeHint().width(), m_agentButton->height())));
+    // A cog sits at the right edge of its row, so the menu hangs from its right corner.
+    menu.exec(anchor->mapToGlobal(QPoint(anchor->width() - menu.sizeHint().width(), anchor->height())));
 }
 
 void CommitPage::addAgentSection(QMenu *menu, const AgentChoice &choice,

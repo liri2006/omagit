@@ -24,7 +24,8 @@ history with a branch graph, and plugs into the Nautilus context menu as
   choice is remembered), and Ctrl+wheel or Ctrl+= / Ctrl+- zoom (Ctrl+0 resets).
   Drag the center divider to resize the diff panes;
   double-click it to restore an equal split.
-- Commit the checked files with a message (Ctrl+Enter). In the changes list, Space checks or
+- Commit the checked files with a message (Ctrl+Enter; in the Mini layout it opens the commit
+  popover first, and commits from it once it is open). In the changes list, Space checks or
   unchecks a file and Ctrl+Shift+Space all of them; Ctrl+Shift+A ticks *Amend last commit*, Ctrl+E opens
   the selected file in its own program, Ctrl+D discards its changes (after asking).
 - **Commit message from a coding agent**: the sparkle in the top right corner of the message
@@ -145,6 +146,16 @@ history with a branch graph, and plugs into the Nautilus context menu as
   pane. *Mini* shrinks it to a narrow rail of file miniatures (extension tile, status letter,
   dimmed when not part of the commit) so the diff gets the whole window; hovering a miniature
   pops up its name and folder right away, Space or Ctrl+click toggles it for the commit.
+  At the bottom of the rail, in the commit view, an accent **commit tile** carries the number
+  of checked files in its badge; clicking it (or Ctrl+Enter) opens the **commit popover**
+  beside it — MESSAGE with the agent cog and the sparkle, how many of the listed files are
+  selected, *Amend last commit* and a primary Commit. It is the commit page's own message
+  (the same text and undo history, the agent streaming into it) and its own Amend, agent
+  menu and commit, so nothing typed in one place is missing in the other. The card grows
+  upwards with its text, up to a third of the window. Escape, a second click on the tile, a
+  click elsewhere in the window, a successful commit, the history, the Docked layout and
+  another repository close it; the rail stays usable while it is open — selecting,
+  Ctrl+click, Space and Refresh leave it where it is, and so does F5.
   The second toggle, in the window's top right corner (Ctrl+Shift+B), hides the diff pane so
   the left section fills the window; double-clicking a file brings it back for that file
   (with the pane showing, a double-click opens the file in its own program instead).
@@ -186,6 +197,7 @@ omagit [path]            # any directory or file inside a repository (default: c
 
 `--history` opens the history view, `--amend` starts with *Amend last commit* ticked,
 `--mini` starts in the Mini layout, `--full` with the diff pane hidden, and `--no-fetch` leaves the network alone.
+`--mini --screenshot-menu commit` pictures the Mini layout with its commit popover open.
 
 The footer's info button or **Ctrl+K** opens the keybindings panel, styled after Omarchy's
 own Super+K menu: type to filter, ↑/↓ move the cursor, **Enter** runs the highlighted
@@ -194,6 +206,9 @@ its capitals): Ctrl+F fetch, Ctrl+P pull, Ctrl+Shift+P push, Ctrl+Shift+M merge,
 check all, Ctrl+Shift+A amend, Ctrl+E open, Ctrl+D discard, Ctrl+R recent repositories, Ctrl+S
 filter the history, Ctrl+W whitespace, Ctrl+L syntax colours, Ctrl+Shift+R (or F5) refresh,
 Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list.
+Ctrl+Enter commits in the commit view; the panel lists it for the *Commit view, Mini rail*,
+because in the Mini layout the same keys open the commit popover, and commit from it once
+it is open (the keypad's Enter works too). Plain Enter in a message box is a new line.
 
 Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 `--screenshot out.png` renders the window and exits (works with `QT_QPA_PLATFORM=offscreen`;
@@ -201,7 +216,8 @@ Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 945x612` gives the window a fixed size first, so a picture does not depend on the desktop it
 was taken on — two positive numbers, only together with `--screenshot`, and anything else is
 a usage error; `--screenshot-menu
-branch|repo|agent|keybindings|merge|login` opens that panel first and includes it in the picture, `--screenshot-keys
+branch|repo|agent|keybindings|merge|login|commit` opens that panel first and includes it in the picture
+(`commit` is the Mini layout's commit popover, so it goes with `--mini`; elsewhere it opens nothing), `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
 and `@changesTree` in that list focus the list on show, so the keys reach it),
@@ -247,7 +263,16 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
   file or a mode-only switch), the refresh sequence putting the selection and the scroll back,
   compact's three columns and the table's own widths coming back, the remembered and
   overridden choice, and all of it measured again after a live 12 → 16 → 12 text-size change
-  against a page built fresh at that size.
+  against a page built fresh at that size. The Mini layout's commit tile and popover have
+  theirs: the tile's visibility, geometry and badge (every way a check mark changes, and a
+  badge that listens to its source of the moment only), the rail's Ctrl+click focus, every
+  way the card opens and closes and what leaves it open (rail work, the wheel, Refresh, F5,
+  other windows and the modal warning of an empty message), its anchor beside the tile, the
+  one shared document with its undo stack and its wrapping at the width of the box on
+  screen, the mirrored controls and generate button, commits and amends against scratch
+  repositories, Ctrl+Enter in both layouts, the keybindings row, the screenshot flag run
+  through the built binary, and the rail and the card measured again after a live
+  12 → 16 → 12 change against a window built fresh.
 
 ## Layout
 
@@ -276,7 +301,8 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/Footer.*` | The footer bar: the repository path or the latest message, and the keybindings button |
 | `src/UiHelpers.*` | The shell's Nerd Font glyphs and the small widget factories the sections share (section and dim labels, tool / small / dropdown buttons, hairline, menu headers) |
 | `src/DesktopExec.*` | A file's default application, read from its desktop entry, and launching it detached |
-| `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips, the commit's hash in history mode, and Refresh |
+| `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips, the commit's hash in history mode, Refresh and the commit tile |
+| `src/CommitPopover.*` | The Mini layout's commit popover: an overlay beside the rail's commit tile sharing the commit page's message document, mirroring its Amend, generate and Commit controls, anchored to the tile and closed by Escape, outside presses and leaving the Mini commit view |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
 | `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |
 | `nautilus/omagit.py` | Nautilus "Open in Omagit" menu provider |

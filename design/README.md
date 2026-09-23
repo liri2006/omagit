@@ -24,7 +24,7 @@ tile widths (Wide, Half, Third, Eighth).
 | 2 | Commit page content | done |
 | 3 | Top bar restructure | done |
 | 4 | Files-view switcher | done |
-| 5 | Mini rail commit tile and popover | |
+| 5 | Mini rail commit tile and popover | done |
 | 6 | Agent settings popover | |
 | 7 | Stacked layouts | |
 
@@ -129,12 +129,41 @@ tile to 5 and the agent popover to 6. HistoryView stays a plain table.
 
 ### 5. Mini rail commit tile and popover
 
-Fixes a functional hole: Mini is a review layout and cannot commit today.
+Fixed a functional hole: Mini was a review layout and could not commit.
 
-- A 40 px accent commit tile at the end of the rail, badge = checked files.
-- A 360 px popover beside it: MESSAGE with the cog and sparkle, the
-  `n / 7 files selected` hint, Amend last commit, a primary Commit. Reuses the
-  commit page's parts, so it comes after phase 2.
+- The rail is `space(52)` wide now. Under Refresh, 8 px, a hairline, 8 px, then
+  the commit tile (`src/MiniRail.*`): one widget as wide as the rail and a
+  badge's rise taller than its 40 px accent square (fill 0.08, 0.18 on hover
+  or while the card is open, 0.22 pressed), so the circular badge of checked
+  files — the miniatures' own badge and painter, unscaled — overhangs the
+  square's corner inside it. The badge reads the check marks of whatever model
+  the rail shows, on its five structural notifications, and nothing else.
+  Commit view only; Ctrl+click on a miniature now also focuses the list.
+- `src/CommitPopover.*`: a 360 px card (`QFrame#commitPopover`, 2 px accent
+  frame) inside the window, 8 px right of the rail, its bottom on the tile's
+  bottom, clamped by the window's right margin. MESSAGE with the cog, the
+  message box (the page's own `QTextDocument`: one text, one undo stack, the
+  agent streaming into both), the regular 11 px `n / m files selected · Space
+  on a tile toggles it` hint (`%small%`, elided), a hairline, Amend and the
+  default Commit. The editor starts exactly `space(32)` under the card's top
+  and `space(10)` in from its left, grows with its text to a third of the
+  window, and the card grows upwards.
+- The page stays the owner: `commitControls()` is one snapshot of what its
+  buttons say (re-read on `commitControlsChanged()`), and the card's buttons
+  call its `commit()` (now telling whether it committed), `generateMessage()`,
+  `setAmendChecked()` and `showAgentMenuAt(anchor)`.
+- Ctrl+Enter is the window's (listed once, *Commit view, Mini rail*; the
+  keypad's Enter unlisted): commit from the open card, else open it in Mini,
+  else press the page's button. Escape, the tile again, a press elsewhere in
+  the window, a commit, the history, Docked and another repository close it;
+  the rail, the wheel, Refresh, F5 and other windows do not.
+  `--mini --screenshot-menu commit` pictures it.
+- A shared document wraps at the width of one box only: `MessageEdit` hands
+  the wrapping to the box on screen whenever it is shown or re-themed.
+
+Not in this phase: the agent settings popover (6), the stacked layouts and the
+Diff tab's rail (7), a miniature redesign, and any change to the Docked commit
+page's layout or to the history.
 
 ### 6. Agent settings popover
 
