@@ -23,7 +23,10 @@ constexpr auto kWindowDiffPane = QLatin1StringView("window/diffPane");
 // Width in pixels the left section is given the next time the splitter is
 // laid out; unset until the user drags it (int).
 constexpr auto kWindowLeftWidth = QLatin1StringView("window/leftWidth");
-// State of the commit page's message-over-changes splitter (QByteArray).
+// State of the commit page's changes-over-message splitter (QByteArray).
+constexpr auto kWindowCommitSplitter = QLatin1StringView("window/commitSplitter");
+// The same splitter's state from when the message stood over the changes; its
+// sizes are the wrong way round now, so it is only ever removed.
 constexpr auto kWindowCommitMessageSplitter = QLatin1StringView("window/commitMessageSplitter");
 // How the commit page lists its pending files: "compact", "tree" or "table"
 // (the default, and what an unknown value falls back to). Which collapsed

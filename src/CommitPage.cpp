@@ -485,41 +485,43 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     setupAgent();
 
     // The page is the two sections over the action bar: inside, a header row
-    // is 6 px above its content; the bar itself sits 8 px under the list and
-    // ends with the page, on the line the diff pane beside it ends on (the
+    // is 6 px above its content; the bar itself sits 8 px under the message
+    // and ends with the page, on the line the diff pane beside it ends on (the
     // user's choice over the design's 12 px under it; applyTheme() scales the
     // gaps).
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(actionBarGap());
-    auto *sections = new QVBoxLayout;
-    sections->setContentsMargins(0, 0, 0, 0);
-    sections->setSpacing(headerGap());
-    m_sectionsLayout = sections;
-    sections->addLayout(buildMessageSection());
 
-    // The message box and the changes list share the height; where the user
+    // The changes list over the message, so the message is written right
+    // above the Commit button; the two share the height, and where the user
     // last put the handle between them is remembered.
     m_messageSplitter = new QSplitter(Qt::Vertical);
     m_messageSplitter->setObjectName(QStringLiteral("commitMessageSplitter"));
     m_messageSplitter->setChildrenCollapsible(false);
-    m_messageSplitter->addWidget(m_message);
+    // The message still comes first for the keyboard, as it did when it stood
+    // on top: it has the keys when the window comes up, and Tab goes on to
+    // the list. The focus chain follows the order the two join the splitter,
+    // so the message joins first and the list goes in over it.
+    m_messageSplitter->addWidget(buildMessageSection());
     QWidget *const changes = buildChangesSection();
-    m_messageSplitter->addWidget(changes);
-    m_messageSplitter->setStretchFactor(0, 0);
-    m_messageSplitter->setStretchFactor(1, 1); // the changes list takes window resizes
+    m_messageSplitter->insertWidget(0, changes);
+    m_messageSplitter->setStretchFactor(0, 1); // the changes list takes window resizes
+    m_messageSplitter->setStretchFactor(1, 0);
     connect(m_messageSplitter, &QSplitter::splitterMoved, this, [this] {
         m_messageSizedByHand = true;
-        QSettings().setValue(settings::kWindowCommitMessageSplitter, m_messageSplitter->saveState());
+        QSettings().setValue(settings::kWindowCommitSplitter, m_messageSplitter->saveState());
     });
     connect(m_message, &MessageEdit::contentHeightChanged, this, &CommitPage::fitMessage);
-    sections->addWidget(m_messageSplitter, 1);
-    layout->addLayout(sections, 1);
+    layout->addWidget(m_messageSplitter, 1);
     layout->addLayout(buildActionBar());
     // The resting height of the window's classes until the user drags the
-    // handle; a height dragged in an earlier session comes back instead.
-    m_messageSplitter->setSizes({restingMessageHeight(), changes->sizeHint().height()});
-    m_messageSplitter->restoreState(QSettings().value(settings::kWindowCommitMessageSplitter).toByteArray());
+    // handle; a height dragged in an earlier session comes back instead. A
+    // state saved while the message stood over the list has its sizes the
+    // wrong way round, so it is dropped rather than read.
+    m_messageSplitter->setSizes({changes->sizeHint().height(), restingMessageHeight() + messageHeaderHeight()});
+    QSettings().remove(settings::kWindowCommitMessageSplitter);
+    m_messageSplitter->restoreState(QSettings().value(settings::kWindowCommitSplitter).toByteArray());
     // The handle is all that stands between the two sections, so it carries
     // the gap between them — after restoreState(), which brings the handle
     // width of whatever text size saved the state back with it.
@@ -584,27 +586,39 @@ void CommitPage::setupAgent()
     });
 }
 
-// The MESSAGE row stands on the diff pane's toolbar line beside it: centred
-// on a row of buttons, and the message box as far under that row as the diff
-// is under the toolbar, so the two boxes start on one line.
-QMargins CommitPage::messageRowMargins()
+// The CHANGES row stands on the diff pane's toolbar line beside it: centred
+// on a row of buttons, and the list as far under that row as the diff is
+// under the toolbar, so the two boxes start on one line.
+QMargins CommitPage::changesRowMargins()
 {
     const int top = (buttonHeight() - headerRowHeight()) / 2;
     const int bottom = buttonHeight() + barGap() - headerGap() - headerRowHeight() - top;
     return QMargins(0, top, space(kHeaderInset), qMax(0, bottom));
 }
 
-// MESSAGE, with the agent settings at the far right; the message box (which
-// the caller puts in the splitter) has the generate button in its top right
-// corner.
-QLayout *CommitPage::buildMessageSection()
+// What the message's pane holds over the box: the MESSAGE row and its gap.
+int CommitPage::messageHeaderHeight()
 {
+    return headerRowHeight() + headerGap();
+}
+
+// MESSAGE, with the agent settings at the far right, over the message box,
+// which has the generate button in its top right corner.
+QWidget *CommitPage::buildMessageSection()
+{
+    auto *section = new QWidget;
+    auto *sectionLayout = new QVBoxLayout(section);
+    sectionLayout->setContentsMargins(0, 0, 0, 0);
+    sectionLayout->setSpacing(headerGap());
+    m_messageLayout = sectionLayout;
+
     auto *messageRow = m_messageRow = sectionHeaderRow(sectionLabel(tr("Message")));
-    messageRow->setContentsMargins(messageRowMargins());
+    messageRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
     messageRow->addStretch();
     m_agentButton = iconButton(kCog, tr("⚙"), agentButtonTip());
     connect(m_agentButton, &QToolButton::clicked, this, [this] { requestAgentSettings(m_agentButton); });
     messageRow->addWidget(m_agentButton, 0, Qt::AlignVCenter);
+    sectionLayout->addLayout(messageRow);
 
     m_message = new MessageEdit;
     m_message->setPlaceholderText(tr("Commit message"));
@@ -613,7 +627,8 @@ QLayout *CommitPage::buildMessageSection()
     generate->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
     connect(generate, &QToolButton::clicked, this, &CommitPage::generateMessage);
     setGenerating(false);
-    return messageRow;
+    sectionLayout->addWidget(m_message, 1);
+    return section;
 }
 
 // A message taller than its box grows the box instead of scrolling, the way a
@@ -633,7 +648,8 @@ void CommitPage::fitMessage(MessageEdit::Edit edit)
     const QList<int> sizes = m_messageSplitter->sizes();
     if (total <= 0 || sizes.size() != 2)
         return; // not laid out yet; the box asks again once it is shown
-    const int current = sizes.at(0);
+    const int header = messageHeaderHeight();
+    const int current = sizes.at(1) - header;
     if (m_messageRestHeight < 0)
         m_messageRestHeight = current;
     const int content = m_message->contentHeight();
@@ -650,7 +666,7 @@ void CommitPage::fitMessage(MessageEdit::Edit edit)
         if (wanted <= current)
             return;
     }
-    m_messageSplitter->setSizes({wanted, sizes.at(1) + (current - wanted)});
+    m_messageSplitter->setSizes({sizes.at(0) + (current - wanted), wanted + header});
 }
 
 // CHANGES, whose title carries the count, with the unversioned-files eye and
@@ -665,7 +681,7 @@ QWidget *CommitPage::buildChangesSection()
 
     m_changesLabel = sectionLabel(tr("Changes"));
     auto *changesRow = m_changesRow = sectionHeaderRow(m_changesLabel);
-    changesRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
+    changesRow->setContentsMargins(changesRowMargins());
     changesRow->addStretch();
 
     m_model = new ChangesModel(this);
@@ -1136,10 +1152,10 @@ void CommitPage::applyTheme()
     // The gaps of the section grid are in scaled pixels, so a new text size
     // has to lay them out again.
     layout()->setSpacing(actionBarGap());
-    m_messageRow->setContentsMargins(messageRowMargins());
-    m_changesRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
-    m_sectionsLayout->setSpacing(headerGap());
+    m_changesRow->setContentsMargins(changesRowMargins());
+    m_messageRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
     m_changesLayout->setSpacing(headerGap());
+    m_messageLayout->setSpacing(headerGap());
     m_actionBar->setSpacing(actionBarStacked() ? space(kStackedActionGap) : sectionGap());
     m_optionsButton->setText(icon(kDotsHorizontal, QStringLiteral("…")).trimmed());
     applyRestingMessageHeight(); // in the pixels of the new text size
@@ -1243,21 +1259,22 @@ int CommitPage::restingMessageHeight() const
 // height is theirs, and so is the resting height fitMessage() measured on it.
 void CommitPage::applyRestingMessageHeight()
 {
-    if (m_messageSizedByHand || QSettings().contains(settings::kWindowCommitMessageSplitter))
+    if (m_messageSizedByHand || QSettings().contains(settings::kWindowCommitSplitter))
         return;
     const int rest = restingMessageHeight();
     m_messageRestHeight = rest;
+    const int header = messageHeaderHeight();
     const QList<int> sizes = m_messageSplitter->sizes();
     const int total = sizes.size() == 2 ? sizes.at(0) + sizes.at(1) : 0;
     if (total <= 0 || !m_messageSplitter->isVisible()) {
         // Not laid out yet: the changes list takes whatever the first layout
         // adds (its stretch), so the box comes out at `rest`.
-        m_messageSplitter->setSizes({rest, qMax(1, total - rest)});
+        m_messageSplitter->setSizes({qMax(1, total - rest - header), rest + header});
         return;
     }
     const int wanted = qMax(rest, qMin(m_message->contentHeight(), total / 2));
-    if (wanted != sizes.at(0))
-        m_messageSplitter->setSizes({wanted, qMax(1, total - wanted)});
+    if (wanted + header != sizes.at(1))
+        m_messageSplitter->setSizes({qMax(1, total - wanted - header), wanted + header});
 }
 
 // Stacked (or shallow): the options button, the design's 6 px, and Commit

@@ -187,13 +187,13 @@ signals:
 private:
     // The sections of the page, top to bottom, as the constructor builds them.
     void setupAgent();
-    QLayout *buildMessageSection();
-    // Gives the message pane the height its text needs: growing up to half
+    QWidget *buildChangesSection();
+    QWidget *buildMessageSection();
+    // Gives the message box the height its text needs: growing up to half
     // the splitter, shrinking down to its resting height once text is
     // deleted. Typing does not undo a size the user dragged; pasted or
     // deleted text does.
     void fitMessage(MessageEdit::Edit edit);
-    QWidget *buildChangesSection();
     // The bottom row: Amend at the left, the Commit button at the right.
     QLayout *buildActionBar();
     // "Amend last commit" where the row has the width for it, "Amend" where
@@ -245,7 +245,8 @@ private:
     int restingMessageHeight() const;
     void applyRestingMessageHeight();
     void fillOptionsMenu();
-    static QMargins messageRowMargins();
+    static QMargins changesRowMargins();
+    static int messageHeaderHeight();
     void setGenerating(bool on);
     // The one place the generate button's face changes, so the text and the
     // tooltip are both current whenever commitControlsChanged() goes out.
@@ -280,12 +281,12 @@ private:
     // puts it back — neither is a new file to reveal.
     QString m_syncedCanonicalPath;
     MessageEdit *m_message;      // the commit message, with the generate button in its corner
-    QSplitter *m_messageSplitter; // the message over the changes list, the heights it grows in
-    QLayout *m_sectionsLayout;    // MESSAGE and CHANGES, over the action bar
+    QSplitter *m_messageSplitter; // the changes list over the message, the heights it grows in
     QLayout *m_changesLayout;     // CHANGES: its header row over the list, a scaled gap apart
-    QHBoxLayout *m_messageRow;    // the MESSAGE and CHANGES header rows, their buttons
-    QHBoxLayout *m_changesRow;    // kept 2 px inside the page's right edge
-    QHBoxLayout *m_actionBar;     // the bottom row, a scaled gap under the list
+    QLayout *m_messageLayout;     // MESSAGE: its header row over the box, the same gap apart
+    QHBoxLayout *m_changesRow;    // the CHANGES and MESSAGE header rows, their buttons
+    QHBoxLayout *m_messageRow;    // kept 2 px inside the page's right edge
+    QHBoxLayout *m_actionBar;     // the bottom row, a scaled gap under the message
     QSpacerItem *m_actionStretch = nullptr; // between Amend and Commit on the ordinary row
     QToolButton *m_optionsButton = nullptr; // stacked only
     QMenu *m_optionsMenu = nullptr;
@@ -293,7 +294,7 @@ private:
     WidthClass m_widthClass = WidthClass::Wide;
     bool m_shallow = false;
     bool m_messageSizedByHand = false; // the user dragged the handle this session
-    int m_messageRestHeight = -1;      // the pane's height before any text grew it
+    int m_messageRestHeight = -1;      // the box's height before any text grew it
     QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning
     CommitMessageAgent *m_agent;
     QTimer *m_spinner;           // animates the generate button while the agent runs

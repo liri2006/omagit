@@ -800,9 +800,14 @@ void AgentPopover::dismiss()
 {
     if (!isVisible())
         return;
+    // The keyboard goes back where it came from, unless whatever closed the
+    // card has taken it already: a press on the message box gives the box
+    // the focus before the press reaches eventFilter().
+    QWidget *const focus = QApplication::focusWidget();
+    const bool focusOnCard = !focus || focus == this || isAncestorOf(focus);
     hide();
     qApp->removeEventFilter(this);
-    if (m_returnFocus && m_returnFocus->isVisible())
+    if (focusOnCard && m_returnFocus && m_returnFocus->isVisible())
         m_returnFocus->setFocus(Qt::OtherFocusReason);
     m_returnFocus = nullptr;
     emit dismissed();
@@ -839,8 +844,10 @@ void AgentPopover::scheduleLayout()
 // At most 360 wide and never wider than the window's margins allow. From a
 // cog on the overlay it is beside: 8 right of that overlay, level with its
 // top, as long as that leaves it 240. Otherwise its right edge on the cog's
-// right edge, as far left as the left margin lets it go, 6 under the cog.
-// Either way moved up when the window is too short for it.
+// right edge, as far left as the left margin lets it go, 6 under the cog —
+// or 6 over it, where the window has no room under it (the commit page's cog
+// stands low, over the message box). Either way moved up when the window is
+// too short for it.
 void AgentPopover::place()
 {
     QWidget *host = parentWidget();
@@ -853,6 +860,7 @@ void AgentPopover::place()
     int width = qMax(1, qMin(space(kMaxWidth), host->width() - margins.left() - margins.right()));
     int left = qMax(margins.left(), cog.x() + cog.width() - width);
     int top = cog.y() + cog.height() + space(kCogGap);
+    bool underCog = true;
     // The overlay is a child of the host too, so its geometry is in the
     // host's coordinates already.
     if (m_beside && m_beside->isVisible() && m_beside->isAncestorOf(m_anchor)) {
@@ -863,6 +871,7 @@ void AgentPopover::place()
             left = besideLeft;
             width = besideWidth;
             top = beside.y();
+            underCog = false;
         }
     }
     if (this->width() != width)
@@ -870,6 +879,8 @@ void AgentPopover::place()
     m_layout->activate();
     const int height = sizeHint().height();
     const int bottom = host->height() - margins.bottom();
+    if (underCog && top + height > bottom && cog.y() - space(kCogGap) - height >= margins.top())
+        top = cog.y() - space(kCogGap) - height;
     if (top + height > bottom)
         top = qMax(margins.top(), bottom - height);
     setGeometry(left, top, width, height);

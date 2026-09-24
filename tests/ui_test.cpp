@@ -408,12 +408,12 @@ CommitFixture nestedFixture()
 
 // What a commit page measures in scaled pixels, spelled out so a mismatch
 // names itself: the design's checkbox column, the gaps of the section grid,
-// the handle the message and the list share, the dividers of the CHANGES row
+// the handle the list and the message share, the dividers of the CHANGES row
 // and the gaps between its buttons, and the tree's own two narrow columns.
 QStringList pageMetrics(CommitPage *page)
 {
     auto *splitter = page->findChild<QSplitter *>(QStringLiteral("commitMessageSplitter"));
-    QWidget *changes = splitter ? splitter->widget(1) : nullptr;
+    QWidget *changes = splitter ? splitter->widget(0) : nullptr;
     // The children a single pixel wide are the two dividers of the CHANGES
     // row (switcher | eye | Refresh); their heights are the page's to set.
     QStringList dividers;
@@ -3671,7 +3671,7 @@ esac
         QCOMPARE(diff.right() + 1, width - ui::space(12));
         QCOMPARE(diff.y(), page.y());
         // The diff toolbar keeps that gap above and below it, and the
-        // message box starts on the diff's line, MESSAGE centred on the
+        // changes list starts on the diff's line, CHANGES centred on the
         // toolbar's row.
         QToolButton *prev = nullptr;
         for (QToolButton *b : f.window->findChild<DiffPane *>()->findChildren<QToolButton *>())
@@ -3682,16 +3682,20 @@ esac
         const QRect diffView = rectIn(f.window->findChild<DiffPane *>()->view(), host);
         QCOMPARE(prevRect.y(), diff.y());
         QCOMPARE(diffView.y(), prevRect.bottom() + 1 + ui::barGap());
-        auto *message = f.page()->findChild<MessageEdit *>();
-        QVERIFY(message);
-        QCOMPARE(rectIn(message, host).y(), diffView.y());
-        QVERIFY(qAbs(rectIn(f.page()->agentButton(), host).center().y() - prevRect.center().y()) <= 1);
+        QCOMPARE(rectIn(f.page()->table(), host).y(), diffView.y());
+        QVERIFY(qAbs(rectIn(f.page()->tableButton(), host).center().y() - prevRect.center().y()) <= 1);
         // The splitter's gap is the design's 12.
         QCOMPARE(diff.x(), page.right() + 1 + ui::space(12));
-        // The action bar ends with the page, on the diff pane's last line;
-        // the header rows' buttons stand 2 inside its right edge.
+        // The message box sits on the action bar, which ends with the page,
+        // on the diff pane's last line; the header rows' buttons stand 2
+        // inside its right edge.
         auto *commit = f.page()->findChild<QPushButton *>();
         QVERIFY(commit);
+        auto *message = f.page()->findChild<MessageEdit *>();
+        QVERIFY(message);
+        QCOMPARE(rectIn(message, host).bottom() + 1 + ui::space(8), rectIn(commit, host).y());
+        // Under the list, it still has the keyboard when the window comes up.
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(message));
         QCOMPARE(rectIn(commit, host).bottom(), page.bottom());
         QCOMPARE(rectIn(commit, host).bottom(), diff.bottom());
         QCOMPARE(rectIn(f.page()->agentButton(), host).right() + 1, page.right() + 1 - ui::space(2));
@@ -3850,7 +3854,7 @@ esac
             return;
         check(ui::space(1400), ui::space(800), ui::space(560), ui::space(96), false, false);
         QVERIFY(!QSettings().contains(settings::kWindowLeftWidth));
-        QVERIFY(!QSettings().contains(settings::kWindowCommitMessageSplitter));
+        QVERIFY(!QSettings().contains(settings::kWindowCommitSplitter));
 
         // A width the user dragged wins over the class's.
         QSplitter *splitter = bodySplitter(f);
@@ -6506,10 +6510,12 @@ esac
         QVERIFY(!f.popover()->isVisible());
     }
 
-    // Under the cog, its right edge on the cog's, 360 wide where there is
+    // Over the cog, which stands low on the commit page (right over the
+    // message box), its right edge on the cog's, 360 wide where there is
     // room, clamped by the window's margins where there is not, moved up in a
-    // short window, and placed again when its height changes.
-    void theAgentCardHangsUnderItsCog()
+    // short window, and placed again when its height changes. Under a cog
+    // with room below it: theAgentCardSitsBesideTheCommitCard().
+    void theAgentCardStandsOverItsCog()
     {
         WindowFixture f = mainWindow();
         QVERIFY(f.window);
@@ -6533,10 +6539,10 @@ esac
         QVERIFY(card->isVisible());
         QCOMPARE(card->width(), ui::space(360));
         QCOMPARE(card->geometry().right(), cogRect().right());
-        QCOMPARE(card->y(), cogRect().bottom() + 1 + ui::space(6));
+        QCOMPARE(card->geometry().bottom() + 1 + ui::space(6), cogRect().y());
         QCOMPARE(card->height(), card->sizeHint().height());
 
-        // Another agent, another height; the top stays under the cog.
+        // Another agent, another height; the bottom stays over the cog.
         const int claudeHeight = card->height();
         QVERIFY(card->agentPicker());
         QCOMPARE(card->agentPicker()->segments().size(), 2);
@@ -6548,7 +6554,7 @@ esac
         QCOMPARE(card->levelTrack()->labels().size(), 7);
         QVERIFY(card->height() != claudeHeight);
         QCOMPARE(card->height(), card->sizeHint().height());
-        QCOMPARE(card->y(), cogRect().bottom() + 1 + ui::space(6));
+        QCOMPARE(card->geometry().bottom() + 1 + ui::space(6), cogRect().y());
         QCOMPARE(card->geometry().right(), cogRect().right());
         // A model with fewer levels, a shorter track; none, no track at all.
         QTest::mouseClick(modelRow(card, QStringLiteral("GPT-5.5")), Qt::LeftButton);
@@ -6582,7 +6588,7 @@ esac
 
     // Mini, from the commit card's cog: beside that card, 8 to its right and
     // level with it, never over it; where the room right of it is under 240,
-    // under the cog again.
+    // under the cog again, or over it where the window has no room under it.
     void theAgentCardSitsBesideTheCommitCard()
     {
         QTemporaryDir dir, home;
@@ -6624,8 +6630,9 @@ esac
                 QCOMPARE(card->height(), card->sizeHint().height());
 
                 // Narrower, until the room right of the commit card is under
-                // 240: under the cog, its right edge on the cog's, and moved
-                // up as far as the window's bottom margin asks.
+                // 240: under the cog where it fits, over it where that does,
+                // its right edge on the cog's, and otherwise moved up as far
+                // as the window's bottom margin asks.
                 f.window->setMinimumSize(1, 1);
                 const auto room = [&] {
                     return host->width() - margins.right() - (commitCard->geometry().right() + 1 + ui::space(8));
@@ -6639,8 +6646,11 @@ esac
                 QVERIFY(card->isVisible());
                 const QRect cogRect = rectIn(cog, host);
                 const int under = cogRect.bottom() + 1 + ui::space(6);
+                const int over = cogRect.y() - ui::space(6) - card->height();
                 const int bottom = host->height() - margins.bottom();
-                QTRY_COMPARE(card->y(), under + card->height() > bottom ? qMax(margins.top(), bottom - card->height()) : under);
+                QTRY_COMPARE(card->y(), under + card->height() <= bottom ? under
+                                        : over >= margins.top()           ? over
+                                                                          : qMax(margins.top(), bottom - card->height()));
                 QCOMPARE(card->x(), qMax(margins.left(), cogRect.right() + 1 - card->width()));
                 QCOMPARE(card->width(), qMin(ui::space(360), host->width() - margins.left() - margins.right()));
             }
@@ -6724,7 +6734,9 @@ esac
         f.window->setPaneLayout(PaneLayout::Docked);
         settle();
 
-        // A press on the message box: closed, and the box has the keyboard.
+        // A press on the message box: closed, and the box has the keyboard —
+        // not the list, which had it when the card opened.
+        f.page()->table()->setFocus();
         QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
         settle();
         QVERIFY(card->isVisible());
@@ -7188,12 +7200,12 @@ esac
         auto *message = page.findChild<MessageEdit *>();
         QVERIFY(splitter);
         QVERIFY(message);
-        // The section grid: the handle between the message and the changes is
+        // The section grid: the handle between the changes and the message is
         // the 16 px the design puts between two sections (the stylesheet's
         // 8 px handle must not win), and the header rows carry 24 px squares.
         QCOMPARE(splitter->handleWidth(), ui::sectionGap());
         QCOMPARE(splitter->handle(1)->height(), ui::sectionGap());
-        // ...and the action bar hangs 8 px under the list, a gap of its own.
+        // ...and the action bar hangs 8 px under the message, a gap of its own.
         QCOMPARE(page.layout()->spacing(), ui::space(8));
         QList<QToolButton *> squares = page.findChildren<QToolButton *>(QStringLiteral("iconButton"));
         // the agent cog, the three files-view buttons, the unversioned eye and
@@ -7203,10 +7215,14 @@ esac
         for (const QToolButton *square : squares)
             QCOMPARE(square->size(), QSize(ui::space(24), ui::space(24)));
 
-        const auto pane = [splitter] { return splitter->sizes().at(0); };
+        // The message's pane is the MESSAGE row and its gap over the box;
+        // what follows measures the box.
+        const int header = ui::headerRowHeight() + ui::headerGap();
+        const auto pane = [splitter, header] { return splitter->sizes().at(1) - header; };
         const int initial = pane();
         const int total = splitter->sizes().at(0) + splitter->sizes().at(1);
         QVERIFY(initial > 0);
+        QCOMPARE(message->height(), initial);
 
         // A message that fits is left alone.
         message->setPlainText(QStringLiteral("a one line subject"));
@@ -7219,10 +7235,11 @@ esac
         const int grown = pane();
         QVERIFY2(grown > initial, qPrintable(QStringLiteral("pane stayed at %1").arg(grown)));
         QCOMPARE(grown, message->contentHeight());
+        QCOMPARE(message->height(), grown);
         QVERIFY(grown <= splitter->height() / 2);
         // The room came out of the changes list, not out of thin air.
         QCOMPARE(splitter->sizes().at(0) + splitter->sizes().at(1), total);
-        QCOMPARE(splitter->sizes().at(1), total - grown);
+        QCOMPARE(splitter->sizes().at(0), total - grown - header);
 
         // ...and gives it back when the message is cut short (to the height
         // the box had at the start, not to the one line the text needs).
@@ -7237,13 +7254,13 @@ esac
         QVERIFY(message->contentHeight() > pane()); // it really was capped
 
         // Growing is not the user's choice, so it is not remembered.
-        QVERIFY(!QSettings().contains(settings::kWindowCommitMessageSplitter));
+        QVERIFY(!QSettings().contains(settings::kWindowCommitSplitter));
 
         // Once the user has dragged the handle, typing leaves the size alone
         // (a box can be made smaller than its text)...
-        const auto dragTo = [splitter, total](int height) {
-            splitter->setSizes({height, total - height});
-            emit splitter->splitterMoved(height, 1);
+        const auto dragTo = [splitter, total, header](int height) {
+            splitter->setSizes({total - height - header, height + header});
+            emit splitter->splitterMoved(total - height - header, 1);
         };
         message->setPlainText(QStringLiteral("short"));
         settle(); // the cut lands before the drag, as it would for a person
