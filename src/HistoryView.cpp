@@ -35,10 +35,11 @@ using namespace ui;
 namespace {
 
 // screens.js historyPage(), in the pixels of a 12 px base font: the filter
-// row, 8 px, the commit list; 10 px between it, the details card and the
-// files table; and the row with the count of commits, right under the last
-// of them.
-constexpr int kFilterGap = 8, kAllRefsGap = 8, kRefreshGap = 6;
+// row, then the commit list as far below it as the diff sits below the diff
+// pane's buttons (barGap(), not the design's 8 px); 10 px between the list,
+// the details card and the files table; and the row with the count of
+// commits, right under the last of them.
+constexpr int kAllRefsGap = 8, kRefreshGap = 6;
 constexpr int kSectionGap = 10;
 // The card is 150 tall (132 stacked), the files table 110.
 constexpr int kDetailsHeight = 150, kStackedDetailsHeight = 132, kFilesHeight = 110;
@@ -638,7 +639,7 @@ void HistoryView::applyTheme()
     m_table->verticalHeader()->setDefaultSectionSize(tableRowHeight());
     m_table->horizontalHeader()->setFixedHeight(tableHeaderHeight());
     static_cast<FilterField *>(m_filter)->applyTheme();
-    m_filterRow->setContentsMargins(0, 0, 0, space(kFilterGap));
+    m_filterRow->setContentsMargins(0, 0, 0, barGap());
     m_allRefsGap->changeSize(space(kAllRefsGap), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_refreshGap->changeSize(space(kRefreshGap), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_filterRow->invalidate();
