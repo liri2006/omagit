@@ -4,6 +4,7 @@
 
 #include <QAbstractTableModel>
 #include <QHash>
+#include <QColor>
 #include <QHeaderView>
 #include <QList>
 #include <QObject>
@@ -13,6 +14,7 @@
 
 class QAbstractItemDelegate;
 class QAbstractItemView;
+class QPainter;
 class QTableView;
 
 // The list of changes in the commit dialog. Also used, without
@@ -46,8 +48,13 @@ public:
     static int statusRank(FileChange::Kind kind);
     // The single letter a status is reduced to where there is no room for its
     // name: the Mini rail's badge and the status pill of the tree and compact
-    // presentations. Untracked and unknown are both "?".
+    // presentations. Untracked is "U", a status git did not name "?".
     static QChar statusLetter(FileChange::Kind kind);
+    // The colour a status is written in, in every list and in the diff
+    // pane's summary (modified blue, added purple, ...).
+    static QColor statusColor(FileChange::Kind kind);
+    // The status spelled out in its colour, the first line of a file's tip.
+    static QString statusHtml(const FileChange &change);
 
     explicit ChangesModel(QObject *parent = nullptr);
 
@@ -92,6 +99,17 @@ private:
     bool m_checkable = true;
 };
 
+// The status colour of a row of a list over a ChangesModel, as the model
+// gives it (the plain foreground where it gives none).
+QColor statusColour(const QModelIndex &index);
+
+// The kit's status pill (kit.js statusPill()): a 16 px square with square
+// corners, the row's status colour at 18 % for the fill and the status letter
+// in it, centred in `cell`. A directory row of the tree has no status of its
+// own and gets none. The narrow status column of the compact table and the
+// tree, and of a commit's files in the history, is this.
+void paintStatusPill(QPainter *painter, const QRect &cell, const QModelIndex &index);
+
 // The header of a changes list, table or tree. Its first section holds the
 // label-less check-all box of a checkable list — the model keeps its state —
 // and answers a click with it instead of sorting by a column of checkboxes.
@@ -106,6 +124,9 @@ public:
     // and the proxy every other view shares are left untouched; an empty
     // text hands the section back to them.
     void setSectionText(int section, const QString &text);
+    // What the section says on screen: this presentation's own text where it
+    // has one, the model's otherwise.
+    QString sectionText(int section) const;
 
 protected:
     void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override;
@@ -147,6 +168,17 @@ public:
     explicit ChangesTableSetup(QTableView *table);
     void applyTheme();
 
+    // The column that takes the leftover width outside the compact
+    // presentation, and the least it may be given before the table scrolls
+    // sideways instead: Path and ui::kMinStretchColumn unless the caller says
+    // otherwise (a commit's files in the history stretch their Name, in a
+    // section far narrower than the commit page's). Fits it at once.
+    void setStretchColumn(int column, int floor);
+    // Whichever column of the presentation on show takes the leftover width;
+    // the table's own resizes call it, and a caller that has moved the other
+    // columns calls it again.
+    void fitStretchColumn();
+
     // The compact presentation: the same table, its columns down to the
     // checkbox, the file name and a narrow status pill headed "St", with Name
     // taking whatever is left. The painting is the caller's — the commit page
@@ -159,8 +191,6 @@ public:
 
 private:
     bool hasChecks() const;
-    // Whichever column of the presentation on show takes the leftover width.
-    void fitStretchColumn();
     void enterCompact();
     void leaveCompact();
     // The design's widths, in the scaled pixels of the text size of the moment.
@@ -172,4 +202,6 @@ private:
     QList<int> m_savedWidths;                         // the table's widths before compact
     QList<QHeaderView::ResizeMode> m_savedModes;
     bool m_compact = false;
+    int m_stretchColumn;
+    int m_stretchFloor;
 };

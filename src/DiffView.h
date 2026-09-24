@@ -32,6 +32,10 @@ public:
                      const QString &leftLabel, const QString &rightLabel);
     void clear(const QString &message = QString());
     const DiffDocument &document() const { return m_doc; }
+    // Whether the one-pane header writes the subtitle (status, +/−) at its
+    // right: not while the toolbar above says the same.
+    void setSubtitleShown(bool shown);
+    bool subtitleShown() const { return m_subtitleShown; }
 
     // Where the user is in the document: the scroll offsets and the current
     // change. A refresh that shows the same file again restores it so the
@@ -147,6 +151,7 @@ private:
     QVector<LineLayout> m_lineLayouts; // parallel to m_doc.lines
     QString m_title;
     QString m_subtitle;
+    bool m_subtitleShown = true;
     QString m_leftLabel;
     QString m_rightLabel;
     QString m_emptyMessage;

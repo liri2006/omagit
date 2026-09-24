@@ -1,11 +1,25 @@
 #include "BranchMenu.h"
+#include "OmarchyTheme.h"
 #include "UiHelpers.h"
 
 #include <QAction>
+#include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QTimer>
 #include <QWidgetAction>
+
+namespace {
+// The design's menu rows (screens.js menuCard()), in 12 px-base pixels: the
+// 14 px glyph 10 px into the row, the name 22 px after it (the stylesheet's
+// BranchMenu::item padding), and the menu 300 px wide, 12 px clear of the
+// window's edges where the window is narrower.
+constexpr int kGlyphX = 10, kGlyphBox = 14;
+constexpr int kWidth = 300, kWindowClearance = 12;
+const char *const kGlyphProperty = "branchGlyph";
+} // namespace
 
 #include <algorithm>
 
@@ -146,6 +160,7 @@ void BranchMenu::setBranches(const BranchList &branches, const QString &checked,
     // Every entry is checkable so the tick can mark the current branch.
     auto add = [this, &checked, &disabled, &tip](const QString &name, bool isRemote) {
         QAction *a = addAction(name);
+        a->setProperty(kGlyphProperty, isRemote ? ui::kCloudOutline : ui::kBranch);
         a->setCheckable(true);
         a->setChecked(name == checked);
         a->setEnabled(name != disabled);
@@ -172,13 +187,50 @@ void BranchMenu::setBranches(const BranchList &branches, const QString &checked,
     m_filter->setNoMatch(noMatch);
 }
 
-void BranchMenu::popupAt(QWidget *anchor, bool above)
+void BranchMenu::popupAt(QWidget *anchor, bool above, QWidget *bar)
 {
     // The field has the keyboard from the start, so typing filters right away.
     // Only once the menu is up: QMenu takes the focus for itself when it opens.
     QTimer::singleShot(0, m_search, [this] { m_search->setFocus(); });
-    // At least as wide as the button it hangs from, so the two line up.
-    setMinimumWidth(qMax(minimumWidth(), anchor->width()));
+    // The design's width where the window has the room, at least as wide as
+    // the button it hangs from (so the two line up) and never wider than the
+    // window, less its margins.
+    const int room = anchor->window()->width() - 2 * ui::space(kWindowClearance);
+    setMinimumWidth(qMax(anchor->width(), qMin(ui::space(kWidth), room)));
+    setMaximumWidth(qMax(anchor->width(), room));
     const int y = above ? -sizeHint().height() : anchor->height();
-    exec(anchor->mapToGlobal(QPoint(0, y)));
+    QPoint at = anchor->mapToGlobal(QPoint(0, y));
+    if (bar && !above)
+        at.setY(ui::popupTop(bar));
+    exec(at);
+}
+
+void BranchMenu::paintEvent(QPaintEvent *event)
+{
+    TickMenu::paintEvent(event);
+    const OmarchyTheme *theme = OmarchyTheme::instance();
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setFont(theme->uiFont());
+    const QList<QAction *> all = actions();
+    for (QAction *a : all) {
+        const QVariant code = a->property(kGlyphProperty);
+        if (!code.isValid() || !a->isVisible())
+            continue;
+        const QRect r = actionGeometry(a);
+        if (r.isNull() || !event->rect().intersects(r))
+            continue;
+        const QString glyph = theme->glyph(code.toUInt());
+        if (glyph.isEmpty())
+            continue;
+        // The entry's own colour: the accent under the pointer and on the
+        // current branch, the disabled pen on the other side of a merge.
+        p.setPen(!a->isEnabled()                              ? theme->fill(0.45)
+                 : a == activeAction() || a->isChecked()      ? theme->accent()
+                                                              : theme->text());
+        // Centred by its ink in the design's 14 px box (TextDontClip's
+        // concern: the ink overhangs the advance).
+        const QRectF box(r.left() + ui::space(kGlyphX), r.top(), ui::space(kGlyphBox), r.height());
+        p.drawText(box.center() - ui::inkRect(p.font(), glyph).center(), glyph);
+    }
 }

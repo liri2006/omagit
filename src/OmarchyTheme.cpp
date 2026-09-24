@@ -300,7 +300,9 @@ QFont OmarchyTheme::captionFont() const
     QFont f = m_mono;
     f.setPixelSize(qMax(8, qRound(m_fontBase * 0.833)));
     f.setBold(true);
-    f.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
+    // kit.js sectionLabel(): 0.8 px between the letters at the 10 px caption,
+    // on the same scale as the size.
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 0.8 * m_fontBase / 12.0);
     return f;
 }
 
@@ -570,6 +572,9 @@ QString OmarchyTheme::buildStyleSheet() const
         {QStringLiteral("small"), QString::number(qRound(m_fontBase * 11 / 12.0))},
         // TickMenu paints its check mark at the right edge of the item, inside this padding.
         {QStringLiteral("tickpad"), QString::number(14 + TickMenu::tickReserve())},
+        // The branch menu's names, 22 px after the glyph BranchMenu paints
+        // 10 px into the row: 32 px in, on the scale of ui::space().
+        {QStringLiteral("glyphpad"), QString::number(qMax(1, qRound(m_fontBase * 32 / 12.0)))},
         {QStringLiteral("family"), m_mono.family()},
         {QStringLiteral("base"), QString::number(m_fontBase)},
         {QStringLiteral("heading"), QString::number(headingFont().pixelSize())},
@@ -578,6 +583,8 @@ QString OmarchyTheme::buildStyleSheet() const
         // Air above and below the commit page's 16 px splitter handle, so
         // only a 4 px strip in its middle lights up under the pointer.
         {QStringLiteral("handlepad"), QString::number(qMax(1, qRound(m_fontBase * 6 / 12.0)))},
+        // The same for the history's 10 px handles: 3 px either side.
+        {QStringLiteral("historypad"), QString::number(qMax(1, qRound(m_fontBase * 3 / 12.0)))},
         {QStringLiteral("big"), QString::number(qRound(m_fontBase * 1.5))},
     };
 
@@ -643,16 +650,11 @@ QPushButton:default:hover { background: %fill18%; }
 QPushButton:disabled, QToolButton:disabled { color: %disabled%; background: transparent; border-color: %hair20%; }
 QPushButton:focus, QToolButton:focus { border-color: %bd25%; background: %fill8%; }
 QToolButton::menu-indicator { image: none; width: 0; height: 0; }
-/* The icon form of the diff pane's Prev, Next and view-option buttons and of
-   the top bar's sync buttons and More (ui::setIconForm()): a fixed 28 px
-   square sideways, the glyph centred by the button's own text alignment, and
-   the text buttons' vertical padding, so both forms of a button are one
-   height. */
-QToolButton[iconForm="true"] { padding: 5px 0; }
 /* The icon squares of the chrome: the glyph is centred by the fixed size
    ui::iconButton() gives them, so all a rule has to drop is the padding.
-   A toolbar one is only fixed sideways and keeps the vertical padding of
-   the text buttons it stands beside, so the row comes out one height.
+   A toolbar one is only fixed sideways and asks for the kit's 28 px height
+   (ui::KitButton, which lays out the text buttons beside it and their icon
+   form itself); its vertical padding centres the glyph in that height.
    Ghost ones carry no chrome of their own until the pointer is on them. */
 QToolButton#iconButton, QToolButton#ghostButton { padding: 0; }
 QToolButton#iconButton[toolbar="true"] { padding: 5px 0; }
@@ -661,13 +663,19 @@ QToolButton#iconButton[ghost="true"]:hover, QToolButton#ghostButton:hover, QTool
 QToolButton#iconButton[ghost="true"]:pressed, QToolButton#ghostButton:pressed { background: %fill22%; border-color: %bd25%; }
 QToolButton#iconButton[ghost="true"]:checked { background: %fill18%; color: %acc%; border-color: %fill18%; }
 QToolButton#iconButton[ghost="true"]:disabled { background: transparent; border-color: transparent; }
-QToolButton#cornerButton { background: transparent; border: 1px solid transparent; padding: 1px 3px; color: %dim%; }
-QToolButton#cornerButton:hover { background: %fill8%; border-color: %bd25%; color: %fg%; }
-QToolButton#cornerButton:pressed { background: %fill22%; }
+/* The message box's generate button: a 24 px ghost square in its corner,
+   its glyph in the full foreground like the design's. */
+QToolButton#cornerButton { background: transparent; border: 1px solid transparent; padding: 0; color: %fg%; }
+QToolButton#cornerButton:hover { background: %fill8%; border-color: %bd25%; }
+QToolButton#cornerButton:pressed { background: %fill22%; border-color: %bd25%; }
+/* The message box's text starts 8 px in, border, padding and the document's
+   own 4 px margin together, and its first line 6 px down. */
+MessageEdit { padding: 1px 3px; }
 
 QCheckBox { spacing: 8px; }
+/* 14 px with the border, like the design's boxes. */
 QCheckBox::indicator, QTableView::indicator, QTreeView::indicator {
-    width: 14px; height: 14px; border: 1px solid %bd40%; border-radius: 0; background: %fill4%;
+    width: 12px; height: 12px; border: 1px solid %bd40%; border-radius: 0; background: %fill4%;
 }
 QCheckBox::indicator:hover, QTableView::indicator:hover, QTreeView::indicator:hover { border-color: %bd25%; background: %fill8%; }
 QCheckBox::indicator:checked, QTableView::indicator:checked, QTreeView::indicator:checked {
@@ -687,6 +695,7 @@ QSplitter::handle:hover { background: %fill8%; }
    Hover only: a margin in the resting rule would go into the handle's size
    hint (sizeFromContents asks for it stateless) and widen the gap itself. */
 QSplitter#commitMessageSplitter::handle:vertical:hover { margin: %handlepad%px 0; }
+QSplitter#historySplitter::handle:vertical:hover { margin: %historypad%px 0; }
 
 QScrollBar:vertical { background: transparent; width: 8px; margin: 0; border: none; }
 QScrollBar::handle:vertical { background: %bd25%; min-height: 24px; border-radius: 0; margin: 0 2px; }
@@ -703,19 +712,16 @@ QLabel#sectionLabel, QLabel#dimLabel { color: %dim%; font-size: %caption%px; fon
 /* The commit popover's hint and the agent popover's small lines: small and
    regular, unlike the bold captions; the agent popover's notes beside its
    section captions are caption-sized, and regular too. */
-QLabel#commitPopoverHint, QLabel#agentPopoverSmall { color: %dim%; font-size: %small%px; font-weight: normal; }
+QLabel#commitPopoverHint, QLabel#agentPopoverSmall, QLabel#footerStatus, QLabel#historyCount { color: %dim%; font-size: %small%px; font-weight: normal; }
 QLabel#agentPopoverNote { color: %dim%; font-size: %caption%px; font-weight: normal; }
 QLabel#captionLabel { font-size: %caption%px; font-weight: bold; }
 QLabel#bigLabel { font-size: %big%px; }
-QToolButton#keybindingsButton, QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; padding: 2px 6px; }
-/* The two chips stand in the top bar's row beside the sync buttons, so they
-   carry those buttons' vertical padding; the footer's info button keeps the
-   tighter one. Sideways, 3 px and the 7 px of air a tool button keeps around
-   its text put the glyph 10 px in, as the design does. */
-QToolButton#branchButton, QToolButton#repoButton { padding: 5px 3px; }
+/* The top bar's two chips: ghost buttons (ui::KitButton lays out their glyph,
+   name and chevron on the design's grid). */
+QToolButton#branchButton, QToolButton#repoButton { background: transparent; border: 1px solid transparent; }
 QToolButton#branchButton { color: %acc%; font-weight: bold; }
-QToolButton#keybindingsButton:hover, QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
-QToolButton#keybindingsButton:pressed, QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
+QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
+QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
 QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: 6px; }
 QMenu::item { padding: 6px 14px; border-radius: 0; }
 QMenu::item:selected { background: %fill8%; color: %acc%; }
@@ -726,6 +732,7 @@ QMenu::indicator:checked { background: %acc%; border-color: %acc%; image: url(:/
 TickMenu::item { padding-right: %tickpad%px; }
 TickMenu::item:checked { color: %acc%; }
 TickMenu::indicator { width: 0; height: 0; margin: 0; border: none; background: none; image: none; }
+BranchMenu::item { padding-left: %glyphpad%px; }
 /* The search prompt of a popup wears the menu's own look: no box, because the
    popup's accent frame already says where the keyboard is, and a dim
    magnifier in front of the text. */
@@ -756,6 +763,12 @@ QToolButton#revealButton, QToolButton#revealButton:checked, QToolButton#revealBu
 QToolButton#revealButton:hover { color: %fg%; }
 QToolButton#revealButton:checked { color: %acc%; }
 QFrame#mergeVerdict { background: %fill4%; border: 1px solid %bd40%; }
+/* The history's details card, framed like the tables above and below it;
+   its body has no box of its own inside it. */
+QFrame#commitDetails { background: transparent; border: 1px solid %bd40%; }
+QTextEdit#commitBody, QTextEdit#commitBody:hover, QTextEdit#commitBody:focus {
+    background: transparent; border: none; padding: 0;
+}
 QListWidget#mergeFiles { background: transparent; border: none; outline: 0; }
 QListWidget#mergeFiles::item { padding: 2px 4px; border: none; }
 QListWidget#mergeFiles::item:hover, QListWidget#mergeFiles::item:selected { background: %fill8%; color: %fg%; }

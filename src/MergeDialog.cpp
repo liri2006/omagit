@@ -518,7 +518,7 @@ QGridLayout *MergeDialog::buildBranchRow()
     m_destinationPicker = new BranchPicker;
     m_destinationPicker->setToolTip(tr("The branch that receives them — checked out first when it is not the current one"));
     connect(m_destinationPicker, &QToolButton::clicked, this, &MergeDialog::pickDestination);
-    m_swapButton = new QToolButton;
+    m_swapButton = new ui::GlyphButton;
     m_swapButton->setObjectName(QStringLiteral("swapButton"));
     m_swapButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     m_swapButton->setCursor(Qt::PointingHandCursor);

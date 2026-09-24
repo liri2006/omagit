@@ -53,8 +53,8 @@ class MiniRail : public QWidget
 {
     Q_OBJECT
 public:
-    // The design's rail width, in the pixels of a 12 px text size.
-    static constexpr int kWidth = 52;
+    // The design's rail width, in the pixels of a 12 px text size: one tile.
+    static constexpr int kWidth = 40;
     // The rail's width at the text size of the moment.
     static int railWidth();
 
@@ -76,8 +76,8 @@ public:
     // Lit while the commit popover it opens is on screen.
     void setCommitTileActive(bool on);
     // Where the tile paints its badge, in the tile's coordinates: the
-    // miniatures' circle, widened leftwards into a pill for a count wider than
-    // it. Null when nothing is checked.
+    // miniatures' corner square, widened leftwards for a count wider than it.
+    // Null when nothing is checked.
     QRect commitBadgeRect() const;
     // What the badge says: the checked rows of the source.
     int checkedCount() const { return m_checked; }

@@ -847,7 +847,8 @@ void AgentPopover::place()
     if (!m_anchor || !host || m_placing)
         return;
     m_placing = true;
-    const QMargins margins = host->layout() ? host->layout()->contentsMargins() : QMargins();
+    const int margin = windowMargin();
+    const QMargins margins(margin, margin, margin, margin);
     const QRect cog(m_anchor->mapTo(host, QPoint(0, 0)), m_anchor->size());
     int width = qMax(1, qMin(space(kMaxWidth), host->width() - margins.left() - margins.right()));
     int left = qMax(margins.left(), cog.x() + cog.width() - width);

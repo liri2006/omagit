@@ -9,6 +9,7 @@
 #include <QAction>
 #include <QButtonGroup>
 #include <QFontMetrics>
+#include <QHBoxLayout>
 #include <QMenu>
 #include <QPainter>
 #include <QResizeEvent>
@@ -24,21 +25,21 @@ using namespace ui;
 namespace {
 // The design's distances (design/figma-gen/screens.js topBar() and kit.js
 // segmented()), in 12 px-base pixels: every one of them goes through space().
-constexpr int kBarGap = 6;        // between the row and its hairline
+constexpr int kRowTop = 6;        // from the window's top edge to the row
 constexpr int kChipGap = 4;       // between the repository and the branch chip
 constexpr int kSyncGap = 6;       // between two sync buttons, the more button included
 constexpr int kGroupGap = 16;     // the clearance the tabs keep from either group
 constexpr int kDividerPad = 10;   // on either side of the divider
 constexpr int kDividerHeight = 16;
 constexpr int kTogglesGap = 4;
-constexpr int kFoldedRepo = 28;   // the bare folder chip
+constexpr int kFoldedRepo = 34;   // the bare folder chip: measureButton({icon}), 10 + 14 + 10
 constexpr int kIconForm = 28;     // a sync button showing its glyph alone, and more
 constexpr int kBranchFloor = 72;  // the least of the branch name the ordinary row's last level keeps
 constexpr int kSyncDropdown = 92; // the stacked sync dropdown at its narrowest, whatever its size hint says
-// How far a sync button's badge rises over the button's top edge (kit.js
-// button(): badge(…, y − 5, …)). The bar keeps that much room above the row,
-// so the badge is painted inside the bar.
-constexpr int kBadgeOverhang = 5;
+constexpr int kSyncMenuWidth = 260, kMoreMenuWidth = 240; // screens.js: the SyncMenu and MoreMenu cards
+// A sync button's badge rises space(5) over the button's top edge (kit.js
+// button(): badge(…, y − 5, …)), which kRowTop keeps inside the bar: the
+// badge layer covering the bar paints it unclipped.
 
 // How the row folds, from everything spelled out to the narrowest form. The
 // first level that fits the width wins.
@@ -324,7 +325,7 @@ TopBar::TopBar(QWidget *parent)
     m_row = new BarRow([this] { relayout(); });
     // The badges hang over the buttons' corners, out of the buttons' own
     // rects, so a layer over the whole bar paints them (see the end of the
-    // constructor); the room above the row (kBadgeOverhang) is where their
+    // constructor); the room above the row (kRowTop) is where their
     // tops land. It exists before anything can relay the row out.
     m_badges = new BadgeLayer(this);
 
@@ -391,7 +392,7 @@ TopBar::TopBar(QWidget *parent)
     m_more->setMenu(m_moreMenu);
     m_more->hide();
     connect(m_moreMenu, &QMenu::aboutToShow, this, &TopBar::fillMoreMenu);
-    keepMenuInWindow(m_moreMenu, m_more);
+    keepMenuInWindow(m_moreMenu, m_more, this); // hanging 4 px under the bar
 
     // The stacked row's one sync control. Its text stays empty and it never
     // carries a count badge of its own: it paints the two counts inline.
@@ -415,14 +416,14 @@ TopBar::TopBar(QWidget *parent)
         relayout();
     });
     connect(m_syncMenu, &QMenu::aboutToShow, this, &TopBar::fillSyncMenu);
-    keepMenuInWindow(m_syncMenu, m_syncDropdown);
+    keepMenuInWindow(m_syncMenu, m_syncDropdown, this);
 
     m_divider = hairline(Qt::Vertical);
     m_divider->setParent(m_row);
     // Docked/Mini and show/hide the diff pane: the window sets their glyph and
     // their tooltip, which follow the layout of the moment.
-    m_layoutButton = iconButton(paneLayoutGlyph(PaneLayout::Docked), paneLayoutName(PaneLayout::Docked).left(1),
-                                QString(), IconButtonSize::Toolbar, true);
+    m_layoutButton = iconButton(kViewCompact, paneLayoutName(PaneLayout::Mini).left(1), QString(),
+                                IconButtonSize::Toolbar, true);
     m_layoutButton->setParent(m_row);
     m_layoutButton->setCheckable(true); // checked = Mini
     m_layoutButton->setAccessibleName(tr("Mini layout"));
@@ -451,9 +452,13 @@ TopBar::TopBar(QWidget *parent)
         probe->hide(); // explicitly, so showing the bar leaves them behind
     }
 
+    // The row keeps the window's margin; the hairline under it runs from edge
+    // to edge, like the footer's.
     m_rootLayout = new QVBoxLayout(this);
-    m_rootLayout->addWidget(m_row);
-    m_rootLayout->addWidget(hairline());
+    m_rowLayout = new QHBoxLayout;
+    m_rowLayout->addWidget(m_row);
+    m_rootLayout->addLayout(m_rowLayout);
+    m_rootLayout->addWidget(hairline(Qt::Horizontal, HairlineTone::Chrome));
 
     // The badge layer over everything else in the bar.
     for (BadgeButton *b : {m_pull, m_push, m_fetch, m_merge, m_more, m_syncDropdown})
@@ -535,8 +540,10 @@ void TopBar::applyTheme()
     m_diffTab->refreshGlyph();
     m_historyTab->refreshGlyph();
     static_cast<SyncDropdown *>(m_syncDropdown)->refresh();
-    m_rootLayout->setSpacing(space(kBarGap));
-    m_rootLayout->setContentsMargins(0, space(kBadgeOverhang), 0, 0);
+    m_rootLayout->setSpacing(barGap());
+    m_rootLayout->setContentsMargins(0, space(kRowTop), 0, 0);
+    // The window's margin, which the row keeps and the hairline does not.
+    m_rowLayout->setContentsMargins(windowMargin(), 0, windowMargin(), 0);
     measure();
     updateMoreMark();
 }
@@ -551,7 +558,7 @@ void TopBar::measure()
     m_metrics = Metrics();
 
     m_probeRepo->ensurePolished();
-    setTextOnce(m_probeRepo, icon(kFolder) + m_repositoryName + chevron());
+    setTextOnce(m_probeRepo, icon(kFolderOpen) + m_repositoryName + chevron());
     m_metrics.repoFull = m_probeRepo->sizeHint().width();
     m_metrics.repoFolded = space(kFoldedRepo);
 
@@ -560,7 +567,7 @@ void TopBar::measure()
     m_metrics.branchFull = m_probeBranch->sizeHint().width();
     // The name alone, in the font the stylesheet gives the chip: what is left
     // of the button is the glyph, the chevron and the padding around them.
-    m_metrics.branchLabel = m_probeBranch->fontMetrics().horizontalAdvance(m_branchLabel);
+    m_metrics.branchLabel = qCeil(QFontMetricsF(m_probeBranch->font()).horizontalAdvance(m_branchLabel));
     m_metrics.branchChrome = m_metrics.branchFull - m_metrics.branchLabel;
     // A lone ellipsis, rounded up: elidedText() gives nothing at all in a
     // width a fraction short of it.
@@ -647,18 +654,20 @@ int TopBar::minBranchLabel() const
     return qMin(m_metrics.branchLabel, m_stacked ? m_metrics.branchEllipsis : space(kBranchFloor));
 }
 
-// The height: the room the badges rise into, the row, the gap and the hairline.
+// The height: the room above the row, which the badges rise into, the row,
+// the gap and the hairline; the width, the row's and the window's margins.
 QSize TopBar::sizeHint() const
 {
-    return QSize(totalWidth(0, m_metrics.branchLabel), space(kBadgeOverhang) + m_metrics.height + space(kBarGap) + 1);
+    return QSize(totalWidth(0, m_metrics.branchLabel) + 2 * windowMargin(),
+                 space(kRowTop) + m_metrics.height + barGap() + 1);
 }
 
 // Never wider than the last level at its shortest branch name: the bar folds
 // instead of forcing a width on the window.
 QSize TopBar::minimumSizeHint() const
 {
-    return QSize(totalWidth(levelCount() - 1, minBranchLabel()),
-                 space(kBadgeOverhang) + m_metrics.height + space(kBarGap) + 1);
+    return QSize(totalWidth(levelCount() - 1, minBranchLabel()) + 2 * windowMargin(),
+                 space(kRowTop) + m_metrics.height + barGap() + 1);
 }
 
 void TopBar::resizeEvent(QResizeEvent *event)
@@ -693,8 +702,8 @@ void TopBar::relayout()
 void TopBar::apply(int level, int branchLabelWidth)
 {
     const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
-    setTextOnce(m_repoButton, repoLabel ? icon(kFolder) + m_repositoryName + chevron()
-                                        : icon(kFolder, tr("…")).trimmed());
+    setTextOnce(m_repoButton, repoLabel ? icon(kFolderOpen) + m_repositoryName + chevron()
+                                        : icon(kFolderOpen, tr("…")).trimmed());
     const QString label = branchLabelWidth < m_metrics.branchLabel
         ? m_branchButton->fontMetrics().elidedText(m_branchLabel, Qt::ElideRight, branchLabelWidth)
         : m_branchLabel;
@@ -834,6 +843,7 @@ void TopBar::addSyncEntry(QMenu *menu, const SyncControl &c, const QString &labe
 void TopBar::fillMoreMenu()
 {
     m_moreMenu->clear();
+    m_moreMenu->setFixedWidth(popupWidth(window(), kMoreMenuWidth));
     for (const SyncControl &c : std::as_const(m_syncControls)) {
         if (m_foldedSync.contains(c.button))
             addSyncEntry(m_moreMenu, c, c.label);
@@ -850,7 +860,7 @@ void TopBar::fillMoreMenu()
         &TopBar::openRepositoryRequested);
     add(kFetch, tr("Clone…"), tr("Download a repository from a URL or GitHub (Ctrl+Shift+O)"), &TopBar::cloneRequested);
     m_moreMenu->addSeparator();
-    add(kInfo, tr("Keybindings"), tr("Every keyboard shortcut (Ctrl+K)"), &TopBar::keybindingsRequested);
+    add(kKeyboard, tr("Keybindings"), tr("Every keyboard shortcut (Ctrl+K)"), &TopBar::keybindingsRequested);
 }
 
 // The stacked row's four sync actions: the buttons' own clicks, in the order
@@ -858,6 +868,7 @@ void TopBar::fillMoreMenu()
 void TopBar::fillSyncMenu()
 {
     m_syncMenu->clear();
+    m_syncMenu->setFixedWidth(popupWidth(window(), kSyncMenuWidth));
     for (const SyncControl &c : std::as_const(m_syncControls)) {
         if (c.button == m_merge) {
             m_syncMenu->addSeparator();

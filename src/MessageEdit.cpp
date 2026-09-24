@@ -1,4 +1,5 @@
 #include "MessageEdit.h"
+#include "UiHelpers.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QEvent>
@@ -10,14 +11,19 @@
 #include <QtMath>
 
 namespace {
-constexpr int kInset = 3; // between the frame and the button
+// The design's generate button (screens.js changesPage(), the MessageBox
+// group), in 12 px-base pixels: a 24 px square whose right edge is 2 px
+// inside the box's and whose top is 2 px under the box's top.
+constexpr int kButtonSide = 24;
+constexpr int kInset = 2;
+constexpr int kTextGap = 4; // between the text's right edge and the button's column
 constexpr int kClaimWidth = 1 << 16; // wider than any other box of the document can be
 } // namespace
 
 MessageEdit::MessageEdit(QWidget *parent)
     : QPlainTextEdit(parent)
 {
-    m_button = new QToolButton(this);
+    m_button = new ui::GlyphButton(this);
     m_button->setObjectName(QStringLiteral("cornerButton"));
     m_button->setToolButtonStyle(Qt::ToolButtonTextOnly);
     m_button->setCursor(Qt::PointingHandCursor);
@@ -33,17 +39,13 @@ MessageEdit::MessageEdit(QWidget *parent)
 void MessageEdit::applyTheme()
 {
     m_button->setFont(font());
-    // A square, sized for the widest text the button shows, so a spinner
-    // frame does not make it jiggle.
-    m_button->setFixedSize(QSize());
-    m_button->setMinimumSize(0, 0);
-    m_button->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
-    const QSize hint = m_button->sizeHint();
-    const int side = qMax(hint.width(), hint.height());
+    // The design's square, whatever the button shows: the sparkle or a
+    // spinner frame, so a frame does not make it jiggle.
+    const int side = ui::space(kButtonSide);
     m_button->setFixedSize(side, side);
-    // Room for the button plus the gap on both of its sides (the top gap is
-    // the frame and the padding, about kInset + the padding).
-    setViewportMargins(0, 0, side + 2 * kInset + 4, 0);
+    // The text keeps clear of the button's column: the button, its inset
+    // and a gap before the text.
+    setViewportMargins(0, 0, side + ui::space(kInset) + ui::space(kTextGap), 0);
     placeButton();
     // A theme change re-measures every box of a shared document, the hidden
     // ones too; the one on screen takes the wrapping back afterwards.
@@ -170,14 +172,14 @@ bool MessageEdit::eventFilter(QObject *watched, QEvent *event)
     return QPlainTextEdit::eventFilter(watched, event);
 }
 
-// The button lives in the margin to the right of the viewport, top-aligned
-// with the first line and as far from the right edge (or the scrollbar) as
-// the first line is from the top.
+// The button lives in the margin to the right of the viewport, in the box's
+// top right corner: 2 px inside its right edge (or the scrollbar's left one)
+// and 2 px under its top.
 void MessageEdit::placeButton()
 {
-    const QRect v = viewport()->geometry();
     int right = width();
     if (verticalScrollBar()->isVisible())
         right = verticalScrollBar()->geometry().left();
-    m_button->move(right - v.top() - m_button->width(), v.top());
+    const int inset = ui::space(kInset);
+    m_button->move(right - inset - m_button->width(), inset);
 }

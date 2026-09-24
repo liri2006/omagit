@@ -49,6 +49,17 @@ int actionBarGap()
 // The stacked action bar's gap between the options button and Commit.
 constexpr int kStackedActionGap = 6;
 
+// The stacked action bar's options menu (screens.js: the OptionsMenu card).
+constexpr int kOptionsMenuWidth = 240;
+// The header rows' icon buttons stand this far inside the page's right edge
+// (screens.js changesPage(): a 24 px button at x + w − 26).
+constexpr int kHeaderInset = 2;
+
+// The message box's resting heights (screens.js changesPage(): mh), in
+// 12 px-base pixels: by the window's width class, and one line when the
+// window is shallow. The one-line box is also the least it may be dragged to.
+constexpr int kMessageWide = 96, kMessageLarge = 84, kMessageNarrow = 68, kMessageShallow = 34;
+
 // The eye's filter, and with it the check-all box of the table's header: the
 // box stands for the rows the list is showing, so with the unversioned files
 // hidden it neither counts them nor ticks them.
@@ -163,7 +174,6 @@ constexpr int kFolderX = 20, kFolderGlyph = 14;
 constexpr int kDirNameX = 38, kFileNameX = 8;
 constexpr int kNameInset = 10;    // the compact table's Name cell
 constexpr int kSuffixGap = 8, kSuffixText = 11;
-constexpr int kPillSize = 16, kPillText = 10;
 
 // Where a directory's chevron and folder sit in its Name cell, measured from
 // the cell's left edge. Painting and the click that opens the branch share
@@ -222,39 +232,9 @@ void paintNameWithSuffix(QPainter *painter, const QRect &box, const QString &nam
                       suffixWidth <= rest ? suffix : smallMetrics.elidedText(suffix, Qt::ElideRight, rest));
 }
 
-// The status colour of a row, as the model gives it.
-QColor statusColour(const QModelIndex &index)
-{
-    const QColor colour = index.data(Qt::ForegroundRole).value<QColor>();
-    return colour.isValid() ? colour : OmarchyTheme::instance()->text();
-}
-
-// The kit's status pill: a 16 px square with square corners, its status
-// colour at 18 % for the fill and the status letter in it.
-void paintStatusPill(QPainter *painter, const QRect &cell, const QModelIndex &index)
-{
-    const QVariant kind = index.data(ChangesModel::KindRole);
-    if (!kind.isValid())
-        return; // a directory row has no status of its own
-    const QColor colour = statusColour(index);
-    const int side = space(kPillSize);
-    QRect pill(0, 0, side, side);
-    pill.moveCenter(cell.center());
-    QColor fill = colour;
-    fill.setAlphaF(0.18);
-    painter->fillRect(pill, fill);
-    QFont font = OmarchyTheme::instance()->uiFont();
-    font.setPixelSize(space(kPillText));
-    font.setBold(true);
-    painter->setFont(font);
-    painter->setPen(colour);
-    painter->drawText(pill, Qt::AlignCenter,
-                      QString(ChangesModel::statusLetter(FileChange::Kind(kind.toInt()))));
-}
-
 // Everything a delegate of these two presentations has in common: it paints
 // the cell itself, so the base class is only ever asked for the selection and
-// hover background, and every row is the shared list height.
+// hover background, and every row is the shared file-list height.
 class PresentationDelegate : public QStyledItemDelegate
 {
 public:
@@ -263,7 +243,7 @@ public:
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
         QSize size = QStyledItemDelegate::sizeHint(option, index);
-        size.setHeight(tableRowHeight());
+        size.setHeight(fileRowHeight());
         return size;
     }
 
@@ -504,9 +484,11 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
 {
     setupAgent();
 
-    const OmarchyTheme *theme = OmarchyTheme::instance();
     // The page is the two sections over the action bar: inside, a header row
-    // is 6 px above its content; the bar itself sits 8 px under the list.
+    // is 6 px above its content; the bar itself sits 8 px under the list and
+    // ends with the page, on the line the diff pane beside it ends on (the
+    // user's choice over the design's 12 px under it; applyTheme() scales the
+    // gaps).
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(actionBarGap());
@@ -534,7 +516,9 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     sections->addWidget(m_messageSplitter, 1);
     layout->addLayout(sections, 1);
     layout->addLayout(buildActionBar());
-    m_messageSplitter->setSizes({theme->fontBase() * 7, changes->sizeHint().height()});
+    // The resting height of the window's classes until the user drags the
+    // handle; a height dragged in an earlier session comes back instead.
+    m_messageSplitter->setSizes({restingMessageHeight(), changes->sizeHint().height()});
     m_messageSplitter->restoreState(QSettings().value(settings::kWindowCommitMessageSplitter).toByteArray());
     // The handle is all that stands between the two sections, so it carries
     // the gap between them — after restoreState(), which brings the handle
@@ -600,12 +584,23 @@ void CommitPage::setupAgent()
     });
 }
 
+// The MESSAGE row stands on the diff pane's toolbar line beside it: centred
+// on a row of buttons, and the message box as far under that row as the diff
+// is under the toolbar, so the two boxes start on one line.
+QMargins CommitPage::messageRowMargins()
+{
+    const int top = (buttonHeight() - headerRowHeight()) / 2;
+    const int bottom = buttonHeight() + barGap() - headerGap() - headerRowHeight() - top;
+    return QMargins(0, top, space(kHeaderInset), qMax(0, bottom));
+}
+
 // MESSAGE, with the agent settings at the far right; the message box (which
 // the caller puts in the splitter) has the generate button in its top right
 // corner.
 QLayout *CommitPage::buildMessageSection()
 {
-    auto *messageRow = sectionHeaderRow(sectionLabel(tr("Message")));
+    auto *messageRow = m_messageRow = sectionHeaderRow(sectionLabel(tr("Message")));
+    messageRow->setContentsMargins(messageRowMargins());
     messageRow->addStretch();
     m_agentButton = iconButton(kCog, tr("⚙"), agentButtonTip());
     connect(m_agentButton, &QToolButton::clicked, this, [this] { requestAgentSettings(m_agentButton); });
@@ -613,7 +608,7 @@ QLayout *CommitPage::buildMessageSection()
 
     m_message = new MessageEdit;
     m_message->setPlaceholderText(tr("Commit message"));
-    m_message->setMinimumHeight(OmarchyTheme::instance()->fontBase() * 3);
+    m_message->setMinimumHeight(space(kMessageShallow));
     QToolButton *const generate = m_message->cornerButton();
     generate->setText(icon(kSparkle, QStringLiteral("✨")).trimmed());
     connect(generate, &QToolButton::clicked, this, &CommitPage::generateMessage);
@@ -669,7 +664,8 @@ QWidget *CommitPage::buildChangesSection()
     m_changesLayout = changesLayout;
 
     m_changesLabel = sectionLabel(tr("Changes"));
-    auto *changesRow = sectionHeaderRow(m_changesLabel);
+    auto *changesRow = m_changesRow = sectionHeaderRow(m_changesLabel);
+    changesRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
     changesRow->addStretch();
 
     m_model = new ChangesModel(this);
@@ -1134,16 +1130,19 @@ void CommitPage::applyTheme()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
     m_message->setFont(theme->uiFont());
-    m_message->setMinimumHeight(theme->fontBase() * 3);
+    m_message->setMinimumHeight(space(kMessageShallow));
     m_message->applyTheme();
     m_tableSetup->applyTheme();
     // The gaps of the section grid are in scaled pixels, so a new text size
     // has to lay them out again.
     layout()->setSpacing(actionBarGap());
+    m_messageRow->setContentsMargins(messageRowMargins());
+    m_changesRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
     m_sectionsLayout->setSpacing(headerGap());
     m_changesLayout->setSpacing(headerGap());
-    m_actionBar->setSpacing(m_stacked ? space(kStackedActionGap) : sectionGap());
+    m_actionBar->setSpacing(actionBarStacked() ? space(kStackedActionGap) : sectionGap());
     m_optionsButton->setText(icon(kDotsHorizontal, QStringLiteral("…")).trimmed());
+    applyRestingMessageHeight(); // in the pixels of the new text size
     m_messageSplitter->setHandleWidth(sectionGap());
     m_changesDivider->setFixedHeight(space(18));
     m_toolsDivider->setFixedHeight(space(18));
@@ -1165,6 +1164,7 @@ void CommitPage::applyTreeMetrics()
     m_tree->header()->setMinimumSectionSize(space(kNarrowColumn));
     m_tree->setColumnWidth(ChangesTreeModel::Check, space(kNarrowColumn));
     m_tree->setColumnWidth(ChangesTreeModel::Status, space(kNarrowColumn));
+    m_tree->header()->setFixedHeight(tableHeaderHeight());
     static_cast<ChangesTree *>(m_tree)->refreshRowHeights();
 }
 
@@ -1184,7 +1184,9 @@ void CommitPage::updateAmendLabel()
     // the shortened label is still measured against the full one.
     const int chrome = m_amend->sizeHint().width() - fm.horizontalAdvance(m_amend->text());
     const int wide = chrome + fm.horizontalAdvance(full) + m_actionBar->spacing() + m_commitButton->sizeHint().width();
-    m_amend->setText(width() >= wide ? full : tr("Amend"));
+    // The medium width class says "Amend" whatever the page's width, as the
+    // design does; the wider ones spell it out wherever it fits.
+    m_amend->setText(width() >= wide && m_widthClass != WidthClass::Medium ? full : tr("Amend"));
     // Only the label and its box answer a click, not the empty half of the row.
     m_amend->setMaximumWidth(m_amend->sizeHint().width());
 }
@@ -1207,20 +1209,73 @@ void CommitPage::setStacked(bool on)
     }
 }
 
-// Stacked: the options button, the design's 6 px, and Commit stretching over
-// what Amend and the stretch between them had. Otherwise the row as built:
-// Amend and its stretch, the section gap, and Commit at its own width.
+void CommitPage::setWindowClass(WidthClass width, bool shallow)
+{
+    if (m_widthClass == width && m_shallow == shallow)
+        return;
+    const bool barWasStacked = actionBarStacked();
+    m_widthClass = width;
+    m_shallow = shallow;
+    if (actionBarStacked() != barWasStacked) {
+        applyActionBarForm();
+        updateCommitButton(); // the key comes off or back on
+    }
+    applyRestingMessageHeight();
+    updateAmendLabel();
+}
+
+int CommitPage::restingMessageHeight() const
+{
+    if (m_shallow)
+        return space(kMessageShallow);
+    switch (m_widthClass) {
+    case WidthClass::Wide: return space(kMessageWide);
+    case WidthClass::Large: return space(kMessageLarge);
+    case WidthClass::Medium:
+    case WidthClass::Stacked: break;
+    }
+    return space(kMessageNarrow);
+}
+
+// The box goes to the classes' resting height, or to its text where that is
+// taller (the growing rule of fitMessage(), up to half of the room) — unless
+// the user has dragged the handle, this session or an earlier one: that
+// height is theirs, and so is the resting height fitMessage() measured on it.
+void CommitPage::applyRestingMessageHeight()
+{
+    if (m_messageSizedByHand || QSettings().contains(settings::kWindowCommitMessageSplitter))
+        return;
+    const int rest = restingMessageHeight();
+    m_messageRestHeight = rest;
+    const QList<int> sizes = m_messageSplitter->sizes();
+    const int total = sizes.size() == 2 ? sizes.at(0) + sizes.at(1) : 0;
+    if (total <= 0 || !m_messageSplitter->isVisible()) {
+        // Not laid out yet: the changes list takes whatever the first layout
+        // adds (its stretch), so the box comes out at `rest`.
+        m_messageSplitter->setSizes({rest, qMax(1, total - rest)});
+        return;
+    }
+    const int wanted = qMax(rest, qMin(m_message->contentHeight(), total / 2));
+    if (wanted != sizes.at(0))
+        m_messageSplitter->setSizes({wanted, qMax(1, total - wanted)});
+}
+
+// Stacked (or shallow): the options button, the design's 6 px, and Commit
+// stretching over what Amend and the stretch between them had. Otherwise the
+// row as built: Amend and its stretch, the section gap, and Commit at its own
+// width.
 void CommitPage::applyActionBarForm()
 {
-    m_optionsButton->setVisible(m_stacked);
-    m_amend->setVisible(!m_stacked);
-    if (m_stacked)
+    const bool stacked = actionBarStacked();
+    m_optionsButton->setVisible(stacked);
+    m_amend->setVisible(!stacked);
+    if (stacked)
         m_actionStretch->changeSize(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
     else
         m_actionStretch->changeSize(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum);
-    m_actionBar->setStretchFactor(m_commitButton, m_stacked ? 1 : 0);
-    m_commitButton->setSizePolicy(m_stacked ? QSizePolicy::Expanding : QSizePolicy::Minimum, QSizePolicy::Fixed);
-    m_actionBar->setSpacing(m_stacked ? space(kStackedActionGap) : sectionGap());
+    m_actionBar->setStretchFactor(m_commitButton, stacked ? 1 : 0);
+    m_commitButton->setSizePolicy(stacked ? QSizePolicy::Expanding : QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_actionBar->setSpacing(stacked ? space(kStackedActionGap) : sectionGap());
     m_actionBar->invalidate();
     updateAmendLabel();
 }
@@ -1231,13 +1286,7 @@ void CommitPage::applyActionBarForm()
 void CommitPage::fillOptionsMenu()
 {
     m_optionsMenu->clear();
-    const bool all =
-        m_proxy->headerData(ChangesModel::Check, Qt::Horizontal, Qt::CheckStateRole).toInt() == Qt::Checked;
-    QAction *check = m_optionsMenu->addAction(icon(kCheck) + (all ? tr("Uncheck all") : tr("Check all")));
-    check->setToolTip(tr("Check every file for the commit, or none when all are checked (Ctrl+Shift+Space)"));
-    check->setEnabled(m_proxy->rowCount() > 0);
-    connect(check, &QAction::triggered, this, &CommitPage::toggleAllChecked);
-
+    m_optionsMenu->setFixedWidth(popupWidth(window(), kOptionsMenuWidth));
     QAction *unversioned = m_optionsMenu->addAction(icon(kEye) + tr("Show unversioned files"));
     unversioned->setCheckable(true);
     unversioned->setChecked(m_unversioned->isChecked());
@@ -1250,12 +1299,6 @@ void CommitPage::fillOptionsMenu()
     amend->setEnabled(m_amend->isEnabled());
     amend->setToolTip(m_amend->toolTip());
     connect(amend, &QAction::triggered, m_amend, &QAbstractButton::click);
-
-    m_optionsMenu->addSeparator();
-    QAction *generate =
-        m_optionsMenu->addAction(icon(kSparkle) + (m_agent->running() ? tr("Stop generating") : tr("Generate message")));
-    generate->setToolTip(m_message->cornerButton()->toolTip());
-    connect(generate, &QAction::triggered, this, &CommitPage::generateMessage);
 }
 
 FileChange CommitPage::currentChange(bool *ok) const
@@ -1438,7 +1481,7 @@ void CommitPage::updateCommitButton()
 {
     const bool amend = m_amend->isChecked();
     const QString what = commitWording();
-    m_commitButton->setText(commitButtonText(!m_stacked));
+    m_commitButton->setText(commitButtonText(!actionBarStacked()));
     // Read out as the wording alone: the glyph and the key that presses it are
     // no part of the name of the button.
     m_commitButton->setAccessibleName(what);

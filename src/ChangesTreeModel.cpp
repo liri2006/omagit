@@ -346,6 +346,9 @@ QVariant ChangesTreeModel::headerData(int section, Qt::Orientation orientation, 
     // puts the box in a section of its own.
     if (role == Qt::CheckStateRole)
         return section == Check && m_source ? m_source->headerData(ChangesModel::Check, orientation, role) : QVariant();
+    // Name reads from the left like the table's; St stays centred over its pills.
+    if (role == Qt::TextAlignmentRole)
+        return int((section == Name ? Qt::AlignLeft : Qt::AlignHCenter) | Qt::AlignVCenter);
     if (role != Qt::DisplayRole)
         return {};
     switch (section) {

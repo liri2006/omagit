@@ -29,6 +29,8 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/ChangesModel.cpp \
     $$PWD/src/ChangesTreeModel.cpp \
     $$PWD/src/HistoryModel.cpp \
+    $$PWD/src/RefChip.cpp \
+    $$PWD/src/CommitDetails.cpp \
     $$PWD/src/HistoryView.cpp \
     $$PWD/src/MiniRail.cpp \
     $$PWD/src/BadgeButton.cpp \
@@ -58,6 +60,8 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/ChangesModel.h \
     $$PWD/src/ChangesTreeModel.h \
     $$PWD/src/HistoryModel.h \
+    $$PWD/src/RefChip.h \
+    $$PWD/src/CommitDetails.h \
     $$PWD/src/HistoryView.h \
     $$PWD/src/MiniRail.h \
     $$PWD/src/PaneLayout.h \

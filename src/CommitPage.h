@@ -4,6 +4,7 @@
 #include "CommitMessageAgent.h"
 #include "GitRepo.h"
 #include "MessageEdit.h"
+#include "PaneLayout.h"
 
 #include <QModelIndex>
 #include <QPoint>
@@ -127,6 +128,11 @@ public:
     // chosen a files view, the list turns compact. Nothing of it is saved.
     void setStacked(bool on);
     bool isStacked() const { return m_stacked; }
+    // The window's classes, which only ever size things: the message box's
+    // resting height (96, 84, 68, one line when shallow), the Amend label
+    // (short in the medium class) and, shallow, the action bar's stacked form
+    // at any width. Nothing of it is saved.
+    void setWindowClass(WidthClass width, bool shallow);
 
     // The three files-view buttons, for the tests and for anyone who wants to
     // press one without going through the accessible names.
@@ -231,9 +237,15 @@ private:
     // The commit button's text: its glyph and the wording, and outside the
     // stacked row the key that presses it.
     QString commitButtonText(bool withKey) const;
-    // The action bar's two forms; see setStacked().
+    // The action bar's two forms; see setStacked() and setWindowClass().
     void applyActionBarForm();
+    bool actionBarStacked() const { return m_stacked || m_shallow; }
+    // The message box's height before any text grows it, for the classes of
+    // the moment, and putting it on the splitter while nobody sized it.
+    int restingMessageHeight() const;
+    void applyRestingMessageHeight();
     void fillOptionsMenu();
+    static QMargins messageRowMargins();
     void setGenerating(bool on);
     // The one place the generate button's face changes, so the text and the
     // tooltip are both current whenever commitControlsChanged() goes out.
@@ -271,11 +283,15 @@ private:
     QSplitter *m_messageSplitter; // the message over the changes list, the heights it grows in
     QLayout *m_sectionsLayout;    // MESSAGE and CHANGES, over the action bar
     QLayout *m_changesLayout;     // CHANGES: its header row over the list, a scaled gap apart
+    QHBoxLayout *m_messageRow;    // the MESSAGE and CHANGES header rows, their buttons
+    QHBoxLayout *m_changesRow;    // kept 2 px inside the page's right edge
     QHBoxLayout *m_actionBar;     // the bottom row, a scaled gap under the list
     QSpacerItem *m_actionStretch = nullptr; // between Amend and Commit on the ordinary row
     QToolButton *m_optionsButton = nullptr; // stacked only
     QMenu *m_optionsMenu = nullptr;
     bool m_stacked = false;
+    WidthClass m_widthClass = WidthClass::Wide;
+    bool m_shallow = false;
     bool m_messageSizedByHand = false; // the user dragged the handle this session
     int m_messageRestHeight = -1;      // the pane's height before any text grew it
     QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning

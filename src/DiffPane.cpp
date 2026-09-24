@@ -1,5 +1,6 @@
 #include "DiffPane.h"
 #include "DiffView.h"
+#include "OmarchyTheme.h"
 #include "Settings.h"
 #include "TickMenu.h"
 #include "UiHelpers.h"
@@ -24,8 +25,8 @@ void saveOption(QLatin1StringView key, const QVariant &value)
 // The row's forms change at these pane widths (screens.js diffPane()), in
 // 12 px-base pixels: fixed steps rather than measured fits, because the row's
 // content is bounded and they scale with the text size like the rest.
-constexpr int kLabelledWidth = 900; // every button labelled from here up
-constexpr int kMiddleWidth = 560;   // the view options as glyphs from here up
+constexpr int kLabelledWidth = 900; // the view dropdown labelled from here up
+constexpr int kMiddleWidth = 560;   // Prev, Next and the view options on the row from here up
 // The design's gaps: between Prev and Next and between the view options, and
 // on either side of the counter.
 constexpr int kButtonGap = 4;
@@ -49,37 +50,46 @@ DiffPane::DiffPane(QWidget *parent)
     setMinimumWidth(1);
     auto *rightLayout = new QVBoxLayout(this);
     rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->setSpacing(8);
+    rightLayout->setSpacing(barGap()); // the toolbar to the diff (applyTheme() rescales it)
 
     QHBoxLayout *navRow = m_navRow = new QHBoxLayout;
-    m_prevButton = toolButton(icon(kArrowUp) + tr("Prev"), tr("Previous change (Shift+F8)"));
-    m_nextButton = toolButton(icon(kArrowDown) + tr("Next"), tr("Next change (F8)"));
+    m_prevButton = toolButton<KitButton>(icon(kArrowUp) + tr("Prev"), tr("Previous change (Shift+F8)"));
+    m_nextButton = toolButton<KitButton>(icon(kArrowDown) + tr("Next"), tr("Next change (F8)"));
     m_changeLabel = dimLabel();
     // Let the label shrink instead of forcing the splitter to widen the diff pane.
     m_changeLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_changeLabel->setMinimumWidth(0);
+    m_changeLabel->setTextFormat(Qt::RichText); // the summary's colours
     navRow->addWidget(m_prevButton);
     navRow->addWidget(m_nextButton);
     navRow->addWidget(m_changeLabel, 1);
-    QToolButton *paneButton = m_paneButton = toolButton(icon(kSplit) + tr("Two-pane"),
-                                  tr("Toggle between two-pane (side by side) and one-pane view (Ctrl+T)"));
-    paneButton->setCheckable(true);
-    navRow->addWidget(paneButton);
-    QToolButton *wsButton = m_wsButton = toolButton(icon(kPilcrow) + tr("Whitespace"), tr("Show whitespace and line endings (Ctrl+W)"));
+    // The view dropdown (screens.js diffPane(): ViewMode): Split or Unified
+    // from a menu, the current one ticked.
+    m_viewButton = toolButton<KitButton>(QString(),
+                                         tr("Split (side by side) or unified (one pane) view (Ctrl+T)"));
+    m_viewButton->setPopupMode(QToolButton::InstantPopup);
+    m_viewMenu = new TickMenu(m_viewButton);
+    m_viewMenu->setToolTipsVisible(true);
+    m_viewButton->setMenu(m_viewMenu);
+    connect(m_viewMenu, &QMenu::aboutToShow, this, &DiffPane::fillViewMenu);
+    keepMenuInWindow(m_viewMenu, m_viewButton);
+    navRow->addWidget(m_viewButton);
+    QToolButton *wsButton = m_wsButton = toolButton<KitButton>(icon(kPilcrow, QStringLiteral("¶")).trimmed(),
+                                                              tr("Show whitespace and line endings (Ctrl+W)"));
     wsButton->setCheckable(true);
     navRow->addWidget(wsButton);
-    QToolButton *syntaxButton = m_syntaxButton = toolButton(icon(kCodeTags) + tr("Syntax"),
-                                  tr("Colour the diff by the file's syntax (Ctrl+L)"));
+    QToolButton *syntaxButton = m_syntaxButton = toolButton<KitButton>(
+        icon(kCodeTags, QStringLiteral("<>")).trimmed(), tr("Colour the diff by the file's syntax (Ctrl+L)"));
     syntaxButton->setCheckable(true);
     navRow->addWidget(syntaxButton);
     // A glyph alone says nothing to a screen reader: each button keeps its
     // label as its name in every form.
     m_prevButton->setAccessibleName(tr("Prev"));
     m_nextButton->setAccessibleName(tr("Next"));
-    paneButton->setAccessibleName(tr("Two-pane"));
+    m_viewButton->setAccessibleName(tr("View"));
     wsButton->setAccessibleName(tr("Whitespace"));
     syntaxButton->setAccessibleName(tr("Syntax"));
-    // The narrowest form's stand-in for the three options, the way the
+    // The narrowest form's stand-in for the view options, the way the
     // stacked action bar keeps its own behind "…".
     m_optionsButton = iconButton(kDotsHorizontal, QStringLiteral("…"), tr("View options"), IconButtonSize::Toolbar, false);
     m_optionsButton->setAccessibleName(tr("View options"));
@@ -103,7 +113,6 @@ DiffPane::DiffPane(QWidget *parent)
         QSettings conf;
         const bool twoPane = conf.value(settings::kDiffTwoPane, true).toBool();
         m_diff->setMode(twoPane ? DiffView::TwoPane : DiffView::OnePane);
-        paneButton->setChecked(twoPane);
         const bool syntax = conf.value(settings::kDiffSyntaxHighlighting, true).toBool();
         m_diff->setSyntaxHighlighting(syntax);
         syntaxButton->setChecked(syntax);
@@ -114,10 +123,10 @@ DiffPane::DiffPane(QWidget *parent)
         syntaxButton->setChecked(on);
         saveOption(settings::kDiffSyntaxHighlighting, on);
     });
-    connect(paneButton, &QToolButton::toggled, m_diff, &DiffView::setTwoPane);
-    connect(m_diff, &DiffView::modeChanged, this, [paneButton](DiffView::Mode mode) {
-        QSignalBlocker blocker(paneButton);
-        paneButton->setChecked(mode == DiffView::TwoPane);
+    // However the view changes (the menus, Ctrl+T, the view's own context
+    // menu), the dropdown says so and the choice is kept.
+    connect(m_diff, &DiffView::modeChanged, this, [this](DiffView::Mode mode) {
+        updateViewButton();
         saveOption(settings::kDiffTwoPane, mode == DiffView::TwoPane);
     });
     connect(m_diff, &DiffView::changeIndexChanged, this, [this](int index, int total) {
@@ -133,6 +142,10 @@ DiffPane::DiffPane(QWidget *parent)
 void DiffPane::applyTheme()
 {
     m_diff->refreshTheme();
+    layout()->setSpacing(barGap());
+    // The glyphs are looked up in the font of the moment.
+    m_wsButton->setText(icon(kPilcrow, QStringLiteral("¶")).trimmed());
+    m_syntaxButton->setText(icon(kCodeTags, QStringLiteral("<>")).trimmed());
     // The thresholds, the gaps and the 28 px square all follow the text size.
     applyForm();
 }
@@ -160,17 +173,21 @@ void DiffPane::applyForm()
 {
     m_form = formForWidth();
     const bool compact = m_form == Form::Compact;
-    const bool glyphOptions = m_form != Form::Labelled;
     const auto wear = [](QToolButton *b, uint glyph, const QString &label, bool glyphOnly) {
         setTextOnce(b, glyphOnly ? icon(glyph).trimmed() : icon(glyph) + label);
         setIconForm(b, glyphOnly);
     };
+    // The toolbar's counter carries the status and the +/− in every form
+    // but the narrowest, which keeps only "n/m": only then does the header
+    // under it say them.
+    m_diff->setSubtitleShown(compact);
     wear(m_prevButton, kArrowUp, tr("Prev"), compact);
     wear(m_nextButton, kArrowDown, tr("Next"), compact);
-    wear(m_paneButton, kSplit, tr("Two-pane"), glyphOptions);
-    wear(m_wsButton, kPilcrow, tr("Whitespace"), glyphOptions);
-    wear(m_syntaxButton, kCodeTags, tr("Syntax"), glyphOptions);
-    for (QToolButton *b : {m_paneButton, m_wsButton, m_syntaxButton})
+    // Whitespace and Syntax are squares wherever they show.
+    setIconForm(m_wsButton, true);
+    setIconForm(m_syntaxButton, true);
+    updateViewButton();
+    for (QToolButton *b : {m_viewButton, m_wsButton, m_syntaxButton})
         if (b->isHidden() != compact)
             b->setHidden(compact);
     if (m_optionsButton->isHidden() == compact)
@@ -186,7 +203,19 @@ void DiffPane::applyForm()
     updateChangeLabel();
 }
 
-// "Change n of m   ·   summary", or just "n/m" in the narrowest form.
+void DiffPane::updateViewButton()
+{
+    const bool split = m_diff->mode() == DiffView::TwoPane;
+    const uint glyph = split ? kSplit : kUnified;
+    const QString name = split ? tr("Split") : tr("Unified");
+    // The name where the pane has the room, the glyph and the chevron always.
+    const QString face = m_form == Form::Labelled ? icon(glyph) + name : icon(glyph, name.left(1));
+    setTextOnce(m_viewButton, face + chevron());
+}
+
+// "Change n of m   ·   summary", or just "n/m" in the narrowest form. The
+// summary is small regular text in the colours of the design: the status in
+// its own, the added lines green, the removed ones red.
 void DiffPane::updateChangeLabel()
 {
     const int n = m_changeIndex < 0 ? 0 : m_changeIndex + 1;
@@ -196,25 +225,62 @@ void DiffPane::updateChangeLabel()
             text = QStringLiteral("%1/%2").arg(n).arg(m_changeTotal);
     } else {
         text = m_changeTotal == 0 ? QString() : tr("Change %1 of %2").arg(n).arg(m_changeTotal);
-        if (!m_summary.isEmpty())
-            text += (text.isEmpty() ? QString() : QStringLiteral("   ·   ")) + m_summary;
+        if (!m_summary.status.isEmpty()) {
+            const OmarchyTheme *theme = OmarchyTheme::instance();
+            const QString span = QStringLiteral("<span style=\"color:%1; font-size:%2px; font-weight:normal\">%3</span>");
+            const int small = space(11);
+            QString summary = span.arg(m_summary.colour.name()).arg(small).arg(m_summary.status.toHtmlEscaped());
+            if (m_summary.added >= 0 && m_summary.removed >= 0) {
+                summary += QStringLiteral("&nbsp;&nbsp;")
+                    + span.arg(theme->diffAddedIcon().name()).arg(small).arg(QStringLiteral("+%1").arg(m_summary.added))
+                    + QStringLiteral("&nbsp;")
+                    + span.arg(theme->diffRemovedIcon().name()).arg(small).arg(QStringLiteral("−%1").arg(m_summary.removed));
+            }
+            text = text.toHtmlEscaped();
+            text += (text.isEmpty() ? QString() : QStringLiteral("&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;")) + summary;
+        }
     }
     if (m_changeLabel->text() != text)
         m_changeLabel->setText(text);
 }
 
-// What the narrowest form keeps behind "…": the three options as they are at
-// the moment the menu opens, each entry taking the button's own path.
+void DiffPane::addViewEntries(QMenu *menu)
+{
+    const bool split = m_diff->mode() == DiffView::TwoPane;
+    const struct {
+        uint glyph;
+        QString label, tip;
+        bool twoPane;
+    } entries[] = {{kSplit, tr("Split"), tr("The two versions side by side (Ctrl+T)"), true},
+                   {kUnified, tr("Unified"), tr("One pane, the removed lines over the added ones (Ctrl+T)"), false}};
+    for (const auto &entry : entries) {
+        QAction *action = menu->addAction(icon(entry.glyph) + entry.label);
+        action->setCheckable(true);
+        action->setChecked(split == entry.twoPane);
+        action->setToolTip(entry.tip);
+        connect(action, &QAction::triggered, this, [this, twoPane = entry.twoPane] { m_diff->setTwoPane(twoPane); });
+    }
+}
+
+void DiffPane::fillViewMenu()
+{
+    m_viewMenu->clear();
+    addViewEntries(m_viewMenu);
+}
+
+// What the narrowest form keeps behind "…": the view dropdown's choice, then
+// the two options as they are at the moment the menu opens, each entry
+// taking the button's own path.
 void DiffPane::fillOptionsMenu()
 {
     m_optionsMenu->clear();
+    addViewEntries(m_optionsMenu);
+    m_optionsMenu->addSeparator();
     const struct {
         uint glyph;
         QString label;
         QToolButton *button;
-    } entries[] = {{kSplit, tr("Two-pane"), m_paneButton},
-                   {kPilcrow, tr("Whitespace"), m_wsButton},
-                   {kCodeTags, tr("Syntax"), m_syntaxButton}};
+    } entries[] = {{kPilcrow, tr("Whitespace"), m_wsButton}, {kCodeTags, tr("Syntax"), m_syntaxButton}};
     for (const auto &entry : entries) {
         QAction *action = m_optionsMenu->addAction(icon(entry.glyph) + entry.label);
         action->setCheckable(true);
@@ -232,7 +298,7 @@ void DiffPane::showOptionsMenu()
 
 void DiffPane::togglePaneMode()
 {
-    m_paneButton->toggle();
+    m_diff->setTwoPane(m_diff->mode() != DiffView::TwoPane);
 }
 
 void DiffPane::toggleWhitespace()

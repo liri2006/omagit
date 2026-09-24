@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CommitPage.h"
 #include "DiffView.h"
 #include "GitRepo.h"
 #include "PaneLayout.h"
@@ -13,7 +14,6 @@
 #include <functional>
 
 class BadgeButton;
-class CommitPage;
 class AgentPopover;
 class CommitPopover;
 class DiffPane;
@@ -21,6 +21,8 @@ class Footer;
 class HistoryView;
 class MiniRail;
 class QFileSystemWatcher;
+class QHBoxLayout;
+class QVBoxLayout;
 class QSplitter;
 class QStackedWidget;
 
@@ -181,8 +183,12 @@ private:
     // Classifies the window's width and, when that changed, stacks or
     // unstacks the presentation (see isStacked()).
     void updateStacking();
-    // The left section's share of the splitter: remembered, or 45% of it.
+    // The left section's share of the splitter: remembered, or the design's
+    // width for the window's width class.
     void applySplitterSizes();
+    int defaultLeftWidth() const;
+    // The footer, or the room it leaves, for the window's height class.
+    void applyShallowChrome();
     // Whether the Mini rail is on screen: the Mini layout, or the Diff tab.
     bool railShowing() const;
     // A tab of the top bar, or Ctrl+1 / Ctrl+2: Changes and History are the
@@ -239,6 +245,10 @@ private:
     QString m_indexFile;
     bool m_diffVisible = true;
     bool m_stacked = false; // the window is narrower than the stacking width
+    WidthClass m_widthClass = WidthClass::Wide;
+    bool m_shallow = false; // the window is lower than the shallow height
+    QVBoxLayout *m_rootLayout; // the top bar, the body and the footer
+    QHBoxLayout *m_bodyLayout; // the rail and the splitter, inside the window's margins
     bool m_diffTab = false; // stacked: the Diff tab, rather than the mode's page
     SyncButtons m_syncButtons;     // the top bar's
     BadgeButton *m_mergeButton;    // the top bar's, marked while a merge waits

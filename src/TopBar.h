@@ -9,6 +9,7 @@
 
 class BadgeButton;
 class BadgeLayer;
+class QHBoxLayout;
 class QMenu;
 class QToolButton;
 class QVBoxLayout;
@@ -152,6 +153,7 @@ private:
     void addSyncEntry(QMenu *menu, const SyncControl &c, const QString &label);
 
     QVBoxLayout *m_rootLayout;
+    QHBoxLayout *m_rowLayout; // the row inside the window's margins
     QWidget *m_row;   // the controls, placed by hand: the tabs follow the window's centre
     QToolButton *m_repoButton;
     QToolButton *m_branchButton;

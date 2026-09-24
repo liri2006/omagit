@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QColor>
+#include <QString>
 #include <QWidget>
 
 class DiffView;
@@ -14,9 +16,11 @@ class QToolButton;
 // shortcut on a hidden widget is inactive and this pane can be hidden — and
 // the top bar carries the toggle that hides it.
 //
-// The row folds with the pane's width, in the design's three forms: every
-// button labelled; the three view options as glyphs; and, narrowest, Prev and
-// Next as glyphs, the counter as "n/m" and the options behind one "…" menu.
+// The row folds with the pane's width, in the design's three forms: Prev,
+// Next and the view dropdown labelled; the dropdown as its glyph and chevron;
+// and, narrowest, Prev and Next as glyphs, the counter as "n/m" and the view
+// options behind one "…" menu. Whitespace and Syntax are 28 px squares in
+// every form that shows them.
 class DiffPane : public QWidget
 {
     Q_OBJECT
@@ -25,8 +29,16 @@ public:
 
     DiffView *view() const { return m_diff; }
 
-    // The file's status and line counts, shown after "Change n of m".
-    void setSummary(const QString &summary) { m_summary = summary; }
+    // The file's status and line counts, shown after "Change n of m": the
+    // status in its colour, the added lines green and the removed ones red.
+    // Counts below zero are left out (a binary file, a diff of no lines).
+    struct Summary {
+        QString status;
+        QColor colour;
+        int added = -1, removed = -1;
+    };
+    void setSummary(const Summary &summary) { m_summary = summary; }
+    void clearSummary() { m_summary = Summary(); }
 
     void applyTheme();
 
@@ -52,7 +64,13 @@ private:
     // The form for the pane's width of the moment, and putting it on the row.
     Form formForWidth() const;
     void applyForm();
+    // The view dropdown's face: the split or unified glyph, its name where
+    // the form has the room, the chevron.
+    void updateViewButton();
     void updateChangeLabel();
+    // The Split and Unified entries of a menu, the current one ticked.
+    void addViewEntries(QMenu *menu);
+    void fillViewMenu();
     void fillOptionsMenu();
 
     DiffView *m_diff;
@@ -60,12 +78,13 @@ private:
     QLabel *m_changeLabel;
     QToolButton *m_prevButton;
     QToolButton *m_nextButton;
-    QToolButton *m_paneButton;   // one / two panes (Ctrl+T)
+    QToolButton *m_viewButton;   // the view dropdown: split (two panes) or unified (Ctrl+T)
+    QMenu *m_viewMenu;
     QToolButton *m_wsButton;     // whitespace markers (Ctrl+W)
     QToolButton *m_syntaxButton; // syntax colouring (Ctrl+L)
     QToolButton *m_optionsButton; // the options behind "…", compact only
     QMenu *m_optionsMenu;
-    QString m_summary;
+    Summary m_summary;
     // The last change position the view reported, so a form change can
     // re-render the counter without waiting for the next one.
     int m_changeIndex = -1;

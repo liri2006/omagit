@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "BadgeButton.h"
 #include "BranchMenu.h"
+#include "ChangesModel.h"
 #include "CommitPage.h"
 #include "AgentPopover.h"
 #include "CommitPopover.h"
@@ -52,11 +53,32 @@ using namespace ui;
 namespace {
 constexpr int kRecentMax = 15;
 constexpr int kDefaultWidth = 1400, kDefaultHeight = 850;
-constexpr int kBodySpacing = 8;         // between the rail and the splitter, and everywhere else
-constexpr int kLeftSharePercent = 45;   // of the window, before the user drags the splitter
+constexpr int kBodySpacing = 8;         // in the left section
+// Between the Mini rail and the diff pane, and the docked splitter's gap
+// between the left section and the diff pane (screens.js screen()): 12, and
+// 10 on the stacked Diff tab.
+constexpr int kPaneGap = 12, kStackedRailGap = 10;
+// The design's window grid (screens.js screen()), in 12 px-base pixels: the
+// body keeps the window's margin (ui::windowMargin()) at either side and
+// 10 px from the footer below it. From the top bar's hairline above it, it
+// keeps ui::barGap(), the gap between the bar's row and that hairline, so
+// the first rows of the body stand as far below the line as the bar's row
+// stands above it.
+constexpr int kBodyGap = 10;
+// The docked left section's width before the user drags the splitter, by the
+// width class of the window (design pixels): 560 from 1400 up, 400 from 1000,
+// 340 below that.
+constexpr int kWideWidth = 1400, kLargeWidth = 1000;
+constexpr int kLeftWide = 560, kLeftLarge = 400, kLeftMedium = 340;
+// Lower than this the window is shallow: the message box is one line, the
+// action bar takes its stacked form, whatever the width, and the footer goes.
+constexpr int kShallowHeight = 560;
 // Narrower than this (design pixels, so it follows the text size) the body
 // stacks: one presentation at a time, picked by the top bar's tabs.
 constexpr int kStackWidth = 700;
+// Narrower than this the window is extra small (screens.js levelFor(): xs),
+// which only the history's rows tell apart from the other stacked widths.
+constexpr int kExtraSmallWidth = 480;
 constexpr int kWatchDebounceMs = 500;   // a burst of file changes ends in one refresh
 // How long the footer keeps a message: a done deed, something that took a
 // while, a failure, and a job still waiting for the user.
@@ -139,11 +161,11 @@ void MainWindow::buildUi()
 {
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
-    // The top margin is 3: the top bar keeps 5 more above its row for the
-    // badges that rise over the sync buttons, so at the design's text size
-    // the row stays 8 px under the window's edge.
-    rootLayout->setContentsMargins(14, 3, 14, 8);
-    rootLayout->setSpacing(kBodySpacing);
+    // No margins of its own: the top bar and the footer run from edge to edge
+    // (their hairlines do) and keep the window's margin inside, and the body
+    // keeps it in its own layout. applyTheme() puts the scaled gaps on.
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    m_rootLayout = rootLayout;
 
     // ---- The top bar: the repository and branch chips, the page tabs, the
     // sync buttons and the layout toggles. It stands above the whole body, so
@@ -215,13 +237,17 @@ void MainWindow::buildUi()
     m_history = new HistoryView(m_repo);
     connect(m_history, &HistoryView::currentFileChanged, this, &MainWindow::showHistoryDiff);
     connect(m_history, &HistoryView::refreshRequested, this, &MainWindow::refresh);
-    connect(m_history->filesTable(), &QTableView::doubleClicked, this, [this] {
-        // Stacked first: the preference may say shown while the pane is not.
+    // A double-click on one of a commit's files, or the stacked details
+    // card's files button: the diff of the file. Stacked first: the
+    // preference may say shown while the pane is not.
+    const auto showHistoryFiles = [this] {
         if (m_stacked)
             setDiffTab(true);
         else if (!m_diffVisible)
             setDiffPaneVisible(true);
-    });
+    };
+    connect(m_history->filesTable(), &QTableView::doubleClicked, this, showHistoryFiles);
+    connect(m_history, &HistoryView::filesRequested, this, showHistoryFiles);
     m_stack->addWidget(m_history);
     leftLayout->addWidget(m_stack, 1);
     // The tab's count is the changes list's, in both modes: whatever the proxy
@@ -240,7 +266,7 @@ void MainWindow::buildUi()
 
     auto *splitter = new QSplitter(Qt::Horizontal);
     m_splitter = splitter;
-    splitter->setHandleWidth(8);
+    splitter->setHandleWidth(space(kPaneGap)); // applyTheme() keeps it on the text size
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(left);
     splitter->addWidget(m_diffPane);
@@ -269,8 +295,8 @@ void MainWindow::buildUi()
     updateMergeButtons(MergeState());
 
     auto *body = new QHBoxLayout;
-    body->setContentsMargins(0, 0, 0, 0);
-    body->setSpacing(kBodySpacing);
+    m_bodyLayout = body;
+
     body->addWidget(m_rail);
     body->addWidget(splitter, 1);
     rootLayout->addLayout(body, 1);
@@ -564,7 +590,7 @@ void MainWindow::setDiffTab(bool on)
     else if (m_mode == CommitMode)
         m_commitPage->activeListView()->setFocus(Qt::OtherFocusReason);
     else
-        m_history->filesTable()->setFocus(Qt::OtherFocusReason);
+        m_history->activeListView()->setFocus(Qt::OtherFocusReason);
 }
 
 void MainWindow::setMode(Mode mode)
@@ -658,7 +684,9 @@ void MainWindow::applyPanes()
         layoutButton->setChecked(mini);
         diffToggle->setChecked(m_diffVisible);
     }
-    layoutButton->setText(icon(paneLayoutGlyph(m_layout), paneLayoutName(m_layout).left(1)).trimmed());
+    // The Mini toggle's glyph is the same in both layouts; its checked state
+    // says which one is on.
+    layoutButton->setText(icon(kViewCompact, paneLayoutName(PaneLayout::Mini).left(1)).trimmed());
     layoutButton->setToolTip(tr("Layout: %1").arg(paneLayoutTip(m_layout)));
     diffToggle->setToolTip(m_diffVisible ? tr("Hide the diff pane so the left section fills the window (Ctrl+Shift+B)")
                                          : tr("Show the diff pane (Ctrl+Shift+B)"));
@@ -702,9 +730,37 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 
 void MainWindow::updateStacking()
 {
-    const bool stacked = width() < space(kStackWidth);
-    if (stacked == m_stacked)
+    // The width class and the height class first: they only ever size things
+    // (the message box, the left section, the action bar), and nothing of
+    // them is saved.
+    const int w = width();
+    const bool stacked = w < space(kStackWidth);
+    const WidthClass widthClass = stacked ? WidthClass::Stacked
+        : w >= space(kWideWidth)         ? WidthClass::Wide
+        : w >= space(kLargeWidth)        ? WidthClass::Large
+                                         : WidthClass::Medium;
+    const bool shallow = height() < space(kShallowHeight);
+    const bool widthClassChanged = widthClass != m_widthClass;
+    if (widthClassChanged || shallow != m_shallow) {
+        m_widthClass = widthClass;
+        if (shallow != m_shallow) {
+            m_shallow = shallow;
+            applyShallowChrome();
+        }
+        m_commitPage->setWindowClass(widthClass, shallow);
+    }
+    // On every pass: the narrowest stacked widths, which the width classes do
+    // not tell apart from the others, leave the remote chips out of its rows.
+    m_history->setWindowClass(widthClass, shallow, w < space(kExtraSmallWidth));
+
+    if (stacked == m_stacked) {
+        // A new width class is a new default width for a left section the
+        // user never sized.
+        if (widthClassChanged && !stacked && m_shown && m_left->isVisibleTo(this)
+            && !QSettings().contains(settings::kWindowLeftWidth))
+            applySplitterSizes();
         return;
+    }
     m_stacked = stacked;
     if (stacked) {
         // The layout the user works in picks the tab the window opens on.
@@ -715,8 +771,10 @@ void MainWindow::updateStacking()
         m_commitPopover->dismiss();
         m_diffTab = false;
     }
+    m_bodyLayout->setSpacing(space(stacked ? kStackedRailGap : kPaneGap));
     m_topBar->setStacked(stacked);
     m_commitPage->setStacked(stacked);
+    m_history->setStacked(stacked);
     applyPanes();
     // Back to Docked beside the diff: the left section's own width again, not
     // the whole body it had while stacked.
@@ -724,17 +782,41 @@ void MainWindow::updateStacking()
         applySplitterSizes();
 }
 
+// A shallow window has no footer (screens.js screen(): footH = 0), and the
+// body ends the window's side margin over its bottom edge — the user's
+// choice over the design's 10 + 12. Messages for the footer are simply not
+// shown, and the keybindings stay on Ctrl+K.
+void MainWindow::applyShallowChrome()
+{
+    m_footer->setVisible(!m_shallow);
+    m_rootLayout->setContentsMargins(0, 0, 0, m_shallow ? windowMargin() : 0);
+    m_bodyLayout->setContentsMargins(windowMargin(), barGap(), windowMargin(), m_shallow ? 0 : space(kBodyGap));
+}
+
+// The design's width of the left section for the window's width class.
+int MainWindow::defaultLeftWidth() const
+{
+    switch (m_widthClass) {
+    case WidthClass::Wide: return space(kLeftWide);
+    case WidthClass::Large: return space(kLeftLarge);
+    case WidthClass::Medium:
+    case WidthClass::Stacked: break;
+    }
+    return space(kLeftMedium);
+}
+
 // Neither pane has a minimum width of its own, so the splitter's first
 // layout would split the window evenly; give the left section its
-// remembered width (or 45%) instead. The splitter may not be laid out yet,
-// so its width comes from the window's, less the rail.
+// remembered width (or the design's for the width class) instead. The
+// splitter may not be laid out yet, so its width comes from the window's,
+// less the body's margins and the rail.
 void MainWindow::applySplitterSizes()
 {
-    const QMargins m = centralWidget()->layout()->contentsMargins();
+    const QMargins m = m_bodyLayout->contentsMargins();
     const int total = width() - m.left() - m.right()
-        - (m_rail->isVisibleTo(this) ? MiniRail::railWidth() + kBodySpacing : 0);
+        - (m_rail->isVisibleTo(this) ? MiniRail::railWidth() + m_bodyLayout->spacing() : 0);
     const int rightMin = m_diffPane->isVisibleTo(this) ? 1 + m_splitter->handleWidth() : 0;
-    const int wanted = QSettings().value(settings::kWindowLeftWidth, total * kLeftSharePercent / 100).toInt();
+    const int wanted = QSettings().value(settings::kWindowLeftWidth, defaultLeftWidth()).toInt();
     const int left = qBound(1, wanted, qMax(1, total - rightMin));
     m_splitter->setSizes({left, qMax(1, total - left)});
 }
@@ -758,6 +840,11 @@ void MainWindow::hideEvent(QHideEvent *event)
 void MainWindow::applyTheme()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
+    // The window's grid, in design pixels.
+    m_rootLayout->setSpacing(0); // the body's own margins keep the gaps
+    applyShallowChrome();
+    m_bodyLayout->setSpacing(space(m_stacked ? kStackedRailGap : kPaneGap));
+    m_splitter->setHandleWidth(space(kPaneGap));
     m_diffPane->applyTheme();
     m_topBar->applyTheme();
     m_commitPage->applyTheme();
@@ -930,10 +1017,13 @@ void MainWindow::presentDiff(const QString &unified, const FileChange &change, b
         doc.message = tr("Binary file — no textual diff available.");
     }
     QString subtitle = change.statusText();
-    QString summary = change.statusText();
+    DiffPane::Summary summary;
+    summary.status = change.statusText();
+    summary.colour = ChangesModel::statusColor(change.kind);
     if (!doc.lines.isEmpty()) {
         subtitle += tr("   +%1  −%2").arg(doc.added).arg(doc.removed);
-        summary += tr("  +%1 −%2").arg(doc.added).arg(doc.removed);
+        summary.added = doc.added;
+        summary.removed = doc.removed;
     } else if (doc.message.isEmpty()) {
         doc.message = emptyMessage;
     }
@@ -976,7 +1066,7 @@ void MainWindow::showDiffFor(const FileChange &change)
     const QString base = m_repo->amending() ? tr("HEAD~1") : tr("HEAD");
     const QString staged = change.isStaged() && change.worktree == ' ' ? tr("Staged — identical to %1.").arg(base)
                                                                       : QString();
-    const DiffLabels labels = diffLabels(change, base, base, tr("Working Tree"), staged);
+    const DiffLabels labels = diffLabels(change, base, base, tr("Working tree"), staged);
     presentDiff(unified, change, binary, labels.left, labels.right, labels.empty);
 }
 
@@ -992,7 +1082,7 @@ void MainWindow::showHistoryDiff()
     Commit c;
     FileChange f;
     if (!m_history->currentFile(&c, &f)) {
-        m_diffPane->setSummary(QString());
+        m_diffPane->clearSummary();
         m_diffPane->view()->clear(m_history->emptyMessage());
         return;
     }
@@ -1197,7 +1287,8 @@ void MainWindow::showBranchMenu()
                                               : tr("Create the local branch %1 tracking %2 and switch to it").arg(local, name);
     });
     connect(&menu, &BranchMenu::picked, this, &MainWindow::checkoutBranch);
-    menu.popupAt(m_topBar->branchButton(), false); // the chip is at the top of the window: the list hangs below it
+    // The chip is at the top of the window: the list hangs from the bar under it.
+    menu.popupAt(m_topBar->branchButton(), false, m_topBar);
 }
 
 void MainWindow::checkoutBranch(const QString &name)
@@ -1322,8 +1413,9 @@ void MainWindow::showRepoMenu()
     QAction *clone = menu.addAction(icon(kFetch) + tr("Clone…"));
     clone->setToolTip(tr("Download a repository from a URL or GitHub (Ctrl+Shift+O)"));
     connect(clone, &QAction::triggered, this, &MainWindow::showCloneDialog);
+    // From the chip's left edge, hanging from the bar under it.
     QToolButton *const anchor = m_topBar->repoButton();
-    menu.exec(anchor->mapToGlobal(QPoint(0, anchor->height())));
+    menu.exec(QPoint(anchor->mapToGlobal(QPoint(0, 0)).x(), popupTop(m_topBar)));
 }
 
 void MainWindow::showCloneDialog()

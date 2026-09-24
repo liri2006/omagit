@@ -16,8 +16,11 @@
 #include <QTableView>
 
 namespace {
-// The design's checkbox column, and the width the row numbers have always had.
+// The design's first column (the checkboxes, or the row numbers of the
+// history's files), and the least every other column may be dragged to.
 constexpr int kCheckColumn = 30, kNumberColumn = 40;
+// The status pill: a 16 px square, its letter in the bold 10 px caption.
+constexpr int kPillSize = 16, kPillText = 10;
 
 // The narrow first column. Where the list has checkboxes, the base class
 // paints the model's check state and nothing else; where it has not, this
@@ -226,8 +229,60 @@ QChar ChangesModel::statusLetter(FileChange::Kind kind)
     case FileChange::Copied: return QLatin1Char('C');
     case FileChange::TypeChanged: return QLatin1Char('T');
     case FileChange::Unmerged: return QLatin1Char('!');
+    case FileChange::Untracked: return QLatin1Char('U');
     default: return QLatin1Char('?');
     }
+}
+
+// Status colours: modified blue, added purple, deleted red/brown,
+// renamed cyan-ish, conflicted red, unversioned plain.
+QColor ChangesModel::statusColor(FileChange::Kind kind)
+{
+    const OmarchyTheme *t = OmarchyTheme::instance();
+    switch (kind) {
+    case FileChange::Modified: return t->color(QStringLiteral("blue"));
+    case FileChange::Added: return t->color(QStringLiteral("magenta"));
+    case FileChange::Deleted: return t->color(QStringLiteral("red"));
+    case FileChange::Renamed:
+    case FileChange::Copied: return t->color(QStringLiteral("cyan"));
+    case FileChange::TypeChanged: return t->color(QStringLiteral("yellow"));
+    case FileChange::Unmerged: return t->color(QStringLiteral("bright_red"));
+    case FileChange::Untracked: return t->mutedText();
+    default: return t->text();
+    }
+}
+
+QString ChangesModel::statusHtml(const FileChange &change)
+{
+    return QStringLiteral("<span style=\"color:%1\">%2</span>")
+        .arg(statusColor(change.kind).name(), change.statusText().toHtmlEscaped());
+}
+
+QColor statusColour(const QModelIndex &index)
+{
+    const QColor colour = index.data(Qt::ForegroundRole).value<QColor>();
+    return colour.isValid() ? colour : OmarchyTheme::instance()->text();
+}
+
+void paintStatusPill(QPainter *painter, const QRect &cell, const QModelIndex &index)
+{
+    const QVariant kind = index.data(ChangesModel::KindRole);
+    if (!kind.isValid())
+        return; // a directory row has no status of its own
+    const QColor colour = statusColour(index);
+    const int side = ui::space(kPillSize);
+    QRect pill(0, 0, side, side);
+    pill.moveCenter(cell.center());
+    QColor fill = colour;
+    fill.setAlphaF(0.18);
+    painter->fillRect(pill, fill);
+    QFont font = OmarchyTheme::instance()->uiFont();
+    font.setPixelSize(ui::space(kPillText));
+    font.setBold(true);
+    painter->setFont(font);
+    painter->setPen(colour);
+    painter->drawText(pill, Qt::AlignCenter,
+                      QString(ChangesModel::statusLetter(FileChange::Kind(kind.toInt()))));
 }
 
 int ChangesModel::rowCount(const QModelIndex &parent) const
@@ -280,21 +335,7 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
         if (index.column() == Size || index.column() == LinesAdded || index.column() == LinesRemoved)
             return int(Qt::AlignRight | Qt::AlignVCenter);
         break;
-    case Qt::ForegroundRole: {
-        // Status colours: modified blue, added purple, deleted red/brown,
-        // renamed cyan-ish, conflicted red, unversioned plain.
-        switch (c.kind) {
-        case FileChange::Modified: return t->color(QStringLiteral("blue"));
-        case FileChange::Added: return t->color(QStringLiteral("magenta"));
-        case FileChange::Deleted: return t->color(QStringLiteral("red"));
-        case FileChange::Renamed:
-        case FileChange::Copied: return t->color(QStringLiteral("cyan"));
-        case FileChange::TypeChanged: return t->color(QStringLiteral("yellow"));
-        case FileChange::Unmerged: return t->color(QStringLiteral("bright_red"));
-        case FileChange::Untracked: return t->mutedText();
-        default: return t->text();
-        }
-    }
+    case Qt::ForegroundRole: return statusColor(c.kind);
     case Qt::FontRole:
         if (c.kind == FileChange::Unmerged) {
             QFont f = t->uiFont();
@@ -303,16 +344,18 @@ QVariant ChangesModel::data(const QModelIndex &index, int role) const
         }
         break;
     case Qt::ToolTipRole: {
-        QString tip = c.path;
+        // Rich text for the coloured status; `pre` keeps Qt from wrapping a
+        // rich-text tip at its fixed width, which would break a long path.
+        QStringList lines{statusHtml(c), c.path.toHtmlEscaped()};
         if (!c.oldPath.isEmpty())
-            tip += QStringLiteral("\nrenamed from ") + c.oldPath;
+            lines << QStringLiteral("renamed from ") + c.oldPath.toHtmlEscaped();
         if (m_checkable)
-            tip += QStringLiteral("\nindex: %1  worktree: %2").arg(QChar(c.index), QChar(c.worktree));
+            lines << QStringLiteral("index: %1  worktree: %2").arg(QChar(c.index), QChar(c.worktree)).toHtmlEscaped();
         if (c.binary)
-            tip += QStringLiteral("\nbinary");
+            lines << QStringLiteral("binary");
         if (c.size >= 0)
-            tip += QStringLiteral("\n%1 bytes").arg(QLocale().toString(c.size));
-        return tip;
+            lines << QStringLiteral("%1 bytes").arg(QLocale().toString(c.size));
+        return QStringLiteral("<p style=\"white-space:pre\">%1</p>").arg(lines.join(QStringLiteral("<br>")));
     }
     }
     return {};
@@ -344,6 +387,10 @@ QVariant ChangesModel::headerData(int section, Qt::Orientation orientation, int 
                    : checked == m_changes.size() ? Qt::Checked
                                                  : Qt::PartiallyChecked);
     }
+    // Name and Path read from the left, 10 px in (the section's padding), like
+    // the text under them; the short columns keep their titles centred.
+    if (role == Qt::TextAlignmentRole)
+        return int((section == Name || section == Path ? Qt::AlignLeft : Qt::AlignHCenter) | Qt::AlignVCenter);
     if (role != Qt::DisplayRole)
         return {};
     switch (section) {
@@ -398,6 +445,14 @@ void ChangesHeader::setSectionText(int section, const QString &text)
     else
         m_sectionText.insert(section, text);
     updateSection(section);
+}
+
+QString ChangesHeader::sectionText(int section) const
+{
+    const auto it = m_sectionText.constFind(section);
+    if (it != m_sectionText.constEnd())
+        return *it;
+    return model() ? model()->headerData(section, orientation(), Qt::DisplayRole).toString() : QString();
 }
 
 void ChangesHeader::initStyleOptionForIndex(QStyleOptionHeader *option, int logicalIndex) const
@@ -524,7 +579,7 @@ void ChangesHeader::setCheckHovered(bool on)
 // ---------------------------------------------------------------------------
 
 ChangesTableSetup::ChangesTableSetup(QTableView *table)
-    : QObject(table), m_table(table)
+    : QObject(table), m_table(table), m_stretchColumn(ChangesModel::Path), m_stretchFloor(ui::kMinStretchColumn)
 {
     // Before anything else on the header: a table hands its sorting and its
     // section settings to the header it has at the time.
@@ -571,14 +626,14 @@ bool ChangesTableSetup::hasChecks() const
 
 void ChangesTableSetup::applyTheme()
 {
-    m_table->verticalHeader()->setDefaultSectionSize(ui::tableRowHeight());
-    // The checkbox column is the design's 30 px, which at the smaller text
-    // sizes is under the floor the other columns keep, so the floor follows
-    // it down. A list of row numbers keeps the width it has always had.
-    if (hasChecks()) {
-        m_table->horizontalHeader()->setMinimumSectionSize(qMin(kNumberColumn, ui::space(kCheckColumn)));
-        m_table->setColumnWidth(ChangesModel::Check, ui::space(kCheckColumn));
-    }
+    m_table->verticalHeader()->setDefaultSectionSize(ui::fileRowHeight());
+    m_table->horizontalHeader()->setFixedHeight(ui::tableHeaderHeight());
+    // The first column is the design's 30 px, which at the smaller text sizes
+    // is under the floor the other columns keep, so the floor follows it
+    // down. The checkboxes keep to it for good; the row numbers of the
+    // history's files are the user's to widen until the next text size.
+    m_table->horizontalHeader()->setMinimumSectionSize(qMin(kNumberColumn, ui::space(kCheckColumn)));
+    m_table->setColumnWidth(ChangesModel::Check, ui::space(kCheckColumn));
     // A new text size moves the compact widths too, and Name has to be fitted
     // again around them — without touching the table widths put away for the
     // return to the full presentation.
@@ -589,14 +644,21 @@ void ChangesTableSetup::applyTheme()
     m_table->viewport()->update();
 }
 
+void ChangesTableSetup::setStretchColumn(int column, int floor)
+{
+    m_stretchColumn = column;
+    m_stretchFloor = floor;
+    fitStretchColumn();
+}
+
 void ChangesTableSetup::fitStretchColumn()
 {
-    const int stretch = m_compact ? int(ChangesModel::Name) : int(ChangesModel::Path);
+    const int stretch = m_compact ? int(ChangesModel::Name) : m_stretchColumn;
     int others = 0;
     for (int c = 0; c < ChangesModel::ColumnCount; ++c)
         if (c != stretch && !m_table->isColumnHidden(c))
             others += m_table->columnWidth(c);
-    ui::fitStretchColumn(m_table, stretch, others);
+    ui::fitStretchColumn(m_table, stretch, others, m_stretchFloor);
 }
 
 void ChangesTableSetup::setCompactDelegates(QAbstractItemDelegate *name, QAbstractItemDelegate *status)

@@ -1,7 +1,9 @@
 #include "HistoryView.h"
 #include "ChangesModel.h"
+#include "CommitDetails.h"
 #include "HistoryModel.h"
 #include "OmarchyTheme.h"
+#include "RefChip.h"
 #include "UiHelpers.h"
 
 #include <QApplication>
@@ -16,10 +18,10 @@
 #include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
-#include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
+#include <QStyleOptionFrame>
 #include <QStyledItemDelegate>
 #include <QTableView>
 #include <QTimer>
@@ -32,15 +34,98 @@ using namespace ui;
 
 namespace {
 
-// The width of the commit list's fixed columns, and the graph column: one
-// lane per line of the graph, plus the margin the node circles need.
-constexpr int kAuthorWidth = 150, kDateWidth = 130, kHashWidth = 96;
-constexpr int kMaxGraphLanes = 12, kGraphMargin = 12;
+// screens.js historyPage(), in the pixels of a 12 px base font: the filter
+// row, 8 px, the commit list; 10 px between it, the details card and the
+// files table; and the row with the count of commits, right under the last
+// of them.
+constexpr int kFilterGap = 8, kAllRefsGap = 8, kRefreshGap = 6;
+constexpr int kSectionGap = 10;
+// The card is 150 tall (132 stacked), the files table 110.
+constexpr int kDetailsHeight = 150, kStackedDetailsHeight = 132, kFilesHeight = 110;
+// The count row: the last section ends 22 px above the page's bottom edge,
+// and the count's text is centred 6 px above that edge. While Load more
+// stands in the row, the row is the button's 28 px.
+constexpr int kCountRowHeight = 22, kCountTextAbove = 6;
+// The field: its magnifier 8 px in, 14 px square; the text 28 px in. Under
+// 200 px the placeholder is one word, under 300 two.
+constexpr int kMagnifierX = 8, kMagnifierSize = 14, kFilterTextX = 28;
+constexpr int kShortFilterWidth = 200, kMediumFilterWidth = 300;
+// What QLineEdit keeps between its contents rectangle and the text on its
+// own (QLineEditPrivate::horizontalMargin), under any style.
+constexpr int kLineEditMargin = 2;
 
-// One lane, a hair wider than a character of the UI font.
-int laneWidth()
+// The cells: text 10 px in from either side, the small 11 px text of the
+// author, the date, the status and the counts; the ref chips 6 px apart, and
+// never squeezing the subject under 60 px.
+constexpr int kCellInset = 10, kSmallText = 11, kChipGap = 6, kMinSubject = 60;
+// The narrowest the stretching column of either table gets before the table
+// scrolls sideways: the design leaves both 100 px and more in the narrowest
+// section they live in (the Medium class's 340 px), where the commit page's
+// 240 would not fit at all.
+constexpr int kMinStretch = 100;
+// The least a column of the commit list may be dragged to: the 40 px the
+// tables have always kept, or less where the design's narrowest column (the
+// stacked graph, 30 px) is narrower than that — a floor above a column's
+// width would widen it.
+constexpr int kMinColumn = 30, kMinDragColumn = 40;
+
+// The graph (screens.js commitsTable()): lanes 12 px apart, lines 2 px wide
+// at 90 %, and every node the same 4 px disc with a 1.5 px ring of the
+// window's background round it. The column holds up to twelve lanes.
+constexpr int kLanePitch = 12, kMaxGraphLanes = 12;
+constexpr qreal kLineWidth = 2, kLineAlpha = 0.9, kNodeRadius = 4, kNodeRing = 1.5;
+
+// The commit list's columns by the window's width class, in design pixels;
+// 0 is a column the class does not show. Message takes the rest.
+struct CommitColumns {
+    int graph, author, date;
+};
+
+CommitColumns commitColumns(WidthClass widthClass)
 {
-    return OmarchyTheme::instance()->fontBase() + 2;
+    switch (widthClass) {
+    case WidthClass::Wide: return {40, 90, 130};
+    case WidthClass::Large: return {40, 90, 100};
+    case WidthClass::Medium: return {36, 0, 90};
+    case WidthClass::Stacked: break;
+    }
+    return {30, 0, 0};
+}
+
+// The files table's columns by the width class (screens.js changesTable()),
+// after the 30 px row numbers; Name takes the rest. Where the status column
+// is 30 px it is the kit's status pill headed "St" (`pill`).
+struct FileColumns {
+    int path, status, lines, size;
+    bool pill;
+};
+
+FileColumns fileColumns(WidthClass widthClass)
+{
+    switch (widthClass) {
+    case WidthClass::Wide: return {130, 70, 70, 70, false};
+    case WidthClass::Large: return {120, 60, 60, 0, false};
+    case WidthClass::Medium:
+    case WidthClass::Stacked: break;
+    }
+    return {110, 30, 0, 0, true};
+}
+
+QFont smallFont()
+{
+    QFont font = OmarchyTheme::instance()->uiFont();
+    font.setPixelSize(space(kSmallText));
+    return font;
+}
+
+// The cell's own background — hover, selection — as the style paints it for
+// the row, without the text: everything on it the delegates paint themselves.
+void paintCellBackground(QPainter *p, QStyleOptionViewItem opt)
+{
+    opt.text.clear();
+    const QWidget *w = opt.widget;
+    QStyle *style = w ? w->style() : QApplication::style();
+    style->drawControl(QStyle::CE_ItemViewItem, &opt, p, w);
 }
 
 // Matches the filter text against subject, body, author and hash.
@@ -62,8 +147,10 @@ protected:
     }
 };
 
-// Paints the graph column and the message column (ref chips + subject); the
-// other columns use the default delegate.
+// Paints every column of the commit list but the SHA, which it never shows:
+// the graph, the message (ref chips + subject), and the author and the date
+// in the small dim text — dim on the selected row too, where only the
+// subject turns to the accent.
 class CommitDelegate : public QStyledItemDelegate
 {
 public:
@@ -72,154 +159,343 @@ public:
     {
     }
 
+    void setGraph(const HistoryView::GraphGeometry &graph) { m_graph = graph; }
+    // The narrowest widths leave the remote branches out of the rows.
+    void setRemoteChips(bool on) { m_remoteChips = on; }
+
     void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
         const int col = index.column();
-        if (col != HistoryModel::Graph && col != HistoryModel::Message) {
+        if (col == HistoryModel::Hash) {
             QStyledItemDelegate::paint(p, option, index);
             return;
         }
         QStyleOptionViewItem opt = option;
         initStyleOption(&opt, index);
-        opt.text.clear();
-        const QWidget *w = opt.widget;
-        QStyle *style = w ? w->style() : QApplication::style();
-        style->drawControl(QStyle::CE_ItemViewItem, &opt, p, w);
+        paintCellBackground(p, opt);
 
         const int row = m_proxy->mapToSource(index).row();
         p->save();
         p->setClipRect(opt.rect);
-        if (col == HistoryModel::Graph)
-            drawGraph(p, opt.rect, row);
-        else
-            drawMessage(p, opt, row);
+        switch (col) {
+        case HistoryModel::Graph: drawGraph(p, opt.rect, row); break;
+        case HistoryModel::Message: drawMessage(p, opt, row); break;
+        case HistoryModel::Author: drawSmall(p, opt.rect, m_model->commit(row).author); break;
+        case HistoryModel::Date: drawSmall(p, opt.rect, dateText(opt.rect, m_model->commit(row))); break;
+        }
         p->restore();
     }
 
 private:
-    QColor laneColor(int i) const
+    // The lanes in the order they are handed out: the first branch of the
+    // list wears the accent, the next magenta, as in the design.
+    static QColor laneColor(int i)
     {
-        static const char *const keys[] = {"blue", "magenta", "cyan", "green", "yellow", "red",
-                                           "bright_blue", "bright_magenta", "bright_cyan", "bright_green"};
-        return OmarchyTheme::instance()->color(QLatin1String(keys[i % int(std::size(keys))]));
+        static const char *const keys[] = {nullptr, "magenta", "blue", "cyan", "yellow", "green", "red",
+                                           "bright_magenta", "bright_blue", "bright_cyan"};
+        const OmarchyTheme *t = OmarchyTheme::instance();
+        const char *key = keys[i % int(std::size(keys))];
+        return key ? t->color(QLatin1String(key)) : t->accent();
     }
 
+    // The lanes' lines, each edge of the row's own (a lane passing through,
+    // a curve from one lane into another where a branch forks or merges, a
+    // line into or out of the node), and the node over them.
     void drawGraph(QPainter *p, const QRect &r, int row) const
     {
         const OmarchyTheme *t = OmarchyTheme::instance();
+        const qreal scale = t->fontBase() / 12.0;
         const GraphRow &g = m_model->graph(row);
-        const int lw = laneWidth();
-        const int x0 = r.left() + 6;
-        auto laneX = [&](int lane) { return qreal(x0 + lane * lw + lw / 2); };
+        auto laneX = [&](int lane) { return qreal(r.left() + m_graph.laneCentre(lane)); };
         const qreal top = r.top(), bottom = r.bottom() + 1, mid = r.top() + r.height() / 2.0;
         const qreal nodeX = laneX(g.lane);
 
         p->setRenderHint(QPainter::Antialiasing, true);
+        p->setBrush(Qt::NoBrush);
         for (const GraphEdge &e : g.edges) {
-            p->setPen(QPen(laneColor(e.color), 2));
+            QColor colour = laneColor(e.color);
+            colour.setAlphaF(kLineAlpha);
+            // Flat ends, so a lane's lines meet from one row to the next
+            // without overlapping into a darker seam.
+            p->setPen(QPen(colour, kLineWidth * scale, Qt::SolidLine, Qt::FlatCap));
             const QPointF a = e.from >= 0 ? QPointF(laneX(e.from), top) : QPointF(nodeX, mid);
             const QPointF b = e.to >= 0 ? QPointF(laneX(e.to), bottom) : QPointF(nodeX, mid);
+            QPainterPath path(a);
             if (qFuzzyCompare(a.x(), b.x())) {
-                p->drawLine(a, b);
+                path.lineTo(b);
             } else {
                 const qreal my = (a.y() + b.y()) / 2;
-                QPainterPath path(a);
                 path.cubicTo(QPointF(a.x(), my), QPointF(b.x(), my), b);
-                p->drawPath(path);
             }
+            p->drawPath(path);
         }
-        const qreal rad = lw * 0.27;
-        const Commit &c = m_model->commit(row);
-        if (m_model->isHead(row)) {
-            p->setPen(QPen(t->accent(), 2));
-            p->setBrush(laneColor(g.color));
-            p->drawEllipse(QPointF(nodeX, mid), rad + 1, rad + 1);
-        } else if (c.parents.size() > 1) {
-            p->setPen(QPen(laneColor(g.color), 2));
-            p->setBrush(t->window());
-            p->drawEllipse(QPointF(nodeX, mid), rad, rad);
-        } else {
-            p->setPen(Qt::NoPen);
-            p->setBrush(laneColor(g.color));
-            p->drawEllipse(QPointF(nodeX, mid), rad, rad);
-        }
+        p->setPen(QPen(t->window(), kNodeRing * scale));
+        p->setBrush(laneColor(g.color));
+        p->drawEllipse(QPointF(nodeX, mid), kNodeRadius * scale, kNodeRadius * scale);
     }
 
     void drawMessage(QPainter *p, const QStyleOptionViewItem &opt, int row) const
     {
         const OmarchyTheme *t = OmarchyTheme::instance();
-        const QRect r = opt.rect.adjusted(10, 0, -10, 0);
+        const QRect r = opt.rect.adjusted(space(kCellInset), 0, -space(kCellInset), 0);
         int x = r.left();
-        const QFont chipFont = t->captionFont();
-        const QFontMetrics cfm(chipFont);
-        p->setRenderHint(QPainter::Antialiasing, false);
+        const int chipTop = r.top() + (r.height() - refChipHeight()) / 2;
         for (const RefLabel &label : m_model->labels(row)) {
-            const int w = cfm.horizontalAdvance(label.name) + 12;
-            const int h = cfm.height() + 4;
-            if (x + w > r.right() - 60)
+            if (!m_remoteChips && label.type == RefLabel::Remote)
+                continue;
+            const int w = refChipWidth(label);
+            if (x + w > r.right() + 1 - space(kMinSubject))
                 break;
-            const QRect chip(x, r.top() + (r.height() - h) / 2, w, h);
-            QColor bg, border, fg;
-            if (label.head) {
-                bg = t->accent();
-                border = t->accent();
-                fg = t->window();
-            } else if (label.type == RefLabel::Branch) {
-                bg = t->selectedFill();
-                border = t->accent();
-                fg = t->accent();
-            } else if (label.type == RefLabel::Tag) {
-                const QColor y = t->color(QStringLiteral("yellow"));
-                bg = OmarchyTheme::mix(t->window(), y, 0.18);
-                border = y;
-                fg = y;
-            } else {
-                bg = t->normalFill();
-                border = t->normalBorder();
-                fg = t->mutedText();
-            }
-            p->fillRect(chip, bg);
-            p->setPen(border);
-            p->drawRect(chip.adjusted(0, 0, -1, -1));
-            p->setFont(chipFont);
-            p->setPen(fg);
-            p->drawText(chip, Qt::AlignCenter, label.name);
-            x += w + 6;
+            paintRefChip(p, QPoint(x, chipTop), label);
+            x += w + space(kChipGap);
         }
         p->setFont(opt.font);
         p->setPen((opt.state & QStyle::State_Selected) ? t->accent() : t->text());
-        const QRect textRect(x, r.top(), r.right() - x, r.height());
+        const QRect textRect(x, r.top(), r.right() + 1 - x, r.height());
         const QString subject = opt.fontMetrics.elidedText(m_model->commit(row).subject, Qt::ElideRight, textRect.width());
         p->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, subject);
     }
 
+    // The date and the time where the column holds them, the date alone
+    // where it does not (the design's 100 px and 90 px columns).
+    static QString dateText(const QRect &cell, const Commit &commit)
+    {
+        const QDateTime when = commit.date.toLocalTime();
+        const QString full = when.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+        const int room = cell.width() - 2 * space(kCellInset);
+        return QFontMetrics(smallFont()).horizontalAdvance(full) <= room
+            ? full
+            : when.toString(QStringLiteral("yyyy-MM-dd"));
+    }
+
+    static void drawSmall(QPainter *p, const QRect &cell, const QString &text)
+    {
+        const QFont font = smallFont();
+        const QRect r = cell.adjusted(space(kCellInset), 0, -space(kCellInset), 0);
+        p->setFont(font);
+        p->setPen(OmarchyTheme::instance()->mutedText());
+        p->drawText(r, Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(font).elidedText(text, Qt::ElideRight, r.width()));
+    }
+
     HistoryModel *m_model;
     QSortFilterProxyModel *m_proxy;
+    HistoryView::GraphGeometry m_graph;
+    bool m_remoteChips = true;
+};
+
+// The files of a commit (screens.js changesTable() over the commit's rows):
+// the name in its status colour (the accent on the selected row), the dim
+// folder, the status spelled out in its colour — or, in a 30 px column, the
+// kit's pill — the added and removed lines either side of the column's
+// middle, and the dim size at the right. The row numbers are the setup's.
+class CommitFilesDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void setStatusPill(bool on) { m_statusPill = on; }
+
+    void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        const int col = index.column();
+        if (col != ChangesModel::Name && col != ChangesModel::Path && col != ChangesModel::Status
+            && col != ChangesModel::LinesAdded && col != ChangesModel::Size) {
+            QStyledItemDelegate::paint(p, option, index); // never shown here
+            return;
+        }
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index); // the row's own font (Qt::FontRole)
+        paintCellBackground(p, opt);
+
+        const OmarchyTheme *t = OmarchyTheme::instance();
+        const bool selected = opt.state & QStyle::State_Selected;
+        const QRect r = opt.rect.adjusted(space(kCellInset), 0, -space(kCellInset), 0);
+        p->save();
+        p->setClipRect(opt.rect);
+        switch (col) {
+        case ChangesModel::Name:
+        case ChangesModel::Path: {
+            const QColor colour = col == ChangesModel::Path ? t->mutedText()
+                : selected                                  ? t->accent()
+                                                            : statusColour(index);
+            drawText(p, r, opt.font, colour, index.data(Qt::DisplayRole).toString(), Qt::AlignLeft, opt.textElideMode);
+            break;
+        }
+        case ChangesModel::Status:
+            if (m_statusPill)
+                paintStatusPill(p, opt.rect, index);
+            else
+                drawText(p, opt.rect, smallFont(), statusColour(index), index.data(Qt::DisplayRole).toString(),
+                         Qt::AlignHCenter, Qt::ElideRight);
+            break;
+        case ChangesModel::LinesAdded: drawLines(p, opt.rect, index); break;
+        case ChangesModel::Size:
+            drawText(p, r, smallFont(), t->mutedText(), index.data(Qt::DisplayRole).toString(), Qt::AlignRight,
+                     Qt::ElideLeft);
+            break;
+        }
+        p->restore();
+    }
+
+private:
+    static void drawText(QPainter *p, const QRect &r, const QFont &font, const QColor &colour, const QString &text,
+                         Qt::Alignment align, Qt::TextElideMode elide)
+    {
+        p->setFont(font);
+        p->setPen(colour);
+        p->drawText(r, align | Qt::AlignVCenter, QFontMetrics(font).elidedText(text, elide, r.width()));
+    }
+
+    // "+4" in green ending 2 px left of the column's middle, "−2" in red
+    // from 2 px right of it; nothing where neither side has a line.
+    static void drawLines(QPainter *p, const QRect &cell, const QModelIndex &index)
+    {
+        const int added = index.siblingAtColumn(ChangesModel::LinesAdded).data(Qt::DisplayRole).toInt();
+        const int removed = index.siblingAtColumn(ChangesModel::LinesRemoved).data(Qt::DisplayRole).toInt();
+        if (added <= 0 && removed <= 0)
+            return;
+        const OmarchyTheme *t = OmarchyTheme::instance();
+        const int middle = cell.left() + cell.width() / 2;
+        const int gap = space(2);
+        const QFont font = smallFont();
+        drawText(p, QRect(cell.left(), cell.top(), middle - gap - cell.left(), cell.height()), font,
+                 t->color(QStringLiteral("green")), QStringLiteral("+%1").arg(qMax(0, added)), Qt::AlignRight,
+                 Qt::ElideLeft);
+        drawText(p, QRect(middle + gap, cell.top(), cell.right() + 1 - middle - gap, cell.height()), font,
+                 t->color(QStringLiteral("red")), QStringLiteral("−%1").arg(qMax(0, removed)), Qt::AlignLeft,
+                 Qt::ElideRight);
+    }
+
+    bool m_statusPill = false;
+};
+
+// The filter's magnifier: the dim glyph, centred by its ink in the kit's
+// 14 px icon box. The field's child, so it stays whatever is typed.
+class FilterMagnifier : public QWidget
+{
+public:
+    explicit FilterMagnifier(QWidget *parent)
+        : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("filterIcon"));
+        setAttribute(Qt::WA_TransparentForMouseEvents); // a click on it is the field's
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const QString glyph = icon(kMagnify).trimmed();
+        if (glyph.isEmpty())
+            return;
+        QPainter p(this);
+        QFont font = OmarchyTheme::instance()->uiFont();
+        font.setPixelSize(space(kMagnifierSize));
+        p.setFont(font);
+        p.setPen(OmarchyTheme::instance()->mutedText());
+        p.drawText(QRectF(rect()).center() - inkRect(font, glyph).center(), glyph);
+    }
+};
+
+// The kit's field (kit.js field()) as the filter: the magnifier 8 px in, the
+// text 28 px in, and a placeholder that says as much as the field's width
+// holds.
+class FilterField : public QLineEdit
+{
+public:
+    FilterField()
+    {
+        setObjectName(QStringLiteral("historyFilter"));
+        setAccessibleName(tr("Filter commits"));
+        setClearButtonEnabled(true);
+        m_magnifier = new FilterMagnifier(this);
+    }
+
+    void applyTheme()
+    {
+        setFixedHeight(buttonHeight());
+        // The placeholder is as dim as the magnifier in front of it.
+        QPalette pal = palette();
+        pal.setColor(QPalette::PlaceholderText, OmarchyTheme::instance()->mutedText());
+        setPalette(pal);
+        fit();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QLineEdit::resizeEvent(event);
+        fit();
+    }
+
+private:
+    // The magnifier's box, the text's start and the placeholder, for the
+    // width and the text size of the moment. The text starts after the
+    // style's border and padding and QLineEdit's own margin, which the text
+    // margin makes up to the design's 28 px.
+    void fit()
+    {
+        const int side = space(kMagnifierSize);
+        m_magnifier->setGeometry(space(kMagnifierX), (height() - side) / 2, side, side);
+        QStyleOptionFrame option;
+        initStyleOption(&option);
+        const QRect contents = style()->subElementRect(QStyle::SE_LineEditContents, &option, this);
+        const int margin = qMax(0, space(kFilterTextX) - contents.left() - kLineEditMargin);
+        if (textMargins().left() != margin)
+            setTextMargins(margin, 0, 0, 0);
+        const QString placeholder = width() < space(kShortFilterWidth) ? tr("Filter")
+            : width() < space(kMediumFilterWidth)                    ? tr("Filter commits")
+                                                                      : tr("Filter by message, author or SHA");
+        if (placeholderText() != placeholder)
+            setPlaceholderText(placeholder);
+    }
+
+    FilterMagnifier *m_magnifier;
 };
 
 } // namespace
 
+HistoryView::GraphGeometry HistoryView::graphGeometry(WidthClass widthClass, int lanes)
+{
+    const int design = commitColumns(widthClass).graph;
+    GraphGeometry g;
+    g.pitch = space(kLanePitch);
+    // Half a pitch left of the column's middle: two lanes sit symmetric in
+    // the design's width (14 and 26 px of 40).
+    g.firstLane = space(design / 2 - kLanePitch / 2);
+    const int used = qBound(1, lanes, kMaxGraphLanes);
+    g.width = qMax(space(design), 2 * g.firstLane + (used - 1) * g.pitch);
+    return g;
+}
+
 HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     : QWidget(parent), m_repo(repo)
 {
+    // The page, top to bottom: the filter row, the sections in their
+    // splitter, and the count row right under them; the gap under the filter
+    // row is that row's own margin, and the splitter's handles are the gaps
+    // between the sections (applyTheme() scales them all).
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(0);
 
-    // ---- Filter row
-    auto *filterRow = new QHBoxLayout;
-    filterRow->setSpacing(8);
-    m_filter = new QLineEdit;
-    m_filter->setPlaceholderText(icon(kMagnify) + tr("Filter by message, author or SHA"));
-    m_filter->setClearButtonEnabled(true);
-    filterRow->addWidget(m_filter, 1);
-    m_allRefs = toolButton(icon(kBranch) + tr("All branches"), tr("Show the commits of every branch and tag, not just the current branch"));
+    // ---- Filter row: the field, All branches and Refresh.
+    m_filterRow = new QHBoxLayout;
+    m_filterRow->setSpacing(0);
+    m_filter = new FilterField;
+    m_filterRow->addWidget(m_filter, 1);
+    m_allRefsGap = new QSpacerItem(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_filterRow->addItem(m_allRefsGap);
+    m_allRefs = toolButton<KitButton>(QString());
+    m_allRefs->setAccessibleName(tr("All branches"));
     m_allRefs->setCheckable(true);
-    filterRow->addWidget(m_allRefs);
+    applyAllRefsForm();
+    m_filterRow->addWidget(m_allRefs);
+    m_refreshGap = new QSpacerItem(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_filterRow->addItem(m_refreshGap);
     auto *refreshButton = iconButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"), IconButtonSize::Toolbar, false);
     connect(refreshButton, &QToolButton::clicked, this, &HistoryView::refreshRequested);
-    filterRow->addWidget(refreshButton);
-    layout->addLayout(filterRow);
+    m_filterRow->addWidget(refreshButton);
+    layout->addLayout(m_filterRow);
 
     // ---- Commit list
     m_model = new HistoryModel(repo, this);
@@ -230,7 +506,8 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_table = new QTableView;
     m_table->setObjectName(QStringLiteral("commitsTable"));
     m_table->setModel(m_proxy);
-    m_table->setItemDelegate(new CommitDelegate(m_model, m_proxy, m_table));
+    m_commitDelegate = new CommitDelegate(m_model, m_proxy, m_table);
+    m_table->setItemDelegate(m_commitDelegate);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setShowGrid(false);
@@ -244,11 +521,9 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_table->verticalHeader()->setVisible(false);
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    m_table->horizontalHeader()->setMinimumSectionSize(40);
     m_table->horizontalHeader()->setHighlightSections(false);
-    m_table->setColumnWidth(HistoryModel::Author, kAuthorWidth);
-    m_table->setColumnWidth(HistoryModel::Date, kDateWidth);
-    m_table->setColumnWidth(HistoryModel::Hash, kHashWidth);
+    // The SHA is the model's, for the tooltips; the design shows no column of it.
+    m_table->setColumnHidden(HistoryModel::Hash, true);
     onHeaderResize(m_table, [this] { fitColumns(); });
     connect(m_table->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &HistoryView::onCommitChanged);
     connect(m_table, &QTableView::customContextMenuRequested, this, &HistoryView::showContextMenu);
@@ -258,9 +533,8 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     });
 
     // ---- Details of the selected commit
-    m_details = new QPlainTextEdit;
-    m_details->setReadOnly(true);
-    m_details->setPlaceholderText(tr("Select a commit to see its details"));
+    m_details = new CommitDetails;
+    connect(m_details, &CommitDetails::filesRequested, this, &HistoryView::filesRequested);
 
     // ---- Files of the selected commit
     m_files = new ChangesModel(this);
@@ -274,31 +548,51 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     // After the model, which says these files have no checkboxes: the setup
     // sizes the first column after that.
     m_filesSetup = new ChangesTableSetup(m_filesTable);
+    // The setup's delegate only turns the selected row's text to the accent;
+    // this one paints the whole row the design's way.
+    QAbstractItemDelegate *const setupDelegate = m_filesTable->itemDelegate();
+    m_filesDelegate = new CommitFilesDelegate(m_filesTable);
+    m_filesTable->setItemDelegate(m_filesDelegate);
+    delete setupDelegate;
+    // The extension is in the name, and the removed lines share the added
+    // lines' column ("+ −").
+    m_filesTable->setColumnHidden(ChangesModel::Extension, true);
+    m_filesTable->setColumnHidden(ChangesModel::LinesRemoved, true);
+    // The design reads Name, Path, Status, "+ −", Size: the size moves to the
+    // end, where the model has the line counts.
+    QHeaderView *const filesHeader = m_filesTable->horizontalHeader();
+    filesHeader->moveSection(filesHeader->visualIndex(ChangesModel::Size), ChangesModel::ColumnCount - 1);
     connect(m_filesTable->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
             [this] { emit currentFileChanged(); });
 
-    auto *splitter = new QSplitter(Qt::Vertical);
-    splitter->setHandleWidth(8);
-    splitter->setChildrenCollapsible(false);
-    splitter->addWidget(m_table);
-    splitter->addWidget(m_details);
-    splitter->addWidget(m_filesTable);
-    splitter->setStretchFactor(0, 5);
-    splitter->setStretchFactor(1, 2);
-    splitter->setStretchFactor(2, 3);
-    splitter->setSizes({400, 150, 220});
-    layout->addWidget(splitter, 1);
+    // The three sections share the height: the list takes whatever the card
+    // and the files table leave, and the handles between them are the gaps.
+    m_splitter = new QSplitter(Qt::Vertical);
+    m_splitter->setObjectName(QStringLiteral("historySplitter"));
+    m_splitter->setChildrenCollapsible(false);
+    m_splitter->addWidget(m_table);
+    m_splitter->addWidget(m_details);
+    m_splitter->addWidget(m_filesTable);
+    m_splitter->setStretchFactor(0, 1);
+    m_splitter->setStretchFactor(1, 0);
+    m_splitter->setStretchFactor(2, 0);
+    // A handle the user drags keeps its place until the next session; the
+    // design's heights come back only then.
+    connect(m_splitter, &QSplitter::splitterMoved, this, [this] { m_sizedByHand = true; });
+    layout->addWidget(m_splitter, 1);
 
-    // ---- Footer
-    auto *footer = new QHBoxLayout;
-    footer->setSpacing(10);
-    m_countLabel = dimLabel();
-    footer->addWidget(m_countLabel);
-    footer->addStretch();
-    m_moreButton = toolButton(icon(kChevron) + tr("Load more"), tr("Load the next 500 commits"));
+    // ---- The count of commits, and Load more while there is more to load
+    auto *countRow = new QHBoxLayout;
+    countRow->setContentsMargins(0, 0, 0, 0);
+    countRow->setSpacing(0);
+    m_countLabel = new QLabel;
+    m_countLabel->setObjectName(QStringLiteral("historyCount"));
+    countRow->addWidget(m_countLabel); // its height is the row's (alignCountRow())
+    countRow->addStretch();
+    m_moreButton = toolButton<KitButton>(icon(kChevron) + tr("Load more"), tr("Load the next 500 commits"));
     connect(m_moreButton, &QToolButton::clicked, this, &HistoryView::loadMore);
-    footer->addWidget(m_moreButton);
-    layout->addLayout(footer);
+    countRow->addWidget(m_moreButton, 0, Qt::AlignVCenter);
+    layout->addLayout(countRow);
 
     auto *filterDebounce = new QTimer(this);
     filterDebounce->setSingleShot(true);
@@ -314,6 +608,7 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     });
 
     m_emptyMessage = tr("No commit selected.");
+    m_details->clear(m_emptyMessage);
     applyTheme();
 }
 
@@ -321,26 +616,150 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
 void HistoryView::fitColumns()
 {
     const bool filtering = !static_cast<CommitFilter *>(m_proxy)->text.isEmpty();
-    const int graph = filtering ? 0 : qMin(m_model->laneCount(), kMaxGraphLanes) * laneWidth() + kGraphMargin;
+    const GraphGeometry geometry = graphGeometry(m_widthClass, m_model->laneCount());
+    static_cast<CommitDelegate *>(m_commitDelegate)->setGraph(geometry);
+    const int graph = filtering ? 0 : geometry.width;
     m_table->setColumnWidth(HistoryModel::Graph, graph);
     m_table->setColumnHidden(HistoryModel::Graph, filtering || m_model->laneCount() == 0);
     // `graph` counts even while the column is hidden: with no lanes loaded yet
     // its room stays reserved, so the message column does not jump once it is.
     int others = graph;
     for (int c = HistoryModel::Author; c < HistoryModel::ColumnCount; ++c)
-        others += m_table->columnWidth(c);
-    fitStretchColumn(m_table, HistoryModel::Message, others);
+        if (!m_table->isColumnHidden(c))
+            others += m_table->columnWidth(c);
+    fitStretchColumn(m_table, HistoryModel::Message, others, space(kMinStretch));
 }
 
 void HistoryView::applyTheme()
 {
-    const OmarchyTheme *theme = OmarchyTheme::instance();
+    // The files table is never shorter than its header and one row, inside
+    // the tables' 1 px frame.
+    m_filesTable->setMinimumHeight(tableHeaderHeight() + fileRowHeight() + 2);
     m_table->verticalHeader()->setDefaultSectionSize(tableRowHeight());
-    m_details->setFont(theme->uiFont());
-    m_countLabel->setFont(theme->captionFont());
+    m_table->horizontalHeader()->setFixedHeight(tableHeaderHeight());
+    static_cast<FilterField *>(m_filter)->applyTheme();
+    m_filterRow->setContentsMargins(0, 0, 0, space(kFilterGap));
+    m_allRefsGap->changeSize(space(kAllRefsGap), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_refreshGap->changeSize(space(kRefreshGap), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_filterRow->invalidate();
+    m_moreButton->setText(icon(kChevron) + tr("Load more"));
+    alignCountRow();
+    applyAllRefsForm(); // the glyph, and the square on the new text size
+    m_details->applyTheme();
     m_filesSetup->applyTheme();
+    applyCommitColumns();
+    applyFilesColumns();
+    applySections();
     fitColumns();
     m_table->viewport()->update();
+}
+
+void HistoryView::setStacked(bool on)
+{
+    if (m_stacked == on)
+        return;
+    m_stacked = on;
+    applyAllRefsForm();
+    applySections();
+}
+
+void HistoryView::setWindowClass(WidthClass width, bool shallow, bool extraSmall)
+{
+    if (m_widthClass == width && m_shallow == shallow && m_extraSmall == extraSmall)
+        return;
+    const bool classChanged = m_widthClass != width || m_shallow != shallow;
+    m_widthClass = width;
+    m_shallow = shallow;
+    m_extraSmall = extraSmall;
+    static_cast<CommitDelegate *>(m_commitDelegate)->setRemoteChips(!extraSmall);
+    if (classChanged) {
+        applyCommitColumns();
+        applyFilesColumns();
+        applySections();
+    }
+    fitColumns();
+    m_table->viewport()->update();
+}
+
+// Author and Date are the user's to drag, but every class change and every
+// text size gives them the class's widths again; the SHA never shows.
+void HistoryView::applyCommitColumns()
+{
+    const CommitColumns columns = commitColumns(m_widthClass);
+    // Before the widths: a floor above a section's width would widen it.
+    m_table->horizontalHeader()->setMinimumSectionSize(qMin(kMinDragColumn, space(kMinColumn)));
+    const QList<QPair<int, int>> sized{{HistoryModel::Author, columns.author}, {HistoryModel::Date, columns.date}};
+    for (const auto &[column, px] : sized) {
+        if (px > 0)
+            m_table->setColumnWidth(column, space(px));
+        m_table->setColumnHidden(column, px == 0);
+    }
+    m_table->setColumnHidden(HistoryModel::Hash, true);
+}
+
+// The files table's columns for the class, after the setup's 30 px row
+// numbers: Path, Status (or the St pill), "+ −" and Size where the class has
+// them, and Name taking the rest.
+void HistoryView::applyFilesColumns()
+{
+    const FileColumns columns = fileColumns(m_widthClass);
+    const QList<QPair<int, int>> sized{{ChangesModel::Path, columns.path},
+                                       {ChangesModel::Status, columns.status},
+                                       {ChangesModel::LinesAdded, columns.lines},
+                                       {ChangesModel::Size, columns.size}};
+    for (const auto &[column, px] : sized) {
+        if (px > 0)
+            m_filesTable->setColumnWidth(column, space(px));
+        m_filesTable->setColumnHidden(column, px == 0);
+    }
+    static_cast<CommitFilesDelegate *>(m_filesDelegate)->setStatusPill(columns.pill);
+    if (auto *header = qobject_cast<ChangesHeader *>(m_filesTable->horizontalHeader())) {
+        header->setSectionText(ChangesModel::LinesAdded, tr("+ −"));
+        header->setSectionText(ChangesModel::Status, columns.pill ? tr("St") : QString());
+    }
+    m_filesSetup->setStretchColumn(ChangesModel::Name, space(kMinStretch));
+    m_filesTable->viewport()->update();
+}
+
+// Shallow, neither the card nor the files table; stacked, the card without
+// the files table. The files table only ever hides: it is the Mini rail's
+// model and selection, and the diff follows its current row. The card and
+// the files table get the design's heights, the list the rest — unless the
+// user has dragged a handle this session.
+void HistoryView::applySections()
+{
+    m_details->setStacked(m_stacked);
+    m_details->setVisible(!m_shallow);
+    m_filesTable->setVisible(!m_shallow && !m_stacked);
+    m_splitter->setHandleWidth(space(kSectionGap));
+    if (m_sizedByHand)
+        return;
+    const int details = space(m_stacked ? kStackedDetailsHeight : kDetailsHeight);
+    const int files = space(kFilesHeight);
+    int total = 0;
+    for (const int size : m_splitter->sizes())
+        total += size;
+    // The list is the one section that stretches, so it takes whatever the
+    // other two leave however much that is.
+    m_splitter->setSizes({qMax(1, total - details - files), details, files});
+}
+
+void HistoryView::applyAllRefsForm()
+{
+    const QString name = tr("All branches");
+    if (m_stacked) {
+        m_allRefs->setText(icon(kBranch, tr("B")).trimmed());
+        m_allRefs->setToolTip(name);
+    } else {
+        m_allRefs->setText(icon(kBranch) + name);
+        m_allRefs->setToolTip(tr("Show the commits of every branch and tag, not just the current branch"));
+    }
+    setIconForm(m_allRefs, m_stacked);
+}
+
+QAbstractItemView *HistoryView::activeListView() const
+{
+    return m_filesTable->isHidden() ? m_table : m_filesTable;
 }
 
 void HistoryView::focusFilter()
@@ -405,8 +824,8 @@ void HistoryView::selectFirstCommit()
         m_table->selectRow(0);
     } else {
         m_files->setChanges({});
-        m_details->clear();
         m_emptyMessage = m_model->failed() ? tr("No commits yet.") : tr("No commits match the filter.");
+        m_details->clear(m_emptyMessage);
         emit currentFileChanged();
     }
 }
@@ -421,6 +840,27 @@ void HistoryView::updateFooter()
     else
         m_countLabel->setText(tr("%1 commits loaded").arg(n));
     m_moreButton->setVisible(!m_model->exhausted() && !m_model->failed());
+    alignCountRow();
+}
+
+// The count on the design's line: the label is the 22 px row, its text's
+// baseline where kit.js text() puts it for a centre 6 px above the page's
+// bottom edge (the centre plus 0.36 of the size). While Load more stands
+// beside it, the row is the button's height and the two are centred on each
+// other.
+void HistoryView::alignCountRow()
+{
+    if (!m_moreButton->isHidden()) {
+        m_countLabel->setContentsMargins(0, 0, 0, 0);
+        m_countLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        m_countLabel->setFixedHeight(buttonHeight());
+        return;
+    }
+    const QFont font = smallFont(); // the stylesheet's size for the label
+    const int baseline = qRound(space(kCountRowHeight) - space(kCountTextAbove) + 0.36 * font.pixelSize());
+    m_countLabel->setContentsMargins(0, qMax(0, baseline - QFontMetrics(font).ascent()), 0, 0);
+    m_countLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_countLabel->setFixedHeight(space(kCountRowHeight));
 }
 
 void HistoryView::loadMore()
@@ -480,34 +920,15 @@ void HistoryView::onCommitChanged()
         if (m_reloading)
             return; // reload() selects a commit again right after the reset
         m_files->setChanges({});
-        m_details->clear();
         m_emptyMessage = tr("No commit selected.");
+        m_details->clear(m_emptyMessage);
         emit currentFileChanged();
         return;
     }
 
-    QString text;
-    text += tr("SHA:      %1\n").arg(c.hash);
-    text += tr("Author:   %1 <%2>\n").arg(c.author, c.email);
-    text += tr("Date:     %1\n").arg(c.date.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
-    if (!c.parents.isEmpty()) {
-        QStringList shorts;
-        for (const QString &p : c.parents)
-            shorts << p.left(c.shortHash.size());
-        text += tr("Parents:  %1\n").arg(shorts.join(QStringLiteral(", ")));
-    }
-    const int sourceRow = m_proxy->mapToSource(m_table->currentIndex()).row();
-    QStringList refs;
-    for (const RefLabel &l : m_model->labels(sourceRow))
-        refs << l.name;
-    if (!refs.isEmpty())
-        text += tr("Refs:     %1\n").arg(refs.join(QStringLiteral(", ")));
-    text += QStringLiteral("\n") + c.subject;
-    if (!c.body.isEmpty())
-        text += QStringLiteral("\n\n") + c.body;
-    m_details->setPlainText(text);
-
     m_files->setChanges(m_repo->commitChanges(c));
+    const int sourceRow = m_proxy->mapToSource(m_table->currentIndex()).row();
+    m_details->setCommit(c, m_model->labels(sourceRow), m_files->count());
     auto *filesProxy = static_cast<QSortFilterProxyModel *>(m_filesTable->model());
     if (filesProxy->rowCount() > 0) {
         int row = 0; // after a reload, the file that was selected before

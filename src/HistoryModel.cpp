@@ -197,6 +197,10 @@ QVariant HistoryModel::headerData(int section, Qt::Orientation orientation, int 
             return tr("Graph");
         return role == Qt::DisplayRole ? QVariant(QString()) : QVariant();
     }
+    // The titles read from the left, 10 px in (the section's padding), like
+    // the text of the column under them.
+    if (role == Qt::TextAlignmentRole)
+        return int(Qt::AlignLeft | Qt::AlignVCenter);
     if (role != Qt::DisplayRole)
         return {};
     switch (section) {

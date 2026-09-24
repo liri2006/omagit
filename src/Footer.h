@@ -2,6 +2,7 @@
 
 #include <QWidget>
 
+class QHBoxLayout;
 class QTimer;
 class QToolButton;
 namespace ui {
@@ -25,6 +26,9 @@ public:
     void setIdleText(const QString &text);
 
 private:
+    void applyTheme(); // the design's distances, on the text size of the moment
+
+    QHBoxLayout *m_row; // the status and the button, under the hairline
     QToolButton *m_keybindingsButton;
     ui::ElidedLabel *m_statusLabel; // the footer's message, the repository path when there is none
     QTimer *m_statusTimer;

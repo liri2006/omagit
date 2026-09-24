@@ -4,8 +4,6 @@
 
 #include <QEvent>
 #include <QPainter>
-#include <QStyleOptionToolButton>
-#include <QStylePainter>
 #include <QTimerEvent>
 #include <QVariantAnimation>
 
@@ -20,7 +18,7 @@ constexpr int kBusyExtra = 6;    // the walking dots' box over a square
 } // namespace
 
 BadgeButton::BadgeButton(QWidget *parent)
-    : QToolButton(parent)
+    : ui::KitButton(parent)
 {
     m_pop = new QVariantAnimation(this);
     m_pop->setDuration(420);
@@ -96,31 +94,7 @@ void BadgeButton::timerEvent(QTimerEvent *event)
         emit badgeRepaint();
         return;
     }
-    QToolButton::timerEvent(event);
-}
-
-// The icon form (ui::setIconForm()) puts the glyph in the middle of its
-// square by the glyph's ink rather than by its advance: a Nerd Font glyph's
-// ink hangs over the advance its metrics report (Pull's by a pixel and a half
-// to the right at base 12), which the button's own text alignment would leave
-// off-centre. The chrome and the colour are the style's; every other form is
-// the plain tool button's.
-void BadgeButton::paintEvent(QPaintEvent *event)
-{
-    if (!property("iconForm").toBool() || text().isEmpty()) {
-        QToolButton::paintEvent(event);
-        return;
-    }
-    QStylePainter p(this);
-    QStyleOptionToolButton option;
-    initStyleOption(&option);
-    const QString glyph = option.text;
-    option.text.clear();
-    p.drawComplexControl(QStyle::CC_ToolButton, option);
-    const QRectF ink = QFontMetricsF(option.font).tightBoundingRect(glyph);
-    p.setFont(option.font);
-    p.setPen(option.palette.color(QPalette::ButtonText));
-    p.drawText(QRectF(rect()).center() - ink.center(), glyph);
+    ui::KitButton::timerEvent(event);
 }
 
 QString BadgeButton::badgeText() const

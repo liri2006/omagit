@@ -299,6 +299,40 @@ record `docs/reviews/2026-09-23-design-rework-gaps.md`):
   text, done by eliding).
 - No header text over the history graph column.
 
+### History page
+
+Done 2026-09-24 (brief `docs/briefs/2026-09-24-history-view-design.md`,
+record `docs/reviews/2026-09-24-history-view-design.md`): `historyPage()`,
+`commitsTable()` and `commitDetails()` in the app.
+
+- The filter row: the field's magnifier is its own glyph and stays while
+  typing, the placeholder says as much as the field's width holds, then
+  All branches 8 px on and Refresh 6 px on.
+- The commit list's columns follow the window's width class (Graph 40 /
+  Message / Author 90 / Date 130, then 100, then Graph 36 / Date 90, then
+  Graph 30 / Message alone), no SHA column, no sideways scrolling; author
+  and date small and dim, the date without its time where the column
+  cannot hold it.
+- The graph: lanes 12 px apart, the first 14 / 12 / 9 px in, accent then
+  magenta, 2 px lines, every node the same 4 px disc with a background
+  ring. **The one deliberate difference from Figma, the user's:** the
+  lanes keep the app's connections — curves into and out of a lane where
+  a branch forks or merges, lines that start and end at the nodes —
+  where the frames draw straight lanes without any.
+- Ref chips (`src/RefChip.*`, shared with the card): the checked-out
+  branch solid accent, other branches accent, remotes magenta, tags
+  yellow; the xs width leaves the remotes out of the rows.
+- `src/CommitDetails.*`: the card in place of the key/value text — bold
+  title, accent short SHA, author and date, parents with the chips, the
+  body in 17 px lines (selectable, scrolling), a copy button for the full
+  SHA; stacked, `N files ›` opens the Diff tab.
+- The commit's files: row numbers (the frames' checkboxes are the kit's
+  artefact — a commit's files cannot be checked), Name stretching, then
+  Path / Status / `+ −` / Size by class (the `St` pill at m).
+- Heights 150 / 110 (card 132 stacked) in a splitter whose handles are
+  the 10 px gaps, re-applied until the user drags one; shallow windows
+  show the commit list alone; the count row is the page's last 22 px.
+
 ## How a phase is done
 
 1. A brief from the Figma frames and the generator's numbers; co-written with

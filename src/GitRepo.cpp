@@ -29,7 +29,7 @@ QString FileChange::statusText() const
     case Copied: return QStringLiteral("Copied");
     case TypeChanged: return QStringLiteral("Type changed");
     case Unmerged: return QStringLiteral("Conflicted");
-    case Untracked: return QStringLiteral("Unknown");
+    case Untracked: return QStringLiteral("Untracked");
     default: return QStringLiteral("Unknown");
     }
 }

@@ -10,15 +10,10 @@ enum class PaneLayout { Docked, Mini };
 
 constexpr int kPaneLayoutCount = 2;
 
-// Nerd Font (Material Design) glyphs: md-dock_left, md-view_sequential.
-inline uint paneLayoutGlyph(PaneLayout l)
-{
-    switch (l) {
-    case PaneLayout::Docked: return 0xF10AA;
-    case PaneLayout::Mini: return 0xF0729;
-    }
-    return 0;
-}
+// The window's width class (screens.js levelFor(), in design pixels): from
+// 1400 up, from 1000, from 700, and the stacked widths below that. The
+// window decides it; the commit page and the history size their parts by it.
+enum class WidthClass { Wide, Large, Medium, Stacked };
 
 inline QString paneLayoutName(PaneLayout l)
 {

@@ -2,6 +2,7 @@
 #include "OmarchyTheme.h"
 #include "SyntaxHighlighter.h"
 #include "TickMenu.h"
+#include "UiHelpers.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -18,11 +19,8 @@
 #include <QStyleOptionSlider>
 #include <QWheelEvent>
 
-static constexpr int kIconSize = 16;
-static constexpr int kIconInset = 2;       // the +/− badge inside its icon cell
-static constexpr int kIconRadius = 3;
-static constexpr int kIconStroke = 2;
-static constexpr qreal kIconArm = 3.5;     // half length of the +/− strokes
+static constexpr int kIconSize = 16;       // the change mark's cell in the margin
+static constexpr int kMarkGlyph = 14;      // the mark's glyph, in 12 px-base pixels of the diff font
 static constexpr int kHeaderPad = 6;
 static constexpr int kPaneGap = 4; // separator between the two panes
 static constexpr int kMinPaneText = 40;    // text a pane keeps beside its margin
@@ -286,6 +284,14 @@ void DiffView::rebuildLineLayouts()
     }
 }
 
+void DiffView::setSubtitleShown(bool shown)
+{
+    if (m_subtitleShown == shown)
+        return;
+    m_subtitleShown = shown;
+    viewport()->update();
+}
+
 void DiffView::setDocument(const DiffDocument &doc, const QString &title, const QString &subtitle,
                            const QString &leftLabel, const QString &rightLabel)
 {
@@ -445,28 +451,37 @@ QString DiffView::cellText(int pane, int row) const
     return layoutAt(pane, row).text;
 }
 
+// The design's change mark (screens.js diffPane(): icon minus / plus): the
+// plain md-minus or md-plus glyph in the removed or added colour, 14 px on a
+// 12 px line and zoomed with the text, centred by its ink in the icon cell.
 void DiffView::drawMarginIcon(QPainter &p, const QRect &r, DiffLine::State state) const
 {
     const OmarchyTheme *t = OmarchyTheme::instance();
     QColor c;
-    if (state == DiffLine::Added)
+    uint code = 0;
+    QString fallback;
+    if (state == DiffLine::Added) {
         c = t->diffAddedIcon();
-    else if (state == DiffLine::Removed)
+        code = ui::kPlus;
+        fallback = QStringLiteral("+");
+    } else if (state == DiffLine::Removed) {
         c = t->diffRemovedIcon();
-    else
+        code = ui::kMinus;
+        fallback = QStringLiteral("−");
+    } else {
         return;
+    }
 
+    const QString glyph = t->glyph(code);
+    QFont font = m_font;
+    font.setPixelSize(qMax(1, qRound(m_font.pixelSize() * kMarkGlyph / 12.0)));
+    const QString text = glyph.isEmpty() ? fallback : glyph;
+    const QRectF ink = ui::inkRect(font, text);
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
-    const QRectF box = QRectF(r).adjusted(kIconInset, kIconInset, -kIconInset, -kIconInset);
-    p.setPen(Qt::NoPen);
-    p.setBrush(c);
-    p.drawRoundedRect(box, kIconRadius, kIconRadius);
-    p.setPen(QPen(t->base(), kIconStroke));
-    const QPointF cen = box.center();
-    p.drawLine(QPointF(cen.x() - kIconArm, cen.y()), QPointF(cen.x() + kIconArm, cen.y()));
-    if (state == DiffLine::Added)
-        p.drawLine(QPointF(cen.x(), cen.y() - kIconArm), QPointF(cen.x(), cen.y() + kIconArm));
+    p.setFont(font);
+    p.setPen(c);
+    p.drawText(QRectF(r).center() - ink.center(), text);
     p.restore();
 }
 
@@ -683,9 +698,10 @@ void DiffView::paintEvent(QPaintEvent *)
         const QRect tr(10, 0, w - 20, hh);
         p.setFont(font());
         p.setPen(t->mutedText());
-        const int subW = m_subtitle.isEmpty() ? 0 : p.fontMetrics().horizontalAdvance(m_subtitle) + 12;
-        if (!m_subtitle.isEmpty())
-            p.drawText(tr, Qt::AlignVCenter | Qt::AlignRight, m_subtitle);
+        const QString subtitle = m_subtitleShown ? m_subtitle : QString();
+        const int subW = subtitle.isEmpty() ? 0 : p.fontMetrics().horizontalAdvance(subtitle) + 12;
+        if (!subtitle.isEmpty())
+            p.drawText(tr, Qt::AlignVCenter | Qt::AlignRight, subtitle);
         p.setFont(bold);
         p.setPen(t->text());
         p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft,

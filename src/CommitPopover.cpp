@@ -297,12 +297,12 @@ void CommitPopover::place()
     if (!m_rail || !host || m_placing)
         return;
     m_placing = true;
-    const QMargins hostMargins = host->layout() ? host->layout()->contentsMargins() : QMargins();
+    const int margin = windowMargin();
     const QRect rail = m_rail->geometry();
     QWidget *tile = m_rail->commitTile();
     const QRect tileRect(tile->mapTo(host, QPoint(0, 0)), tile->size());
     const int left = rail.x() + rail.width() + space(kRailGap);
-    const int width = qMax(1, qMin(space(kMaxWidth), host->width() - hostMargins.right() - left));
+    const int width = qMax(1, qMin(space(kMaxWidth), host->width() - margin - left));
 
     // The width first, so the text is wrapped at the width it is measured at.
     if (this->width() != width) {

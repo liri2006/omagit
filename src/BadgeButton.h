@@ -1,5 +1,7 @@
 #pragma once
 
+#include "UiHelpers.h"
+
 #include <QList>
 #include <QPointer>
 #include <QToolButton>
@@ -15,8 +17,9 @@ class QVariantAnimation;
 // The badge hangs over the button's top and right edges (design/figma-gen/
 // kit.js badge()), where no widget can paint in its own rect, so the button
 // only keeps the badge's state and says where and how it is drawn: a
-// BadgeLayer over the row paints it.
-class BadgeButton : public QToolButton
+// BadgeLayer over the row paints it. The button itself is a ui::KitButton:
+// it measures and lays out its glyph and label like the design's buttons.
+class BadgeButton : public ui::KitButton
 {
     Q_OBJECT
 public:
@@ -48,8 +51,6 @@ signals:
     void badgeRepaint();
 
 protected:
-    // The icon form's glyph, centred by its ink; the rest is the style's.
-    void paintEvent(QPaintEvent *event) override;
     void timerEvent(QTimerEvent *event) override;
 
 private:

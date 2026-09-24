@@ -9,6 +9,7 @@
 #include "../src/BranchMenu.h"
 #include "../src/ChangesModel.h"
 #include "../src/ChangesTreeModel.h"
+#include "../src/CommitDetails.h"
 #include "../src/CommitPage.h"
 #include "../src/CommitPopover.h"
 #include "../src/DiffModel.h"
@@ -41,6 +42,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFontMetrics>
+#include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHostAddress>
@@ -75,6 +77,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextDocument>
+#include <QTextDocumentFragment>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeView>
@@ -206,7 +209,7 @@ Kit buildKit()
     kit.inlineButton = ui::iconButton(ui::kCog, QStringLiteral("⚙"), QStringLiteral("Agent"));
     kit.toolbarButton = ui::iconButton(ui::kRefresh, QStringLiteral("R"), QStringLiteral("Refresh"),
                                        ui::IconButtonSize::Toolbar, false);
-    kit.textButton = ui::toolButton(QStringLiteral("x"));
+    kit.textButton = ui::toolButton<ui::KitButton>(QStringLiteral("x"));
     kit.promptField = ui::promptField(QStringLiteral("Search branches…"));
     kit.promptBox = ui::promptBox(kit.promptField);
     kit.header = new QWidget;
@@ -837,6 +840,14 @@ void stack(const WindowFixture &f)
     settle();
 }
 
+// The docked left section's width before the user drags the splitter: the
+// design's for the window's width class (MainWindow::defaultLeftWidth()).
+int designLeftWidth(const QWidget *window)
+{
+    const int w = window->width();
+    return w >= ui::space(1400) ? ui::space(560) : w >= ui::space(1000) ? ui::space(400) : ui::space(340);
+}
+
 void unstack(const WindowFixture &f)
 {
     f.window->resize(qMax(1200, ui::space(700) + 200), f.window->height());
@@ -857,10 +868,9 @@ QStringList stackedRow(const BarFixture &f)
 
 // ---- The Mini layout's commit tile and popover
 
-// MiniRail.cpp's badge geometry, in physical pixels like the miniatures'
-// badges: the tile widget keeps kTileBadgeRise above its square, where the
-// badge overhangs the square's top-right corner by that much.
-constexpr int kTileBadgeRise = 5, kTileBadgeSize = 13, kTileBadgeInsetX = 8;
+// MiniRail.cpp's corner badge (screens.js miniRail()): a 12 px square 1 px
+// inside the tile's top right corner, in 12 px-base pixels.
+constexpr int kTileBadgeSize = 12, kTileBadgeInset = 1;
 
 // `w`'s rectangle in `ref`'s coordinates.
 QRect rectIn(const QWidget *w, const QWidget *ref)
@@ -869,18 +879,19 @@ QRect rectIn(const QWidget *w, const QWidget *ref)
 }
 
 // The commit tile's painted square, in the tile's coordinates: space(40),
-// centred sideways and at the bottom of the widget.
+// centred sideways and at the bottom of the widget (which is the square).
 QRect tileSquare(const QToolButton *tile)
 {
     const int side = ui::space(40);
     return QRect((tile->width() - side) / 2, tile->height() - side, side, side);
 }
 
-// The badge the tile paints over its square's corner.
+// The badge the tile paints in its square's corner, for one digit.
 QRect tileBadge(const QToolButton *tile)
 {
     const QRect square = tileSquare(tile);
-    return QRect(square.right() - kTileBadgeInsetX, square.top() - kTileBadgeRise, kTileBadgeSize, kTileBadgeSize);
+    const int side = ui::space(kTileBadgeSize), inset = ui::space(kTileBadgeInset);
+    return QRect(square.right() + 1 - inset - side, square.top() + inset, side, side);
 }
 
 // The window that holds `w` becomes the active one, so focus and the
@@ -1209,17 +1220,22 @@ struct PaneFixture
     }
     QToolButton *prev() const { return button(QStringLiteral("Prev")); }
     QToolButton *next() const { return button(QStringLiteral("Next")); }
-    QToolButton *twoPane() const { return button(QStringLiteral("Two-pane")); }
+    QToolButton *view() const { return button(QStringLiteral("View")); }
     QToolButton *whitespace() const { return button(QStringLiteral("Whitespace")); }
     QToolButton *syntax() const { return button(QStringLiteral("Syntax")); }
     QToolButton *options() const { return button(QStringLiteral("View options")); }
-    QList<QToolButton *> viewOptions() const { return {twoPane(), whitespace(), syntax()}; }
+    QList<QToolButton *> viewOptions() const { return {whitespace(), syntax()}; }
     QLabel *counter() const
     {
         for (QLabel *l : pane->findChildren<QLabel *>())
             if (l->parentWidget() == pane.get())
                 return l;
         return nullptr;
+    }
+    // What the counter reads, its rich text's colours and spacing aside.
+    QString counterText() const
+    {
+        return QTextDocumentFragment::fromHtml(counter()->text()).toPlainText().replace(QChar(0x00a0), QLatin1Char(' '));
     }
     void resizeTo(int width) const
     {
@@ -1228,18 +1244,28 @@ struct PaneFixture
     }
 };
 
+// The summary the pane is given, and what the counter reads of it.
+DiffPane::Summary paneSummary()
+{
+    DiffPane::Summary summary;
+    summary.status = QStringLiteral("Modified");
+    summary.colour = ChangesModel::statusColor(FileChange::Modified);
+    summary.added = 2;
+    summary.removed = 2;
+    return summary;
+}
 const QString kPaneSummary = QStringLiteral("Modified  +2 −2");
 
 PaneFixture diffPane()
 {
     PaneFixture f;
     f.pane.reset(new DiffPane);
-    f.pane->setSummary(kPaneSummary);
+    f.pane->setSummary(paneSummary());
     // Two change blocks, a run of context between them.
     const DiffDocument doc = DiffModel::parse(
         QStringLiteral("@@ -1,5 +1,5 @@\n-a\n+A\n b\n c\n d\n-e\n+E\n"));
     f.pane->view()->setDocument(doc, QStringLiteral("x.txt"), QString(), QStringLiteral("HEAD"),
-                                QStringLiteral("Working Tree"));
+                                QStringLiteral("Working tree"));
     f.pane->view()->firstChange();
     f.pane->resize(ui::space(1000), 400);
     f.pane->show();
@@ -1787,7 +1813,7 @@ esac
         }
         QVERIFY(repoWidths.at(2) > repoWidths.at(3)); // the repository label goes at level 3
         for (int level = 3; level <= 6; ++level)
-            QCOMPARE(repoWidths.at(level), ui::space(28)); // and the bare folder is 28 px wide
+            QCOMPARE(repoWidths.at(level), ui::space(34)); // and the bare folder is 10 + 14 + 10 px wide
         QVERIFY(tabWidths.at(3) > tabWidths.at(4));   // the tab labels go at level 4
         QCOMPARE(tabWidths.at(5), tabWidths.at(4));
         QCOMPARE(tabWidths.at(6), tabWidths.at(4));
@@ -1803,7 +1829,7 @@ esac
 
         // And the room coming back spells everything out again.
         QCOMPARE(f.levelAt(wide), 0);
-        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolder) + QStringLiteral("omagit-workspace") + ui::chevron());
+        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("omagit-workspace") + ui::chevron());
         QCOMPARE(bar->branchButton()->text(),
                  ui::icon(ui::kBranch) + QStringLiteral("feature/askpass-login-dialog") + ui::chevron());
     }
@@ -1823,11 +1849,12 @@ esac
         QVERIFY2(qAbs(tabs.x() + tabs.width() / 2.0 - wide / 2.0) <= 1.0, "the tabs are not in the middle of the bar");
 
         // The left group against the left edge, the right group against the
-        // right one, with the design's gaps inside them.
+        // right one, both inside the window's 12 px margin, with the design's
+        // gaps inside them.
         const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
-        QCOMPARE(repo.x(), 0);
+        QCOMPARE(repo.x(), ui::space(12));
         QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(4));
-        QCOMPARE(f.rectOf(bar->diffToggle()).x() + bar->diffToggle()->width(), wide);
+        QCOMPARE(f.rectOf(bar->diffToggle()).x() + bar->diffToggle()->width(), wide - ui::space(12));
         QCOMPARE(f.rectOf(bar->diffToggle()).x() - (f.rectOf(bar->layoutButton()).x() + bar->layoutButton()->width()),
                  ui::space(4));
         QCOMPARE(f.rectOf(bar->pushButton()).x() - (f.rectOf(bar->pullButton()).x() + bar->pullButton()->width()),
@@ -1864,7 +1891,7 @@ esac
             f.levelAt(bar->sizeHint().width());
         }
         QCOMPARE(bar->branchButton()->text(), canonical);
-        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolder) + QStringLiteral("omagit") + ui::chevron());
+        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("omagit") + ui::chevron());
 
         // However long the branch name, the last level keeps 72 px of it at
         // most, so the minimum hardly moves.
@@ -2343,12 +2370,12 @@ esac
             // controls on the right, More against the right edge.
             const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
             const QRect sync = f.rectOf(bar->syncDropdown()), more = f.rectOf(bar->moreButton());
-            QCOMPARE(repo.x(), 0);
-            QCOMPARE(repo.width(), ui::space(28));
-            QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolder, QStringLiteral("…")).trimmed());
+            QCOMPARE(repo.x(), ui::space(12));
+            QCOMPARE(repo.width(), ui::space(34));
+            QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen, QStringLiteral("…")).trimmed());
             QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(4));
             QCOMPARE(more.x() - (sync.x() + sync.width()), ui::space(6));
-            QCOMPARE(more.x() + more.width(), bar->width());
+            QCOMPARE(more.x() + more.width(), bar->width() - ui::space(12));
             QCOMPARE(static_cast<SegmentButton *>(bar->changesTab())->isLabelled(), level == 0);
             QCOMPARE(static_cast<SegmentButton *>(bar->diffTab())->isLabelled(), level == 0);
             QVERIFY(bar->changesCount() > 0); // the pill stays at every level
@@ -2366,8 +2393,8 @@ esac
         QCOMPARE(tight.x() + tight.width() + ui::space(16), f.rectOf(bar->syncDropdown()).x());
         // The branch floor: a lone ellipsis between the glyph and the
         // chevron, in the chip's font, and the chip no wider than that.
-        const QFontMetrics chip = bar->branchButton()->fontMetrics();
-        const int name = chip.horizontalAdvance(bar->branchLabel());
+        // The name's advance rounded up, as the bar and the chip measure it.
+        const int name = qCeil(QFontMetricsF(bar->branchButton()->font()).horizontalAdvance(bar->branchLabel()));
         // Rounded up: elidedText() gives nothing at all a fraction short of it.
         const int ellipsis = qCeil(QFontMetricsF(bar->branchButton()->font()).horizontalAdvance(QChar(0x2026)));
         QVERIFY(name > ui::space(72));
@@ -2390,7 +2417,7 @@ esac
         QCOMPARE(bar->sizeHint().width(), ordinary);
         QCOMPARE(bar->minimumSizeHint().width(), ordinaryMin);
         QCOMPARE(f.levelAt(ordinary), 0);
-        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolder) + QStringLiteral("omagit-workspace") + ui::chevron());
+        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("omagit-workspace") + ui::chevron());
         QCOMPARE(bar->branchButton()->text(),
                  ui::icon(ui::kBranch) + QStringLiteral("feature/askpass-login-dialog") + ui::chevron());
         QCOMPARE(visible(f.sync()), QList<bool>({true, true, true, true}));
@@ -2761,7 +2788,7 @@ esac
         const QStringList own{ui::icon(ui::kRefresh) + QStringLiteral("Refresh"),
                               ui::icon(ui::kFolderOpen) + QStringLiteral("Open repository…"),
                               ui::icon(ui::kFetch) + QStringLiteral("Clone…"), QStringLiteral("-"),
-                              ui::icon(ui::kInfo) + QStringLiteral("Keybindings")};
+                              ui::icon(ui::kKeyboard) + QStringLiteral("Keybindings")};
 
         // Folded: the sync entries, a separator, then the window's.
         QCOMPARE(f.levelAt(f.widthForLevel(2)), 2);
@@ -2887,14 +2914,12 @@ esac
         QVERIFY(!f.rail()->isVisible());
         QVERIFY(f.bar()->layoutButton()->isVisible());
         QTRY_COMPARE(bodySplitter(f)->sizes().first(), 300);
-        // ...or at 45% of it with none, and the stacked page's width is not
-        // what gets remembered.
+        // ...or at the design's width for the window's width class with none,
+        // and the stacked page's width is not what gets remembered.
         stack(f);
         QSettings().remove(settings::kWindowLeftWidth);
         unstack(f);
-        const QMargins margins = f.host()->layout()->contentsMargins();
-        const int total = w->width() - margins.left() - margins.right();
-        QTRY_COMPARE(bodySplitter(f)->sizes().first(), total * 45 / 100);
+        QTRY_COMPARE(bodySplitter(f)->sizes().first(), designLeftWidth(w));
         QVERIFY(!QSettings().contains(settings::kWindowLeftWidth));
 
         // Mini and the history: the Diff tab, the rail on the commit's files.
@@ -3008,7 +3033,10 @@ esac
         QCOMPARE(w->mode(), MainWindow::HistoryMode);
         QVERIFY(!w->diffTab());
         QVERIFY(history->isVisible());
-        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(history->filesTable()));
+        // The stacked history has no files table, so the keyboard goes to the
+        // commit list.
+        QVERIFY(history->filesTable()->isHidden());
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(history->commitsTable()));
         QTest::keyClick(w, Qt::Key_1, Qt::ControlModifier);
         settle();
         QCOMPARE(w->mode(), MainWindow::CommitMode);
@@ -3059,9 +3087,11 @@ esac
         QVERIFY(!f.rail()->isVisible());
 
         // A double-click on a file shows its diff: the Diff tab, from the
-        // changes list and from the history's files. (Taken at the signal:
-        // the synthetic events QtTest sends never reach an item view's own
-        // double-click handling.)
+        // changes list; and from the history's details card, whose files
+        // button stands in for the files table the stacked history has no
+        // room for. (The double-click is taken at the signal: the synthetic
+        // events QtTest sends never reach an item view's own double-click
+        // handling.)
         stack(f);
         QTableView *table = f.page()->table();
         QVERIFY(table->isVisible());
@@ -3071,15 +3101,17 @@ esac
         QCOMPARE(w->mode(), MainWindow::CommitMode);
         QTest::mouseClick(bar->historyTab(), Qt::LeftButton);
         settle();
-        QTableView *files = history->filesTable();
+        QVERIFY(history->filesTable()->model()->rowCount() > 0);
+        QToolButton *files = history->details()->filesButton();
         QVERIFY(files->isVisible());
-        QVERIFY(files->model()->rowCount() > 0);
-        files->selectRow(0);
-        QMetaObject::invokeMethod(files, "doubleClicked", Q_ARG(QModelIndex, files->model()->index(0, 1)));
+        QTest::mouseClick(files, Qt::LeftButton);
         settle();
         QVERIFY(w->diffTab());
         QCOMPARE(w->mode(), MainWindow::HistoryMode);
         QCOMPARE(bar->currentTab(), TopBar::Tab::Diff);
+        // The rail lists the commit's files, the history's own current one
+        // among them.
+        QCOMPARE(f.rail()->list()->model(), history->filesTable()->model());
         QCOMPARE(windowPrefs(), prefs);
     }
 
@@ -3251,76 +3283,94 @@ esac
 
     // --- The diff pane's toolbar ---------------------------------------------
 
-    // Labelled from 900 px of pane up, the view options as glyphs from 560,
-    // and below that Prev and Next as glyphs too, the counter as "n/m" and
-    // the options behind "…". The widest form comes back exactly.
+    // Prev, Next and the view dropdown labelled from 900 px of pane up; the
+    // dropdown as its glyph and chevron from 560; below that Prev and Next as
+    // glyphs too, the counter as "n/m" and the view options behind "…".
+    // Whitespace and Syntax are 28 px squares wherever they show. The widest
+    // form comes back exactly.
     void theDiffToolbarFoldsInThreeStepsAsItNarrows()
     {
         PaneFixture f = diffPane();
         QVERIFY(QTest::qWaitForWindowExposed(f.pane.get()));
         settle();
-        QVERIFY(f.prev() && f.next() && f.twoPane() && f.whitespace() && f.syntax() && f.options() && f.counter());
+        QVERIFY(f.prev() && f.next() && f.view() && f.whitespace() && f.syntax() && f.options() && f.counter());
         QCOMPARE(f.options()->popupMode(), QToolButton::InstantPopup);
         QVERIFY(qobject_cast<TickMenu *>(f.options()->menu()));
         QCOMPARE(f.options()->text(), ui::icon(ui::kDotsHorizontal, QStringLiteral("…")).trimmed());
+        QCOMPARE(f.view()->popupMode(), QToolButton::InstantPopup);
+        QVERIFY(qobject_cast<TickMenu *>(f.view()->menu()));
 
-        const QList<QPair<QToolButton *, QString>> labelled{
-            {f.prev(), ui::icon(ui::kArrowUp) + QStringLiteral("Prev")},
-            {f.next(), ui::icon(ui::kArrowDown) + QStringLiteral("Next")},
-            {f.twoPane(), ui::icon(ui::kSplit) + QStringLiteral("Two-pane")},
-            {f.whitespace(), ui::icon(ui::kPilcrow) + QStringLiteral("Whitespace")},
-            {f.syntax(), ui::icon(ui::kCodeTags) + QStringLiteral("Syntax")}};
-        const QList<QString> glyphs{ui::icon(ui::kArrowUp).trimmed(), ui::icon(ui::kArrowDown).trimmed(),
-                                    ui::icon(ui::kSplit).trimmed(), ui::icon(ui::kPilcrow).trimmed(),
-                                    ui::icon(ui::kCodeTags).trimmed()};
+        const bool split = f.pane->view()->mode() == DiffView::TwoPane;
+        const uint viewGlyph = split ? ui::kSplit : ui::kUnified;
+        const QString viewName = split ? QStringLiteral("Split") : QStringLiteral("Unified");
         const QString longCounter = QStringLiteral("Change 1 of 2   ·   ") + kPaneSummary;
-        // `glyphFrom`: the index of the first button wearing its glyph alone.
-        const auto expectForm = [&](int glyphFrom, bool compact) {
-            for (int i = 0; i < labelled.size(); ++i) {
-                QToolButton *b = labelled.at(i).first;
-                const bool glyph = i >= glyphFrom;
-                const bool shown = !(compact && i >= 2);
-                QCOMPARE(b->isVisible(), shown);
-                QCOMPARE(b->text(), glyph ? glyphs.at(i) : labelled.at(i).second);
-                QCOMPARE(b->property("iconForm").toBool(), glyph);
-                if (glyph) {
-                    if (shown)
-                        QCOMPARE(b->width(), ui::space(28));
-                    QCOMPARE(b->maximumWidth(), ui::space(28));
-                } else {
-                    QCOMPARE(b->minimumWidth(), 0);
-                    QCOMPARE(b->maximumWidth(), QWIDGETSIZE_MAX);
+        const auto expectForm = [&](bool labelledView, bool compact) {
+            // Prev and Next: labelled, or squares in the compact form.
+            const QList<QPair<QToolButton *, QString>> nav{{f.prev(), QStringLiteral("Prev")},
+                                                          {f.next(), QStringLiteral("Next")}};
+            for (const auto &entry : nav) {
+                QToolButton *b = entry.first;
+                const uint glyph = b == f.prev() ? ui::kArrowUp : ui::kArrowDown;
+                QVERIFY(b->isVisible());
+                QCOMPARE(b->text(), compact ? ui::icon(glyph).trimmed() : ui::icon(glyph) + entry.second);
+                QCOMPARE(b->property("iconForm").toBool(), compact);
+                QCOMPARE(b->height(), ui::space(28));
+                if (compact)
+                    QCOMPARE(b->width(), ui::space(28));
+                else
                     QVERIFY(b->width() > ui::space(28));
-                }
+            }
+            // The dropdown, then the two squares.
+            QCOMPARE(f.view()->isVisible(), !compact);
+            if (!compact) {
+                QCOMPARE(f.view()->text(), (labelledView ? ui::icon(viewGlyph) + viewName
+                                                         : ui::icon(viewGlyph, viewName.left(1)))
+                                               + ui::chevron());
+                QCOMPARE(f.view()->height(), ui::space(28));
+            }
+            for (QToolButton *b : f.viewOptions()) {
+                QCOMPARE(b->isVisible(), !compact);
+                QVERIFY(b->property("iconForm").toBool());
+                QCOMPARE(b->maximumWidth(), ui::space(28));
+                if (!compact)
+                    QCOMPARE(b->size(), QSize(ui::space(28), ui::space(28)));
             }
             QCOMPARE(f.options()->isVisible(), compact);
-            QCOMPARE(f.counter()->text(), compact ? QStringLiteral("1/2") : longCounter);
+            QCOMPARE(f.counterText(), compact ? QStringLiteral("1/2") : longCounter);
+            // The header under it says the status and the +/− only when the
+            // counter has no room for them.
+            QCOMPARE(f.pane->view()->subtitleShown(), compact);
         };
 
         f.resizeTo(ui::space(900));
-        expectForm(5, false);
+        expectForm(true, false);
+        // The design's dropdown: 10, the 14 px glyph, 6, the name, 6 and the
+        // 12 px chevron, 10.
+        QCOMPARE(f.view()->width(), ui::space(10 + 14 + 6) + qCeil(QFontMetricsF(f.view()->font()).horizontalAdvance(viewName))
+                                        + ui::space(6 + 12 + 10));
         QList<int> widths;
-        for (const auto &b : labelled)
-            widths << b.first->width();
+        for (QToolButton *b : {f.prev(), f.next(), f.view(), f.whitespace(), f.syntax()})
+            widths << b->width();
         f.resizeTo(ui::space(899));
-        expectForm(2, false);
+        expectForm(false, false);
+        QCOMPARE(f.view()->width(), ui::space(10 + 14 + 6 + 12 + 10));
         // The design's gaps: 4 between Prev and Next and between the options.
         QCOMPARE(f.next()->x() - (f.prev()->x() + f.prev()->width()), ui::space(4));
-        QCOMPARE(f.whitespace()->x() - (f.twoPane()->x() + f.twoPane()->width()), ui::space(4));
+        QCOMPARE(f.whitespace()->x() - (f.view()->x() + f.view()->width()), ui::space(4));
         QCOMPARE(f.syntax()->x() - (f.whitespace()->x() + f.whitespace()->width()), ui::space(4));
         f.resizeTo(ui::space(560));
-        expectForm(2, false);
+        expectForm(false, false);
         f.resizeTo(ui::space(559));
-        expectForm(0, true);
+        expectForm(false, true);
         QCOMPARE(f.next()->x() - (f.prev()->x() + f.prev()->width()), ui::space(4));
         QCOMPARE(f.options()->width(), ui::space(28));
         QCOMPARE(f.options()->x() + f.options()->width(), f.pane->width());
 
         f.resizeTo(ui::space(900));
-        expectForm(5, false);
+        expectForm(true, false);
         QList<int> after;
-        for (const auto &b : labelled)
-            after << b.first->width();
+        for (QToolButton *b : {f.prev(), f.next(), f.view(), f.whitespace(), f.syntax()})
+            after << b->width();
         QCOMPARE(after, widths);
     }
 
@@ -3343,8 +3393,49 @@ esac
         QCOMPARE(visibleAtNarrowest, 3); // Prev, Next and "…"
     }
 
-    // The "…" menu says what the three buttons say at the moment it opens,
-    // and its entries take the buttons' own paths.
+    // The view dropdown offers Split and Unified, the current one ticked, and
+    // its face follows the view however it changes (Ctrl+T included).
+    void theViewDropdownPicksSplitOrUnified()
+    {
+        PaneFixture f = diffPane();
+        QVERIFY(QTest::qWaitForWindowExposed(f.pane.get()));
+        settle();
+        f.resizeTo(ui::space(900));
+        DiffView *view = f.pane->view();
+        const DiffView::Mode before = view->mode();
+        QMenu *menu = f.view()->menu();
+        QVERIFY(menu);
+        QList<QAction *> entries = filledMenu(menu);
+        QCOMPARE(menuTexts(entries), QStringList({ui::icon(ui::kSplit) + QStringLiteral("Split"),
+                                                  ui::icon(ui::kUnified) + QStringLiteral("Unified")}));
+        QCOMPARE(entries.at(0)->isChecked(), before == DiffView::TwoPane);
+        QCOMPARE(entries.at(1)->isChecked(), before == DiffView::OnePane);
+
+        entries.at(1)->trigger();
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        QCOMPARE(f.view()->text(), ui::icon(ui::kUnified) + QStringLiteral("Unified") + ui::chevron());
+        QCOMPARE(QSettings().value(settings::kDiffTwoPane).toBool(), false);
+        entries = filledMenu(menu);
+        QVERIFY(!entries.at(0)->isChecked() && entries.at(1)->isChecked());
+        filledMenu(menu).at(0)->trigger();
+        QCOMPARE(view->mode(), DiffView::TwoPane);
+        QCOMPARE(f.view()->text(), ui::icon(ui::kSplit) + QStringLiteral("Split") + ui::chevron());
+        QCOMPARE(QSettings().value(settings::kDiffTwoPane).toBool(), true);
+
+        // Ctrl+T toggles, and the face follows.
+        f.pane->togglePaneMode();
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        QVERIFY(f.view()->text().startsWith(ui::icon(ui::kUnified)));
+        f.pane->togglePaneMode();
+        QCOMPARE(view->mode(), DiffView::TwoPane);
+
+        // Back to what the settings held before the test.
+        view->setMode(before);
+        QCOMPARE(view->mode(), before);
+    }
+
+    // The "…" menu offers the view dropdown's choice and says what the two
+    // squares say at the moment it opens; its entries take the same paths.
     void theDiffToolbarMenuMirrorsTheOptions()
     {
         PaneFixture f = diffPane();
@@ -3354,12 +3445,13 @@ esac
         QVERIFY(f.options()->isVisible());
         QMenu *menu = f.options()->menu();
         QVERIFY(menu);
+        DiffView *view = f.pane->view();
+        const DiffView::Mode before = view->mode();
 
+        // The two options' entries: the last two of the menu.
         const auto checks = [&] {
-            QList<bool> out;
-            for (const QAction *a : filledMenu(menu))
-                out << a->isChecked();
-            return out;
+            const QList<QAction *> entries = filledMenu(menu);
+            return QList<bool>{entries.at(3)->isChecked(), entries.at(4)->isChecked()};
         };
         const auto buttons = [&] {
             QList<bool> out;
@@ -3368,34 +3460,34 @@ esac
             return out;
         };
         const QList<QAction *> entries = filledMenu(menu);
-        QCOMPARE(menuTexts(entries), QStringList({ui::icon(ui::kSplit) + QStringLiteral("Two-pane"),
+        QCOMPARE(menuTexts(entries), QStringList({ui::icon(ui::kSplit) + QStringLiteral("Split"),
+                                                  ui::icon(ui::kUnified) + QStringLiteral("Unified"),
+                                                  QStringLiteral("-"),
                                                   ui::icon(ui::kPilcrow) + QStringLiteral("Whitespace"),
                                                   ui::icon(ui::kCodeTags) + QStringLiteral("Syntax")}));
-        for (int i = 0; i < entries.size(); ++i) {
-            QVERIFY(entries.at(i)->isCheckable());
-            QCOMPARE(entries.at(i)->toolTip(), f.viewOptions().at(i)->toolTip());
+        for (int i = 0; i < 2; ++i) {
+            QVERIFY(entries.at(3 + i)->isCheckable());
+            QCOMPARE(entries.at(3 + i)->toolTip(), f.viewOptions().at(i)->toolTip());
         }
         QCOMPARE(checks(), buttons());
+        QCOMPARE(entries.at(0)->isChecked(), before == DiffView::TwoPane);
+        QCOMPARE(entries.at(1)->isChecked(), before == DiffView::OnePane);
 
-        // The Two-pane entry switches the view, through the button.
-        DiffView *view = f.pane->view();
-        const DiffView::Mode before = view->mode();
+        // Unified, then Split, from the menu.
+        filledMenu(menu).at(1)->trigger();
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        QVERIFY(filledMenu(menu).at(1)->isChecked());
         filledMenu(menu).at(0)->trigger();
-        QVERIFY(view->mode() != before);
-        QCOMPARE(f.twoPane()->isChecked(), view->mode() == DiffView::TwoPane);
-        QCOMPARE(checks(), buttons());
+        QCOMPARE(view->mode(), DiffView::TwoPane);
+        QVERIFY(filledMenu(menu).at(0)->isChecked());
 
-        // Ctrl+T while the button is hidden: the button flips, and the menu
+        // Ctrl+W while the button is hidden: the button flips, and the menu
         // with it the next time it opens.
-        QVERIFY(!f.twoPane()->isVisible());
-        const bool was = f.twoPane()->isChecked();
-        f.pane->togglePaneMode();
-        QCOMPARE(f.twoPane()->isChecked(), !was);
-        QCOMPARE(view->mode() == DiffView::TwoPane, !was);
-        QCOMPARE(checks().at(0), !was);
+        QVERIFY(!f.whitespace()->isVisible());
         f.pane->toggleWhitespace();
         QCOMPARE(checks(), buttons());
         f.pane->toggleWhitespace();
+        QCOMPARE(checks(), buttons());
 
         // The window's own path to it opens it only where the button shows.
         f.resizeTo(ui::space(900));
@@ -3404,33 +3496,38 @@ esac
         QVERIFY(!menu->isVisible());
 
         // Back to what the settings held before the test.
-        if (view->mode() != before)
-            f.pane->togglePaneMode();
+        view->setMode(before);
         QCOMPARE(view->mode(), before);
     }
 
     // The counter follows the change and the form, and says nothing with no
-    // change to count.
+    // change to count. The summary wears the design's colours: the status in
+    // its own, the added lines green, the removed ones red.
     void theCounterFollowsTheFormAndTheChange()
     {
         PaneFixture f = diffPane();
         QVERIFY(QTest::qWaitForWindowExposed(f.pane.get()));
         settle();
         f.resizeTo(ui::space(400));
-        QCOMPARE(f.counter()->text(), QStringLiteral("1/2"));
+        QCOMPARE(f.counterText(), QStringLiteral("1/2"));
         f.pane->nextChange();
-        QCOMPARE(f.counter()->text(), QStringLiteral("2/2"));
+        QCOMPARE(f.counterText(), QStringLiteral("2/2"));
         f.resizeTo(ui::space(900));
-        QCOMPARE(f.counter()->text(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
+        QCOMPARE(f.counterText(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
         f.resizeTo(ui::space(700));
-        QCOMPARE(f.counter()->text(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
+        QCOMPARE(f.counterText(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
+        const OmarchyTheme *theme = OmarchyTheme::instance();
+        const QString html = f.counter()->text();
+        for (const QColor &colour : {ChangesModel::statusColor(FileChange::Modified), theme->diffAddedIcon(),
+                                     theme->diffRemovedIcon()})
+            QVERIFY2(html.contains(QStringLiteral("color:") + colour.name()), qPrintable(html));
 
         // A cleared view (and no file to summarise): empty in either form.
-        f.pane->setSummary(QString());
+        f.pane->clearSummary();
         f.pane->view()->clear();
-        QCOMPARE(f.counter()->text(), QString());
+        QCOMPARE(f.counterText(), QString());
         f.resizeTo(ui::space(400));
-        QCOMPARE(f.counter()->text(), QString());
+        QCOMPARE(f.counterText(), QString());
         QVERIFY(!f.prev()->isEnabled());
         QVERIFY(!f.next()->isEnabled());
     }
@@ -3455,11 +3552,11 @@ esac
                     return b;
             return nullptr;
         };
-        QToolButton *prev = named(QStringLiteral("Prev")), *twoPane = named(QStringLiteral("Two-pane")),
-                    *options = named(QStringLiteral("View options"));
-        QVERIFY(prev && twoPane && options);
+        QToolButton *prev = named(QStringLiteral("Prev")), *viewButton = named(QStringLiteral("View")),
+                    *whitespace = named(QStringLiteral("Whitespace")), *options = named(QStringLiteral("View options"));
+        QVERIFY(prev && viewButton && whitespace && options);
         QVERIFY(options->isVisible());
-        QVERIFY(!twoPane->isVisible());
+        QVERIFY(!viewButton->isVisible());
         QCOMPARE(prev->width(), ui::space(28));
         QVERIFY2(squeezedButtons(pane).isEmpty(), qPrintable(squeezedButtons(pane).join(", ")));
 
@@ -3468,8 +3565,8 @@ esac
         QVERIFY(w->findChild<MiniRail *>()->isVisible());
         QVERIFY2(pane->width() >= ui::space(560) && pane->width() < ui::space(900), qPrintable(QString::number(pane->width())));
         QVERIFY(!options->isVisible());
-        QVERIFY(twoPane->isVisible());
-        QCOMPARE(twoPane->width(), ui::space(28));
+        QVERIFY(viewButton->isVisible());
+        QCOMPARE(whitespace->width(), ui::space(28));
         QCOMPARE(prev->text(), ui::icon(ui::kArrowUp) + QStringLiteral("Prev"));
         QVERIFY2(squeezedButtons(pane).isEmpty(), qPrintable(squeezedButtons(pane).join(", ")));
     }
@@ -3512,6 +3609,737 @@ esac
         if (QTest::currentTestFailed())
             return;
         QCOMPARE(w->mode(), MainWindow::HistoryMode);
+    }
+
+    // --- The window's grid and classes ---------------------------------------
+
+    // The design's window grid (screens.js screen(), topBar(), footer()): the
+    // top bar 40 px with its hairline, its row 6 down and 28 tall, 12 in from
+    // either side; the body 10 under the bar, 12 in from either side and 10
+    // over the footer; the footer 28 px with its hairline, the keybindings a
+    // 24 px ghost square 12 from the right edge, 2 under the rule. The two
+    // rules run from edge to edge in the fainter chrome tone.
+    void theWindowFollowsTheDesignsGrid()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(1400), ui::space(800)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        QWidget *host = f.host();
+        const int width = host->width(), height = host->height();
+        TopBar *bar = f.bar();
+        QCOMPARE(rectIn(bar, host), QRect(0, 0, width, ui::space(40)));
+        for (QToolButton *b : {bar->repoButton(), bar->branchButton(), static_cast<QToolButton *>(bar->pullButton()),
+                               bar->layoutButton(), bar->diffToggle()}) {
+            QCOMPARE(rectIn(b, host).y(), ui::space(6));
+            QCOMPARE(b->height(), ui::space(28));
+        }
+        QCOMPARE(rectIn(bar->repoButton(), host).x(), ui::space(12));
+        QCOMPARE(rectIn(bar->diffToggle(), host).right() + 1, width - ui::space(12));
+
+        auto *footer = f.window->findChild<Footer *>();
+        QVERIFY(footer);
+        QCOMPARE(rectIn(footer, host), QRect(0, height - ui::space(28), width, ui::space(28)));
+        QCOMPARE(rectIn(footer->keybindingsButton(), host),
+                 QRect(width - ui::space(36), height - ui::space(28) + ui::space(2), ui::space(24), ui::space(24)));
+        QCOMPARE(footer->keybindingsButton()->text(), ui::icon(ui::kKeyboard, QStringLiteral("K")).trimmed());
+
+        // The rules: one row of pixels, the window's whole width, at the bar's
+        // last row and the footer's first.
+        const QColor chrome = OmarchyTheme::instance()->hairline();
+        const auto rule = [&](QWidget *owner) -> QWidget * {
+            for (QWidget *w : owner->findChildren<QWidget *>())
+                if (w->height() == 1 && w->width() == width)
+                    return w;
+            return nullptr;
+        };
+        QWidget *barRule = rule(bar), *footerRule = rule(footer);
+        QVERIFY(barRule && footerRule);
+        QCOMPARE(rectIn(barRule, host).y(), ui::space(40) - 1);
+        QCOMPARE(rectIn(footerRule, host).y(), height - ui::space(28));
+        for (QWidget *r : {barRule, footerRule})
+            QCOMPARE(r->palette().color(QPalette::Window).rgba(), chrome.rgba());
+
+        // The body, and the page in it.
+        // The body starts as far under the bar's rule as the bar's row
+        // stands over it.
+        const QRect page = rectIn(f.page(), host);
+        QCOMPARE(page.x(), ui::space(12));
+        QCOMPARE(page.y(), ui::space(40) + ui::barGap());
+        QCOMPARE(page.bottom() + 1, height - ui::space(28) - ui::space(10));
+        const QRect diff = rectIn(f.window->findChild<DiffPane *>(), host);
+        QCOMPARE(diff.right() + 1, width - ui::space(12));
+        QCOMPARE(diff.y(), page.y());
+        // The diff toolbar keeps that gap above and below it, and the
+        // message box starts on the diff's line, MESSAGE centred on the
+        // toolbar's row.
+        QToolButton *prev = nullptr;
+        for (QToolButton *b : f.window->findChild<DiffPane *>()->findChildren<QToolButton *>())
+            if (b->toolTip().startsWith(QLatin1String("Previous change")))
+                prev = b;
+        QVERIFY(prev);
+        const QRect prevRect = rectIn(prev, host);
+        const QRect diffView = rectIn(f.window->findChild<DiffPane *>()->view(), host);
+        QCOMPARE(prevRect.y(), diff.y());
+        QCOMPARE(diffView.y(), prevRect.bottom() + 1 + ui::barGap());
+        auto *message = f.page()->findChild<MessageEdit *>();
+        QVERIFY(message);
+        QCOMPARE(rectIn(message, host).y(), diffView.y());
+        QVERIFY(qAbs(rectIn(f.page()->agentButton(), host).center().y() - prevRect.center().y()) <= 1);
+        // The splitter's gap is the design's 12.
+        QCOMPARE(diff.x(), page.right() + 1 + ui::space(12));
+        // The action bar ends with the page, on the diff pane's last line;
+        // the header rows' buttons stand 2 inside its right edge.
+        auto *commit = f.page()->findChild<QPushButton *>();
+        QVERIFY(commit);
+        QCOMPARE(rectIn(commit, host).bottom(), page.bottom());
+        QCOMPARE(rectIn(commit, host).bottom(), diff.bottom());
+        QCOMPARE(rectIn(f.page()->agentButton(), host).right() + 1, page.right() + 1 - ui::space(2));
+        QCOMPARE(rectIn(f.page()->unversionedButton(), host).y(), rectIn(f.page()->tableButton(), host).y());
+
+        // Mini: the rail is one 40 px tile wide at the margin, the diff pane
+        // 12 after it; stacked, the Diff tab keeps 10.
+        f.window->setPaneLayout(PaneLayout::Mini, false);
+        settle();
+        MiniRail *rail = f.rail();
+        QCOMPARE(rectIn(rail, host), QRect(ui::space(12), ui::space(40) + ui::barGap(), ui::space(40), rail->height()));
+        QCOMPARE(rectIn(f.window->findChild<DiffPane *>(), host).x(), ui::space(12 + 40 + 12));
+        f.window->resize(ui::space(470), ui::space(612));
+        settle();
+        QVERIFY(f.window->isStacked() && f.window->diffTab());
+        QCOMPARE(rectIn(f.window->findChild<DiffPane *>(), host).x(), ui::space(12 + 40 + 10));
+        f.window->setPaneLayout(PaneLayout::Docked, false);
+    }
+
+    // A shallow window has no footer: the body ends the window's side margin
+    // over its bottom edge, and the action bar with it, as does the diff pane
+    // or the rail beside it; messages go nowhere
+    // and Ctrl+K still opens the keybindings. Back above 560 the footer
+    // returns, the body ends 10 over it, the action bar with it.
+    void theShallowWindowDropsTheFooter()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(945), ui::space(612)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        QWidget *host = f.host();
+        auto *footer = w->findChild<Footer *>();
+        QVERIFY(footer && footer->isVisible());
+        auto *commit = f.page()->findChild<QPushButton *>();
+        QVERIFY(commit);
+        const auto bottomOf = [&](QWidget *widget) { return rectIn(widget, host).bottom() + 1; };
+        const auto tall = [&] {
+            QVERIFY(footer->isVisible());
+            QCOMPARE(bottomOf(f.page()), host->height() - ui::space(28) - ui::space(10));
+            QCOMPARE(bottomOf(commit), bottomOf(f.page()));
+            QCOMPARE(bottomOf(commit), bottomOf(w->findChild<DiffPane *>()));
+        };
+        tall();
+
+        const int margin = ui::windowMargin();
+        for (int width : {945, 470}) {
+            w->resize(ui::space(width), ui::space(400));
+            settle();
+            QVERIFY(!footer->isVisible());
+            QCOMPARE(bottomOf(f.page()), host->height() - margin);
+            QCOMPARE(bottomOf(commit), host->height() - margin);
+            QCOMPARE(bottomOf(f.page()->optionsButton()), host->height() - margin);
+            QCOMPARE(commit->height(), ui::space(28));
+            if (width == 945) {
+                QCOMPARE(bottomOf(w->findChild<DiffPane *>()), host->height() - margin);
+                // The history's last row ends there too.
+                w->setMode(MainWindow::HistoryMode);
+                settle();
+                auto *history = w->findChild<HistoryView *>();
+                QCOMPARE(bottomOf(history), host->height() - margin);
+                w->setMode(MainWindow::CommitMode);
+                settle();
+            } else {
+                w->setDiffTab(true);
+                settle();
+                QCOMPARE(bottomOf(f.rail()), host->height() - margin);
+                QCOMPARE(bottomOf(w->findChild<DiffPane *>()), host->height() - margin);
+                w->setDiffTab(false);
+                settle();
+            }
+        }
+        // A message while the footer is away shows nowhere and breaks nothing.
+        footer->showStatus(QStringLiteral("Fetched"), 50);
+        QTest::qWait(100);
+        QVERIFY(!footer->isVisible());
+        // Ctrl+K still opens the keybindings.
+        QVERIFY(activate(w));
+        QTest::keyClick(w, Qt::Key_K, Qt::ControlModifier);
+        QTRY_VERIFY(w->findChild<KeybindingsPanel *>() && w->findChild<KeybindingsPanel *>()->isVisible());
+        auto *panel = w->findChild<KeybindingsPanel *>();
+        panel->close();
+        settle();
+
+        w->resize(ui::space(945), ui::space(612));
+        settle();
+        tall();
+    }
+
+    // The top bar's popups hang 4 px under the bar, the sync and more menus
+    // at the design's widths.
+    void theTopBarsPopupsHangUnderTheBar()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(627), ui::space(612)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        TopBar *bar = f.bar();
+        QVERIFY(bar->isStacked());
+        const int top = bar->mapToGlobal(QPoint(0, bar->height())).y() + ui::space(4);
+        QCOMPARE(ui::popupTop(bar), top);
+        const QList<QPair<QToolButton *, int>> menus{{bar->syncDropdown(), 260}, {bar->moreButton(), 240}};
+        for (const auto &entry : menus) {
+            QMenu *menu = entry.first->menu();
+            QVERIFY(menu);
+            QTimer::singleShot(0, menu, [menu] { menu->close(); });
+            entry.first->showMenu();
+            QCOMPARE(menu->width(), ui::space(entry.second));
+            QCOMPARE(menu->y(), top);
+            QVERIFY(menu->geometry().right() < f.window->mapToGlobal(QPoint(f.window->width(), 0)).x());
+        }
+    }
+
+    // The window's classes size the commit page, and nothing of it is saved:
+    // the left section's default width and the message box's resting height
+    // by the width class (560 / 96 from 1400, 400 / 84 from 1000, 340 / 68
+    // below), "Amend" in the medium class, and a shallow window (under 560)
+    // gets the one-line box and the stacked action bar at any width.
+    void theWindowClassesSizeTheCommitPage()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(1400), ui::space(800)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        CommitPage *page = f.page();
+        auto *amend = page->findChild<QCheckBox *>();
+        auto *commit = page->findChild<QPushButton *>();
+        QVERIFY(amend && commit);
+        const auto check = [&](int width, int height, int left, int message, bool shortAmend, bool stackedBar) {
+            w->resize(width, height);
+            settle();
+            QCOMPARE(w->width(), width);
+            QTRY_COMPARE(bodySplitter(f)->sizes().first(), left);
+            QTRY_COMPARE(f.pageEditor()->height(), message);
+            QCOMPARE(page->optionsButton()->isVisible(), stackedBar);
+            QCOMPARE(amend->isVisible(), !stackedBar);
+            QCOMPARE(commit->text().endsWith(QStringLiteral("⏎")), !stackedBar);
+            if (!stackedBar)
+                QCOMPARE(amend->text(), shortAmend ? QStringLiteral("Amend") : QStringLiteral("Amend last commit"));
+        };
+        check(ui::space(1400), ui::space(800), ui::space(560), ui::space(96), false, false);
+        if (QTest::currentTestFailed())
+            return;
+        check(ui::space(1200), ui::space(800), ui::space(400), ui::space(84), false, false);
+        if (QTest::currentTestFailed())
+            return;
+        check(ui::space(900), ui::space(800), ui::space(340), ui::space(68), true, false);
+        if (QTest::currentTestFailed())
+            return;
+        check(ui::space(900), ui::space(500), ui::space(340), ui::space(34), true, true);
+        if (QTest::currentTestFailed())
+            return;
+        check(ui::space(1400), ui::space(500), ui::space(560), ui::space(34), false, true);
+        if (QTest::currentTestFailed())
+            return;
+        check(ui::space(1400), ui::space(800), ui::space(560), ui::space(96), false, false);
+        QVERIFY(!QSettings().contains(settings::kWindowLeftWidth));
+        QVERIFY(!QSettings().contains(settings::kWindowCommitMessageSplitter));
+
+        // A width the user dragged wins over the class's.
+        QSplitter *splitter = bodySplitter(f);
+        QSplitterHandle *handle = splitter->handle(1);
+        QTest::mousePress(handle, Qt::LeftButton, {}, handle->rect().center());
+        QTest::mouseMove(handle, handle->rect().center() + QPoint(ui::space(40), 0));
+        QTest::mouseRelease(handle, Qt::LeftButton, {}, handle->rect().center() + QPoint(ui::space(40), 0));
+        settle();
+        QVERIFY(QSettings().contains(settings::kWindowLeftWidth));
+        const int dragged = QSettings().value(settings::kWindowLeftWidth).toInt();
+        w->resize(ui::space(1200), ui::space(800));
+        settle();
+        QCOMPARE(splitter->sizes().first(), dragged);
+        QSettings().remove(settings::kWindowLeftWidth);
+    }
+
+    // Stacked, the history's All branches is the design's 28 px square, its
+    // name in the tooltip; the ordinary width spells it out again.
+    void theStackedHistoryFoldsAllBranchesIntoItsGlyph()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(1200), ui::space(700)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        MainWindow *w = f.window.get();
+        w->setMode(MainWindow::HistoryMode);
+        settle();
+        auto *history = w->findChild<HistoryView *>();
+        QToolButton *all = nullptr;
+        for (QToolButton *b : history->findChildren<QToolButton *>())
+            if (b->accessibleName() == QLatin1String("All branches"))
+                all = b;
+        QVERIFY(all);
+        QVERIFY(all->text().endsWith(QStringLiteral("All branches")));
+        QCOMPARE(all->height(), ui::space(28));
+        const int labelled = all->width();
+        QVERIFY(labelled > ui::space(28));
+        stack(f);
+        QVERIFY(w->isStacked());
+        QCOMPARE(all->text(), ui::icon(ui::kBranch, QStringLiteral("B")).trimmed());
+        QCOMPARE(all->size(), QSize(ui::space(28), ui::space(28)));
+        QCOMPARE(all->toolTip(), QStringLiteral("All branches"));
+        all->click();
+        QVERIFY(all->isChecked()); // the square keeps the checked state
+        all->click();
+        unstack(f);
+        QVERIFY(all->text().endsWith(QStringLiteral("All branches")));
+        QCOMPARE(all->width(), labelled);
+    }
+
+    // The graph column (screens.js commitsTable()): lanes 12 px apart, the
+    // first half a pitch left of the middle of the class's design width, so
+    // two lanes sit symmetric in it and the first never moves as lanes come
+    // and go; a third lane widens the column past the design's width.
+    void theHistoryGraphFollowsTheDesignsGeometry()
+    {
+        struct Case {
+            WidthClass widthClass;
+            int design, firstLane;
+        };
+        for (const Case c : {Case{WidthClass::Wide, 40, 14}, Case{WidthClass::Large, 40, 14},
+                             Case{WidthClass::Medium, 36, 12}, Case{WidthClass::Stacked, 30, 9}}) {
+            for (int lanes = 1; lanes <= 3; ++lanes) {
+                const HistoryView::GraphGeometry g = HistoryView::graphGeometry(c.widthClass, lanes);
+                const QByteArray where = QStringLiteral("%1 px, %2 lanes").arg(c.design).arg(lanes).toUtf8();
+                QVERIFY2(g.laneCentre(0) == ui::space(c.firstLane), where.constData());
+                QVERIFY2(g.laneCentre(1) == ui::space(c.firstLane) + ui::space(12), where.constData());
+                // The design's width, or as wide as the lanes need with the
+                // first lane's room on either side: at a 12 px base that is
+                // 40, 40, 52 for the wide classes' one, two and three lanes.
+                const int width = qMax(ui::space(c.design), 2 * ui::space(c.firstLane) + (lanes - 1) * ui::space(12));
+                QVERIFY2(g.width == width, where.constData());
+                if (lanes == 3)
+                    QVERIFY2(g.width > ui::space(c.design), where.constData());
+            }
+            // Two lanes, symmetric in the design's width (to the rounding of
+            // the text size of the moment).
+            const HistoryView::GraphGeometry two = HistoryView::graphGeometry(c.widthClass, 2);
+            QVERIFY(qAbs(two.laneCentre(0) - (two.width - two.laneCentre(1))) <= 1);
+        }
+        // Twelve lanes at the most.
+        QCOMPARE(HistoryView::graphGeometry(WidthClass::Wide, 40).width,
+                 HistoryView::graphGeometry(WidthClass::Wide, 12).width);
+        QCOMPARE(HistoryView::graphGeometry(WidthClass::Wide, 12).width, 2 * ui::space(14) + 11 * ui::space(12));
+    }
+
+    // The commit list's columns by the window's width class (screens.js
+    // commitsTable()), the SHA never among them and Message taking exactly
+    // what is left, so neither table scrolls sideways at any of the design's
+    // frames; the files table under it likewise (changesTable()): the 30 px
+    // row numbers, Path, Status (the St pill where it is 30 px), "+ −" and
+    // Size as the class has them, and Name taking the rest.
+    void theHistoryTablesFollowTheWidthClass()
+    {
+        QSettings().remove(settings::kWindowLeftWidth);
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(1900), ui::space(1234)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        MainWindow *w = f.window.get();
+        w->setMode(MainWindow::HistoryMode);
+        settle();
+        auto *history = w->findChild<HistoryView *>();
+        QTableView *commits = history->commitsTable();
+        QTableView *files = history->filesTable();
+        auto *filesHeader = qobject_cast<ChangesHeader *>(files->horizontalHeader());
+        QVERIFY(filesHeader);
+        const auto shown = [](QTableView *table, int column) {
+            return table->isColumnHidden(column) ? 0 : table->columnWidth(column);
+        };
+        const auto fitsExactly = [&](QTableView *table, int stretch, int columns) {
+            int others = 0;
+            for (int c = 0; c < columns; ++c)
+                if (c != stretch)
+                    others += shown(table, c);
+            return table->columnWidth(stretch) == table->viewport()->width() - others
+                && table->columnWidth(stretch) >= ui::space(100) && table->horizontalScrollBar()->maximum() == 0;
+        };
+
+        // The frame's size, then the commit list's graph, author and date and
+        // the files' path, status, "+ −" and size, in design pixels (0: not
+        // shown); a stacked frame has no files table.
+        struct Frame {
+            int width, height;
+            int graph, author, date;
+            int path, status, lines, size;
+        };
+        const QList<Frame> frames{{1900, 1234, 40, 90, 130, 130, 70, 70, 70},
+                                  {1200, 800, 40, 90, 100, 120, 60, 60, 0},
+                                  {945, 1234, 36, 0, 90, 110, 30, 0, 0},
+                                  {945, 612, 36, 0, 90, 110, 30, 0, 0},
+                                  {627, 612, 30, 0, 0, -1, -1, -1, -1},
+                                  {470, 612, 30, 0, 0, -1, -1, -1, -1}};
+        for (const Frame &frame : frames) {
+            w->resize(ui::space(frame.width), ui::space(frame.height));
+            settle();
+            const QByteArray where = QStringLiteral("%1x%2").arg(frame.width).arg(frame.height).toUtf8();
+            QVERIFY2(commits->isColumnHidden(HistoryModel::Hash), where.constData());
+            QVERIFY2(shown(commits, HistoryModel::Graph) == ui::space(frame.graph), where.constData());
+            QVERIFY2(shown(commits, HistoryModel::Author) == ui::space(frame.author) * (frame.author > 0),
+                     where.constData());
+            QVERIFY2(shown(commits, HistoryModel::Date) == ui::space(frame.date) * (frame.date > 0), where.constData());
+            QVERIFY2(fitsExactly(commits, HistoryModel::Message, HistoryModel::ColumnCount), where.constData());
+
+            if (frame.path < 0) {
+                QVERIFY2(files->isHidden(), where.constData());
+                continue;
+            }
+            QVERIFY2(files->isVisible(), where.constData());
+            const auto px = [](int design) { return design > 0 ? ui::space(design) : 0; };
+            QVERIFY2(shown(files, ChangesModel::Check) == ui::space(30), where.constData());
+            QVERIFY2(shown(files, ChangesModel::Path) == px(frame.path), where.constData());
+            QVERIFY2(shown(files, ChangesModel::Status) == px(frame.status), where.constData());
+            QVERIFY2(shown(files, ChangesModel::LinesAdded) == px(frame.lines), where.constData());
+            QVERIFY2(shown(files, ChangesModel::Size) == px(frame.size), where.constData());
+            QVERIFY2(files->isColumnHidden(ChangesModel::Extension), where.constData());
+            QVERIFY2(files->isColumnHidden(ChangesModel::LinesRemoved), where.constData());
+            QVERIFY2(fitsExactly(files, ChangesModel::Name, ChangesModel::ColumnCount), where.constData());
+            QCOMPARE(filesHeader->sectionText(ChangesModel::Check), QStringLiteral("#"));
+            QCOMPARE(filesHeader->sectionText(ChangesModel::LinesAdded), QStringLiteral("+ −"));
+            QCOMPARE(filesHeader->sectionText(ChangesModel::Status),
+                     frame.status == 30 ? QStringLiteral("St") : QStringLiteral("Status"));
+            // Size reads last, after the line counts.
+            QCOMPARE(filesHeader->visualIndex(ChangesModel::Size), ChangesModel::ColumnCount - 1);
+        }
+    }
+
+    // The details card (screens.js commitDetails()): the subject, the meta
+    // line (no date stacked), the parents in words, every ref the commit
+    // wears and the body alone; the copy button puts the full SHA on the
+    // clipboard; stacked, the files button counts the commit's files, and a
+    // commit without any has none.
+    void theHistoryDetailsCardDescribesTheCommit()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.path();
+        const QDir root(path);
+        QVERIFY(git(path, {"init", "-q", "-b", "main"}));
+        QVERIFY(writeFixture(root.filePath(QStringLiteral("a.txt")), "a\n"));
+        QVERIFY(git(path, {"add", "-A"}));
+        QVERIFY(git(path, {"commit", "-q", "-m", "root"}, 1));
+        QVERIFY(git(path, {"checkout", "-q", "-b", "feature"}));
+        QVERIFY(writeFixture(root.filePath(QStringLiteral("b.txt")), "b\n"));
+        QVERIFY(writeFixture(root.filePath(QStringLiteral("c.txt")), "c\n"));
+        QVERIFY(git(path, {"add", "-A"}));
+        QVERIFY(git(path, {"commit", "-q", "-m", "side", "-m", "The body, alone.\n\nIts second paragraph."}, 2));
+        QVERIFY(git(path, {"checkout", "-q", "main"}));
+        QVERIFY(commit(path, QStringLiteral("empty"), 3));
+        QVERIFY(git(path, {"merge", "-q", "--no-ff", "feature", "-m", "merge"}, 4));
+        QVERIFY(git(path, {"tag", "v1"}));
+        QVERIFY(git(path, {"update-ref", "refs/remotes/origin/main", "HEAD"}));
+
+        GitRepo repo(path);
+        HistoryView history(&repo);
+        history.resize(ui::space(560), ui::space(800));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        history.reload();
+        settle();
+        CommitDetails *card = history.details();
+        QVERIFY(card->isVisible());
+        QTableView *commits = history.commitsTable();
+        const auto select = [&](const QString &subject) {
+            for (int row = 0; row < commits->model()->rowCount(); ++row) {
+                commits->selectRow(row);
+                bool ok = false;
+                const Commit c = history.currentCommit(&ok);
+                if (ok && c.subject == subject)
+                    return c;
+            }
+            return Commit();
+        };
+        const auto date = [](const Commit &c) { return c.date.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm")); };
+        const auto names = [card] {
+            QStringList out;
+            for (const RefLabel &label : card->refs())
+                out << label.name;
+            return out;
+        };
+
+        // The merge: two parents, and every ref, the remote one too.
+        const Commit merge = select(QStringLiteral("merge"));
+        QVERIFY(merge.isValid());
+        QCOMPARE(card->title(), QStringLiteral("merge"));
+        QCOMPARE(card->metaParts(), QStringList({merge.shortHash, QStringLiteral("Test <test@example.com>"), date(merge)}));
+        QCOMPARE(card->parentsText(), QStringLiteral("Parents %1 %2")
+                                          .arg(merge.parents.at(0).left(merge.shortHash.size()),
+                                               merge.parents.at(1).left(merge.shortHash.size())));
+        QCOMPARE(names(), QStringList({"main", "origin/main", "v1"}));
+        QCOMPARE(card->body()->toPlainText(), QString()); // a one-line message has no body
+        card->copyButton()->click();
+        QCOMPARE(QApplication::clipboard()->text(), merge.hash);
+        QCOMPARE(card->copyButton()->accessibleName(), QStringLiteral("Copy full SHA"));
+
+        // One parent, and the body without the subject.
+        const Commit side = select(QStringLiteral("side"));
+        QVERIFY(side.isValid());
+        QCOMPARE(card->parentsText(), QStringLiteral("Parent %1").arg(side.parents.first().left(side.shortHash.size())));
+        QCOMPARE(names(), QStringList({"feature"}));
+        QCOMPARE(card->body()->toPlainText(), QStringLiteral("The body, alone.\n\nIts second paragraph."));
+
+        // None.
+        QVERIFY(select(QStringLiteral("root")).isValid());
+        QCOMPARE(card->parentsText(), QStringLiteral("Root commit"));
+        QVERIFY(card->refs().isEmpty());
+
+        // Only stacked: the files button, and no date on the meta line.
+        QVERIFY(!card->filesButton()->isVisible());
+        history.setStacked(true);
+        settle();
+        const Commit rootCommit = select(QStringLiteral("root"));
+        QCOMPARE(card->metaParts(), QStringList({rootCommit.shortHash, QStringLiteral("Test <test@example.com>")}));
+        QVERIFY(card->filesButton()->isVisible());
+        QCOMPARE(card->filesButton()->text(), QStringLiteral("1 file ›"));
+        QVERIFY(card->filesButton()->width() >= ui::space(90));
+        QCOMPARE(card->filesButton()->height(), ui::space(24));
+        const QRect button = card->filesButton()->geometry();
+        QCOMPARE(card->width() - (button.right() + 1), ui::space(8));
+        QCOMPARE(card->height() - (button.bottom() + 1), ui::space(8));
+        select(QStringLiteral("side"));
+        QCOMPARE(card->filesButton()->text(), QStringLiteral("2 files ›"));
+        QSignalSpy requests(&history, &HistoryView::filesRequested);
+        QTest::mouseClick(card->filesButton(), Qt::LeftButton);
+        QCOMPARE(requests.count(), 1);
+        select(QStringLiteral("empty"));
+        QVERIFY(!card->filesButton()->isVisible());
+        history.setStacked(false);
+        settle();
+        QVERIFY(!card->filesButton()->isVisible());
+
+        // No commit at all: the lines empty, the view's message in the body.
+        history.filterField()->setText(QStringLiteral("no such commit"));
+        QTRY_VERIFY(!commits->currentIndex().isValid());
+        QVERIFY(card->title().isEmpty());
+        QVERIFY(card->metaParts().isEmpty());
+        QVERIFY(card->parentsText().isEmpty());
+        QCOMPARE(card->body()->placeholderText(), QStringLiteral("No commits match the filter."));
+        QCOMPARE(card->body()->placeholderText(), history.emptyMessage());
+    }
+
+    // Stacked, the card's files button leads to the commit's files: the Diff
+    // tab, whose rail lists them, the history's current file among them.
+    void theStackedDetailsCardShowsTheCommitsFiles()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(627), ui::space(612)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        TopBar *bar = f.bar();
+        QVERIFY(w->isStacked());
+        QTest::mouseClick(bar->historyTab(), Qt::LeftButton);
+        settle();
+        QCOMPARE(w->mode(), MainWindow::HistoryMode);
+        QVERIFY(!w->diffTab());
+        auto *history = w->findChild<HistoryView *>();
+        QVERIFY(history->filesTable()->isHidden());
+        QToolButton *files = history->details()->filesButton();
+        QVERIFY(files->isVisible());
+        QCOMPARE(files->text(), QStringLiteral("1 file ›"));
+
+        QTest::mouseClick(files, Qt::LeftButton);
+        settle();
+        QVERIFY(w->diffTab());
+        QCOMPARE(w->mode(), MainWindow::HistoryMode);
+        QCOMPARE(bar->currentTab(), TopBar::Tab::Diff);
+        QVERIFY(f.rail()->isVisible());
+        QCOMPARE(f.rail()->list()->model(), history->filesTable()->model());
+        QCOMPARE(f.rail()->list()->model()->rowCount(), 1);
+        Commit c;
+        FileChange file;
+        QVERIFY(history->currentFile(&c, &file));
+        QCOMPARE(file.path, QStringLiteral("a.txt"));
+        QCOMPARE(f.rail()->list()->currentIndex().data(ChangesModel::PathRole).toString(), file.path);
+    }
+
+    // A shallow window has room for the commit list alone: no details card
+    // and no files table — which stays alive hidden, its current row still
+    // the file whose diff the pane shows. Stacked, the card comes back
+    // without the files table; the keyboard goes to the commit list.
+    void theShallowHistoryKeepsTheCommitListAlone()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(945), ui::space(612)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        MainWindow *w = f.window.get();
+        w->setMode(MainWindow::HistoryMode);
+        settle();
+        auto *history = w->findChild<HistoryView *>();
+        QTableView *files = history->filesTable();
+        CommitDetails *card = history->details();
+        QVERIFY(card->isVisible() && files->isVisible());
+        QCOMPARE(card->height(), ui::space(150));
+        QCOMPARE(files->height(), ui::space(110));
+        QCOMPARE(history->activeListView(), static_cast<QAbstractItemView *>(files));
+        // The last section ends 22 px above the page's bottom edge, the count
+        // row taking those 22 px, its text centred 6 px above the edge.
+        auto *count = history->findChild<QLabel *>(QStringLiteral("historyCount"));
+        QVERIFY(count);
+        const auto bottomIn = [history](QWidget *widget) { return widget->mapTo(history, QPoint(0, widget->height())).y(); };
+        QCOMPARE(history->height() - bottomIn(files), ui::space(22));
+        QCOMPARE(count->mapTo(history, QPoint(0, 0)).y(), bottomIn(files));
+        QCOMPARE(bottomIn(count), history->height());
+        QCOMPARE(count->contentsMargins().top() + QFontMetrics(count->font()).ascent(),
+                 qRound(ui::space(22) - ui::space(6) + 0.36 * count->font().pixelSize()));
+        QVERIFY(files->currentIndex().isValid());
+        const QString current = files->currentIndex().data(ChangesModel::PathRole).toString();
+        QCOMPARE(current, QStringLiteral("a.txt"));
+
+        w->resize(ui::space(945), ui::space(400));
+        settle();
+        QVERIFY(card->isHidden() && files->isHidden());
+        QCOMPARE(history->activeListView(), static_cast<QAbstractItemView *>(history->commitsTable()));
+        // The commit list runs down to the count row, 22 px above the edge.
+        QCOMPARE(history->height() - bottomIn(history->commitsTable()), ui::space(22));
+        QCOMPARE(count->mapTo(history, QPoint(0, 0)).y(), bottomIn(history->commitsTable()));
+        Commit c;
+        FileChange file;
+        QVERIFY(history->currentFile(&c, &file));
+        QCOMPARE(file.path, current);
+        QCOMPARE(files->currentIndex().data(ChangesModel::PathRole).toString(), current);
+        QCOMPARE(f.diff()->document().lines.isEmpty(), false);
+
+        // Stacked and tall: the card, 132 px, and still no files table.
+        w->resize(ui::space(627), ui::space(612));
+        settle();
+        QVERIFY(card->isVisible() && files->isHidden());
+        QCOMPARE(card->height(), ui::space(132));
+        QCOMPARE(history->height() - bottomIn(card), ui::space(22));
+        // Back to the ordinary width: both, at the design's heights.
+        w->resize(ui::space(945), ui::space(612));
+        settle();
+        QVERIFY(card->isVisible() && files->isVisible());
+        QCOMPARE(card->height(), ui::space(150));
+        QCOMPARE(files->height(), ui::space(110));
+        QCOMPARE(files->currentIndex().data(ChangesModel::PathRole).toString(), current);
+    }
+
+    // The filter says as much as its width holds, and its magnifier stays
+    // where it is whatever is typed; the text starts after it.
+    void theHistoryFilterFitsItsPlaceholder()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        f.window->setMode(MainWindow::HistoryMode);
+        settle();
+        auto *history = f.window->findChild<HistoryView *>();
+        QLineEdit *field = history->filterField();
+        QWidget *magnifier = field->findChild<QWidget *>(QStringLiteral("filterIcon"));
+        QVERIFY(magnifier);
+        QCOMPARE(field->height(), ui::space(28));
+        // The view's width less the field's is what the buttons take.
+        const int buttons = history->width() - field->width();
+        const auto at = [&](int fieldWidth) {
+            history->resize(buttons + fieldWidth, history->height());
+            QCoreApplication::processEvents();
+            return field->placeholderText();
+        };
+        QCOMPARE(at(ui::space(180)), QStringLiteral("Filter"));
+        QCOMPARE(at(ui::space(250)), QStringLiteral("Filter commits"));
+        QCOMPARE(at(ui::space(360)), QStringLiteral("Filter by message, author or SHA"));
+        QCOMPARE(field->width(), ui::space(360));
+
+        QVERIFY(magnifier->isVisible());
+        QCOMPARE(magnifier->geometry(), QRect(ui::space(8), (field->height() - ui::space(14)) / 2, ui::space(14), ui::space(14)));
+        QTest::keyClicks(field, QStringLiteral("merge"));
+        QCOMPARE(field->text(), QStringLiteral("merge"));
+        QVERIFY(magnifier->isVisible());
+        // The text starts right of the magnifier's box.
+        QVERIFY(field->textMargins().left() > 0);
+    }
+
+    // The file lists' geometry: a 26 px header whose Name and Path titles
+    // read from the left (the others centred), 26 px rows and 14 px boxes;
+    // the commits keep their 28 px rows under the same header, all titles
+    // from the left. Untracked files say so.
+    void theTablesFollowTheDesignsGeometry()
+    {
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
+        settle();
+        QTableView *table = f.page->table();
+        QCOMPARE(table->horizontalHeader()->height(), ui::space(26));
+        QCOMPARE(table->verticalHeader()->defaultSectionSize(), ui::space(26));
+        QCOMPARE(f.page->tree()->header()->height(), ui::space(26));
+        const auto alignment = [](const QAbstractItemModel *model, int section) {
+            return Qt::Alignment(model->headerData(section, Qt::Horizontal, Qt::TextAlignmentRole).toInt());
+        };
+        QCOMPARE(alignment(table->model(), ChangesModel::Name) & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
+        QCOMPARE(alignment(table->model(), ChangesModel::Path) & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
+        QCOMPARE(alignment(table->model(), ChangesModel::Status) & Qt::AlignHorizontal_Mask, Qt::AlignHCenter);
+        QCOMPARE(alignment(f.page->tree()->model(), ChangesTreeModel::Name) & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
+        QCOMPARE(change(QStringLiteral("u.txt"), FileChange::Untracked).statusText(), QStringLiteral("Untracked"));
+        // The box of a row: 14 px, border included.
+        QStyleOptionViewItem item;
+        item.initFrom(table);
+        item.rect = QRect(0, 0, ui::space(30), ui::space(26));
+        item.features |= QStyleOptionViewItem::HasCheckIndicator;
+        QCOMPARE(table->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &item, table).size(),
+                 QSize(14, 14));
+
+        HistoryModel history(nullptr);
+        for (int section : {int(HistoryModel::Message), int(HistoryModel::Author), int(HistoryModel::Date)})
+            QCOMPARE(alignment(&history, section) & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
+    }
+
+    // The branch menu: the design's 300 px where the window has the room, the
+    // window less its margins where it has not; a branch glyph on every
+    // local entry and a cloud on every remote one.
+    void theBranchMenuWearsTheDesignsRows()
+    {
+        QWidget window;
+        window.resize(ui::space(1000), 400);
+        auto *anchor = new QToolButton(&window);
+        anchor->resize(ui::space(80), ui::space(28));
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        BranchList branches;
+        branches.local = {QStringLiteral("main"), QStringLiteral("feature/askpass")};
+        branches.remote = {QStringLiteral("origin/main")};
+        branches.current = QStringLiteral("main");
+        const auto open = [&](BranchMenu &menu) {
+            QTimer::singleShot(0, &menu, [&menu] {
+                QTRY_VERIFY(menu.isVisible());
+                menu.close();
+            });
+            menu.popupAt(anchor, false);
+        };
+        {
+            BranchMenu menu;
+            menu.setBranches(branches, branches.current, true, {});
+            open(menu);
+            QCOMPARE(menu.minimumWidth(), ui::space(300));
+            QList<uint> glyphs;
+            for (QAction *a : menu.actions())
+                if (a->property("branchGlyph").isValid())
+                    glyphs << a->property("branchGlyph").toUInt();
+            QCOMPARE(glyphs, QList<uint>({ui::kBranch, ui::kBranch, ui::kCloudOutline}));
+        }
+        window.resize(ui::space(250), 400);
+        settle();
+        {
+            BranchMenu menu;
+            menu.setBranches(branches, branches.current, true, {});
+            open(menu);
+            QCOMPARE(menu.minimumWidth(), qMax(anchor->width(), window.width() - ui::space(24)));
+            QCOMPARE(menu.maximumWidth(), qMax(anchor->width(), window.width() - ui::space(24)));
+        }
     }
 
     // --- The stacked commit page ------------------------------------------------
@@ -3594,56 +4422,25 @@ esac
     // opens.
     void theOptionsMenuMirrorsThePage()
     {
-        const QString checkTip =
-            QStringLiteral("Check every file for the commit, or none when all are checked (Ctrl+Shift+Space)");
-        {
-            // Nothing to commit: nothing to check.
-            QTemporaryDir dir;
-            QVERIFY(dir.isValid());
-            QVERIFY(git(dir.path(), {"init", "-q", "-b", "main"}));
-            QVERIFY(commit(dir.path(), QStringLiteral("A"), 1));
-            GitRepo repo(dir.path());
-            auto page = commitPage(&repo);
-            page->setStacked(true);
-            const QList<QAction *> actions = filledMenu(page->optionsButton()->menu());
-            QCOMPARE(actions.size(), 5);
-            QCOMPARE(actions.at(0)->text(), ui::icon(ui::kCheck) + QStringLiteral("Check all"));
-            QVERIFY(!actions.at(0)->isEnabled());
-            QCOMPARE(actions.at(0)->toolTip(), checkTip);
-        }
         CommitFixture f = commitFixture();
         QVERIFY(f.page);
         CommitPage *page = f.page.get();
         page->setStacked(true);
         QMenu *menu = page->optionsButton()->menu();
 
-        // Some checked.
         QList<QAction *> actions = filledMenu(menu);
         QCOMPARE(menuTexts(actions),
-                 QStringList({ui::icon(ui::kCheck) + QStringLiteral("Check all"),
-                              ui::icon(ui::kEye) + QStringLiteral("Show unversioned files"),
-                              ui::icon(ui::kUndo, QStringLiteral("A  ")) + QStringLiteral("Amend last commit"),
-                              QStringLiteral("-"),
-                              ui::icon(ui::kSparkle) + QStringLiteral("Generate message")}));
-        QVERIFY(actions.at(0)->isEnabled());
-        QCOMPARE(actions.at(0)->toolTip(), checkTip);
-        QVERIFY(actions.at(1)->isCheckable() && actions.at(1)->isChecked());
-        QCOMPARE(actions.at(1)->toolTip(), f.eye()->toolTip());
-        QVERIFY(actions.at(2)->isCheckable() && !actions.at(2)->isChecked());
-        QVERIFY(actions.at(2)->isEnabled());
-        QCOMPARE(actions.at(4)->toolTip(), page->commitControls().generateTip);
-        QVERIFY(!actions.at(4)->isCheckable());
-
-        // All checked.
-        page->toggleAllChecked();
-        actions = filledMenu(menu);
-        QCOMPARE(actions.at(0)->text(), ui::icon(ui::kCheck) + QStringLiteral("Uncheck all"));
+                 QStringList({ui::icon(ui::kEye) + QStringLiteral("Show unversioned files"),
+                              ui::icon(ui::kUndo, QStringLiteral("A  ")) + QStringLiteral("Amend last commit")}));
+        QVERIFY(actions.at(0)->isCheckable() && actions.at(0)->isChecked());
+        QCOMPARE(actions.at(0)->toolTip(), f.eye()->toolTip());
+        QVERIFY(actions.at(1)->isCheckable() && !actions.at(1)->isChecked());
+        QVERIFY(actions.at(1)->isEnabled());
 
         // The unversioned files hidden.
         f.eye()->click();
         actions = filledMenu(menu);
-        QVERIFY(!actions.at(1)->isChecked());
-        QCOMPARE(actions.at(0)->text(), ui::icon(ui::kCheck) + QStringLiteral("Uncheck all")); // the two shown
+        QVERIFY(!actions.at(0)->isChecked());
 
         // A merge in progress: no amending.
         MergeState merge;
@@ -3651,18 +4448,14 @@ esac
         merge.source = QStringLiteral("feature");
         page->setMergeState(merge, f.repo->headCommit());
         actions = filledMenu(menu);
-        QVERIFY(!actions.at(2)->isEnabled());
-        QCOMPARE(actions.at(2)->toolTip(), QStringLiteral("Not while a merge is in progress"));
-        QCOMPARE(actions.at(2)->toolTip(), f.amend()->toolTip());
+        QVERIFY(!actions.at(1)->isEnabled());
+        QCOMPARE(actions.at(1)->toolTip(), QStringLiteral("Not while a merge is in progress"));
+        QCOMPARE(actions.at(1)->toolTip(), f.amend()->toolTip());
     }
 
     // Each entry takes the path its control takes.
     void theOptionsMenuActsThroughThePage()
     {
-        QTemporaryDir tools;
-        QVERIFY(tools.isValid());
-        const QString gitBinary = QStandardPaths::findExecutable(QStringLiteral("git"));
-        QVERIFY(QFile::link(gitBinary, QDir(tools.path()).filePath(QStringLiteral("git"))));
         CommitFixture f = commitFixture();
         QVERIFY(f.page);
         CommitPage *page = f.page.get();
@@ -3670,36 +4463,18 @@ esac
         QMenu *menu = page->optionsButton()->menu();
 
         filledMenu(menu).at(0)->trigger();
-        QCOMPARE(f.checkedPaths().size(), 4);
-        filledMenu(menu).at(0)->trigger();
-        QCOMPARE(f.checkedPaths().size(), 0);
-        filledMenu(menu).at(0)->trigger();
-
-        filledMenu(menu).at(1)->trigger();
         QVERIFY(!f.eye()->isChecked());
         QCOMPARE(page->proxy()->rowCount(), 2);
-        filledMenu(menu).at(1)->trigger();
+        filledMenu(menu).at(0)->trigger();
         QVERIFY(f.eye()->isChecked());
 
         QSignalSpy amended(page, &CommitPage::amendToggled);
-        filledMenu(menu).at(2)->trigger();
+        filledMenu(menu).at(1)->trigger();
         QVERIFY(f.amend()->isChecked());
         QCOMPARE(amended.count(), 1);
-        QVERIFY(filledMenu(menu).at(2)->isChecked());
-        filledMenu(menu).at(2)->trigger();
+        QVERIFY(filledMenu(menu).at(1)->isChecked());
+        filledMenu(menu).at(1)->trigger();
         QVERIFY(!f.amend()->isChecked());
-
-        // Generate, and Stop while the agent writes.
-        QVERIFY(writeFakeClaude(tools.path()));
-        AgentScope scope(tools.path());
-        filledMenu(menu).at(4)->trigger();
-        QVERIFY(page->commitControls().generating);
-        QList<QAction *> actions = filledMenu(menu);
-        QCOMPARE(actions.at(4)->text(), ui::icon(ui::kSparkle) + QStringLiteral("Stop generating"));
-        QCOMPARE(actions.at(4)->toolTip(), page->commitControls().generateTip);
-        actions.at(4)->trigger();
-        QVERIFY(!page->commitControls().generating);
-        QCOMPARE(filledMenu(menu).at(4)->text(), ui::icon(ui::kSparkle) + QStringLiteral("Generate message"));
     }
 
     // Nobody has picked a files view: the stacked width lists the files
@@ -4007,8 +4782,6 @@ esac
         QWidget host;
         host.resize(1000, 100);
         auto *footer = new Footer(&host);
-        QLabel *reference = ui::dimLabel(QStringLiteral("x")); // what a dim label looks like
-        reference->setParent(&host);
         const QString path = QStringLiteral("~/Projects/") + QStringLiteral("a-rather-long-directory-name/").repeated(2)
             + QStringLiteral("omagit");
         footer->setIdleText(path);
@@ -4020,8 +4793,11 @@ esac
 
         auto *label = footer->findChild<ui::ElidedLabel *>();
         QVERIFY(label);
-        QCOMPARE(label->objectName(), QStringLiteral("dimLabel"));
-        QCOMPARE(label->font(), reference->font());
+        // The design's small regular dim text, 11 px at base 12.
+        QCOMPARE(label->objectName(), QStringLiteral("footerStatus"));
+        QCOMPARE(label->font().pixelSize(), qRound(OmarchyTheme::instance()->fontBase() * 11 / 12.0));
+        QVERIFY(!label->font().bold());
+        QCOMPARE(label->palette().color(QPalette::WindowText).rgba(), OmarchyTheme::instance()->mutedText().rgba());
         QCOMPARE(label->fullText(), path);
         const auto elided = [label, &path] {
             QVERIFY2(label->text().endsWith(QChar(0x2026)), qPrintable(label->text()));
@@ -4212,7 +4988,8 @@ esac
         QToolButton *tile = f.tile();
         QCOMPARE(rail->width(), MiniRail::railWidth());
         QCOMPARE(MiniRail::railWidth(), ui::space(MiniRail::kWidth));
-        QCOMPARE(tile->size(), QSize(MiniRail::railWidth(), ui::space(40) + kTileBadgeRise));
+        QCOMPARE(MiniRail::railWidth(), ui::space(40)); // one tile wide
+        QCOMPARE(tile->size(), QSize(MiniRail::railWidth(), ui::space(40)));
         QCOMPARE(rectIn(tile, rail).x(), 0);
 
         const QRect square = tileSquare(tile).translated(rectIn(tile, rail).topLeft());
@@ -4379,9 +5156,9 @@ esac
         QCOMPARE(rail.checkedCount(), 2);
     }
 
-    // One digit fits the miniatures' circle; two and three widen it into a
-    // pill that keeps the circle's right edge and grows over the tile, as
-    // painted and as the rail reports it.
+    // One digit fits the miniatures' corner square; two and three widen it
+    // leftwards, keeping its right edge and its top, as painted and as the
+    // rail reports it.
     void theCommitTileBadgeWidensIntoAPillForLongerCounts()
     {
         MiniRail rail;
@@ -4391,13 +5168,13 @@ esac
         QToolButton *tile = rail.commitTile();
         QCOMPARE(rail.commitBadgeRect(), QRect()); // nothing checked, no badge
 
-        const QRect circle = tileBadge(tile);
+        const QRect square = tileBadge(tile);
         const QColor accent = OmarchyTheme::instance()->accent();
         // The painted badge's run of accent pixels one row under its top, which
         // no digit reaches: [first, last].
         const auto paintedRun = [&] {
             const QImage image = tile->grab().toImage();
-            const int y = circle.top() + 1;
+            const int y = square.top() + 1;
             int first = -1, last = -1;
             for (int x = 0; x < image.width(); ++x)
                 if (closeTo(image.pixelColor(x, y), accent)) {
@@ -4414,19 +5191,19 @@ esac
         };
 
         checkRows(1);
-        QCOMPARE(rail.commitBadgeRect(), circle);
+        QCOMPARE(rail.commitBadgeRect(), square);
         const auto one = paintedRun();
         QVERIFY(one.first >= 0);
-        QVERIFY(circle.contains(QPoint(one.first, circle.top() + 1)));
+        QVERIFY(square.contains(QPoint(one.first, square.top() + 1)));
 
         auto previous = one;
         for (const int count : {12, 123}) {
             checkRows(count);
             const QRect badge = rail.commitBadgeRect();
-            QVERIFY2(badge.width() > kTileBadgeSize, qPrintable(QString::number(badge.width())));
-            QCOMPARE(badge.height(), kTileBadgeSize);
-            QCOMPARE(badge.right(), circle.right());
-            QCOMPARE(badge.top(), circle.top());
+            QVERIFY2(badge.width() > ui::space(kTileBadgeSize), qPrintable(QString::number(badge.width())));
+            QCOMPARE(badge.height(), ui::space(kTileBadgeSize));
+            QCOMPARE(badge.right(), square.right());
+            QCOMPARE(badge.top(), square.top());
             QVERIFY(tile->rect().contains(badge));
             const auto run = paintedRun();
             QCOMPARE(run.second, one.second); // the right edge stays put...
@@ -4545,7 +5322,8 @@ esac
         QVERIFY(f.openCard());
         CommitPopover *card = f.popover();
         QWidget *host = f.host();
-        const QMargins hostMargins = host->layout()->contentsMargins();
+        // The window's margin, which the card keeps on its right.
+        const QMargins hostMargins(ui::windowMargin(), ui::windowMargin(), ui::windowMargin(), ui::windowMargin());
         const auto anchored = [&] {
             const QRect cardRect = card->geometry();
             const QRect tileRect = rectIn(f.tile(), host);
@@ -4565,7 +5343,7 @@ esac
         // than that; a minimum of the test's own lets it be squeezed anyway
         // (the Mini layout is the stacked Diff tab there, rail and card kept).
         f.window->setMinimumSize(1, 1);
-        f.window->resize(420, 800);
+        f.window->resize(400, 800);
         settle();
         QTRY_VERIFY(anchored());
         QVERIFY(card->width() < ui::space(360));
@@ -5232,11 +6010,11 @@ esac
             return QImage(png);
         };
         // The card's left frame: the longest run of accent pixels down the
-        // column where the card starts (rail 14 + 52 + 8 at a 12 px text).
+        // column where the card starts (rail 12 + 40 + 8 at a 12 px text).
         const auto frameRun = [](const QImage &image) {
             int longest = 0, runLength = 0;
             for (int y = 0; y < image.height(); ++y) {
-                runLength = image.pixelColor(74, y) == QColor(QStringLiteral("#ff00ff")) ? runLength + 1 : 0;
+                runLength = image.pixelColor(60, y) == QColor(QStringLiteral("#ff00ff")) ? runLength + 1 : 0;
                 longest = qMax(longest, runLength);
             }
             return longest;
@@ -5741,11 +6519,14 @@ esac
         AgentScope scope(f.tools->path(), QStringLiteral("claude"));
         AgentPopover *card = f.agentCard();
         QWidget *host = f.host();
-        const QMargins margins = host->layout()->contentsMargins();
+        // The window's margin all round, which the card stays inside.
+        const QMargins margins(ui::windowMargin(), ui::windowMargin(), ui::windowMargin(), ui::windowMargin());
         QToolButton *cog = f.page()->agentButton();
         const auto cogRect = [&] { return rectIn(cog, host); };
 
-        f.window->resize(945, 1234);
+        // Wide enough for a left section (the design's 400 of the large class)
+        // that the card can hang from the cog's right edge.
+        f.window->resize(1200, 1234);
         settle();
         QTest::mouseClick(cog, Qt::LeftButton);
         settle();
@@ -5825,7 +6606,8 @@ esac
                 CommitPopover *commitCard = f.popover();
                 AgentPopover *card = f.agentCard();
                 QWidget *host = f.host();
-                const QMargins margins = host->layout()->contentsMargins();
+                // The window's margin all round, which the card stays inside.
+        const QMargins margins(ui::windowMargin(), ui::windowMargin(), ui::windowMargin(), ui::windowMargin());
                 QToolButton *cog = commitCard->agentButton();
                 QTest::mouseClick(cog, Qt::LeftButton);
                 settle();
@@ -6155,7 +6937,7 @@ esac
         auto *row = new QHBoxLayout(&host);
         QToolButton *toolbar = ui::iconButton(ui::kRefresh, QStringLiteral("R"), QStringLiteral("Refresh"),
                                               ui::IconButtonSize::Toolbar, false);
-        QToolButton *text = ui::toolButton(QStringLiteral("x"));
+        QToolButton *text = ui::toolButton<ui::KitButton>(QStringLiteral("x"));
         row->addWidget(toolbar);
         row->addWidget(text);
         host.show();
@@ -6167,10 +6949,37 @@ esac
         QCOMPARE(toolbar->width(), ui::space(28));
         QCOMPARE(toolbar->minimumWidth(), ui::space(28));
         QCOMPARE(toolbar->maximumWidth(), ui::space(28));
-        // The design's 28 px is a width; the height is the one any button of
-        // the row asks for, at this text size and every other.
+        // The design's 28 px square: the height the kit's text buttons of the
+        // row ask for too, at this text size and every other.
+        QCOMPARE(toolbar->sizeHint().height(), ui::space(28));
         QCOMPARE(toolbar->sizeHint().height(), text->sizeHint().height());
         QCOMPARE(toolbar->height(), text->height());
+    }
+
+    // The kit's text button measures like the design's measureButton(): 10,
+    // the 14 px glyph, 6, the label, then 6 and the 12 px chevron of a
+    // dropdown, 10; 28 tall. A glyph alone, and the icon form, is the 28 px
+    // square.
+    void kitButtonsMeasureLikeTheDesign()
+    {
+        const auto label = [](const QToolButton *b, const QString &text) {
+            return qCeil(QFontMetricsF(b->font()).horizontalAdvance(text));
+        };
+        std::unique_ptr<ui::KitButton> plain(ui::toolButton<ui::KitButton>(QStringLiteral("Load more")));
+        QCOMPARE(plain->sizeHint(), QSize(ui::space(20) + label(plain.get(), QStringLiteral("Load more")), ui::space(28)));
+        if (ui::icon(ui::kPull).isEmpty())
+            QSKIP("the font has no Nerd Font glyphs");
+        std::unique_ptr<ui::KitButton> pull(ui::toolButton<ui::KitButton>(ui::icon(ui::kPull) + QStringLiteral("Pull")));
+        QCOMPARE(pull->sizeHint(), QSize(ui::space(10 + 14 + 6 + 10) + label(pull.get(), QStringLiteral("Pull")), ui::space(28)));
+        std::unique_ptr<ui::KitButton> chip(
+            ui::toolButton<ui::KitButton>(ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron()));
+        QCOMPARE(chip->sizeHint().width(), ui::space(10 + 14 + 6 + 6 + 12 + 10) + label(chip.get(), QStringLiteral("main")));
+        std::unique_ptr<ui::KitButton> dropdown(ui::toolButton<ui::KitButton>(ui::icon(ui::kSplit) + ui::chevron()));
+        QCOMPARE(dropdown->sizeHint().width(), ui::space(10 + 14 + 6 + 12 + 10));
+        std::unique_ptr<ui::KitButton> glyph(ui::toolButton<ui::KitButton>(ui::icon(ui::kPull).trimmed()));
+        QCOMPARE(glyph->sizeHint(), QSize(ui::space(28), ui::space(28)));
+        ui::setIconForm(pull.get(), true);
+        QCOMPARE(pull->sizeHint(), QSize(ui::space(28), ui::space(28)));
     }
 
     // The popup prompt carries no box of its own — the popup's accent frame
@@ -6846,7 +7655,20 @@ esac
         QVERIFY(!dir.siblingAtColumn(ChangesTreeModel::Status).data(Qt::CheckStateRole).isValid());
         // The status letters both new presentations paint.
         QCOMPARE(ChangesModel::statusLetter(FileChange::Deleted), QChar('D'));
-        QCOMPARE(ChangesModel::statusLetter(FileChange::Untracked), QChar('?'));
+        QCOMPARE(ChangesModel::statusLetter(FileChange::Untracked), QChar('U'));
+        QCOMPARE(ChangesModel::statusLetter(FileChange::Unknown), QChar('?'));
+        // A file's tip opens with its status spelled out in its colour.
+        {
+            const QModelIndex file = tree->indexForPath(QStringLiteral("tests/new.txt"));
+            const auto kind = FileChange::Kind(file.data(ChangesModel::KindRole).toInt());
+            FileChange change;
+            change.kind = kind;
+            const QString tip = file.data(Qt::ToolTipRole).toString();
+            QVERIFY2(tip.startsWith(QStringLiteral("<p style=\"white-space:pre\"><span style=\"color:%1\">%2</span><br>tests/new.txt")
+                                        .arg(ChangesModel::statusColor(kind).name(), change.statusText())),
+                     qPrintable(tip));
+            QVERIFY(Qt::mightBeRichText(tip));
+        }
         QCOMPARE(ChangesModel::statusLetter(FileChange::Unmerged), QChar('!'));
 
         // Sorting is the flat list's: entering the tree leaves the table's own
@@ -8768,27 +9590,26 @@ esac
                 QVERIFY(metrics.contains(QStringLiteral("hintBold=0")));
                 MessageEdit *editor = live.popover()->editor();
                 QTRY_COMPARE(editor->contentHeight(), freshContentHeight(editor, text));
-                // The body puts the splitter after the rail's scaled width.
+                // The body puts the splitter after the rail's scaled width and
+                // the design's 12 px gap.
                 QSplitter *splitter = nullptr;
                 for (QSplitter *s : fresh.window->findChildren<QSplitter *>())
                     if (s->orientation() == Qt::Horizontal && s->objectName().isEmpty())
                         splitter = s;
                 QVERIFY(splitter);
                 QCOMPARE(rectIn(splitter, fresh.host()).x(),
-                         fresh.rail()->geometry().x() + MiniRail::railWidth() + 8);
-                // ...and the left section's first width is its share of what
-                // the window leaves beside that rail.
-                const QMargins margins = fresh.host()->layout()->contentsMargins();
-                const int total = fresh.window->width() - margins.left() - margins.right() - MiniRail::railWidth() - 8;
+                         fresh.rail()->geometry().x() + MiniRail::railWidth() + ui::space(12));
+                // ...and the left section's first width is the design's for
+                // the window's width class, on the text size of the moment.
                 fresh.window->setPaneLayout(PaneLayout::Docked, false);
                 settle();
-                QCOMPARE(splitter->sizes().first(), total * 45 / 100);
+                QCOMPARE(splitter->sizes().first(), designLeftWidth(fresh.window.get()));
                 fresh.window.reset();
             };
 
             matchesAFreshWindow();
             const QStringList atTwelve = popoverMetrics(live);
-            QVERIFY(atTwelve.contains(QStringLiteral("rail=52")));
+            QVERIFY(atTwelve.contains(QStringLiteral("rail=40")));
             QVERIFY(atTwelve.contains(QStringLiteral("editorTop=32")));
 
             QVERIFY(writeFixture(toml, "[font]\nbase-size = 16\n"));
@@ -8796,9 +9617,9 @@ esac
             settle();
             matchesAFreshWindow();
             const QStringList atSixteen = popoverMetrics(live);
-            QVERIFY(atSixteen.contains(QStringLiteral("rail=69")));
+            QVERIFY(atSixteen.contains(QStringLiteral("rail=53")));
             QVERIFY(atSixteen.contains(QStringLiteral("square=53")));
-            QVERIFY(atSixteen.contains(QStringLiteral("tile=69x58")));
+            QVERIFY(atSixteen.contains(QStringLiteral("tile=53x53")));
             QVERIFY(atSixteen.contains(QStringLiteral("editorTop=43")));
             QVERIFY(atSixteen.contains(QStringLiteral("editorLeft=13")));
             QVERIFY(live.popover()->isVisible()); // a text size is no reason to close
