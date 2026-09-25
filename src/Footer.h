@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Grid.h"
+
 #include <QWidget>
 
 class QHBoxLayout;
@@ -24,6 +26,8 @@ public:
     void showStatus(const QString &text, int ms = 0);
     // What the label falls back to: the repository path.
     void setIdleText(const QString &text);
+    // The window's density: the row keeps its side margin.
+    void setDensity(const ui::Density &density);
 
 private:
     void applyTheme(); // the design's distances, on the text size of the moment
@@ -33,4 +37,5 @@ private:
     ui::ElidedLabel *m_statusLabel; // the footer's message, the repository path when there is none
     QTimer *m_statusTimer;
     QString m_idleText;
+    ui::Density m_density = ui::kRegularDensity;
 };

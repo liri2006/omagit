@@ -1,7 +1,9 @@
 // Screen composers: top bar (with the page tabs), pages, diff pane, action bar, footer, menus, dialogs.
+// Sizes and gaps come from kit.js's grid (BOX, PAD, GAP, BAR) and from the
+// window's density (margin, block — see density()).
 const K = require('./kit.js');
 const { rect, border, fillBox, hairline, vline, text, icon, circle, button, segmented, field, checkbox, sectionLabel, dimText, refChip,
-  statusColor, statusPill, scrollbar, badge, tw, SIZE, measureButton } = K;
+  statusColor, statusPill, scrollbar, tw, SIZE, measureButton, measureSegmented, BOX, PAD, GAP, BAR, DENSITY } = K;
 const T = () => K.theme();
 
 // ------------------------------------------------------------ breakpoints
@@ -9,6 +11,21 @@ const T = () => K.theme();
 function levelFor(W) { return W >= 1400 ? 'xl' : W >= 1000 ? 'l' : W >= 700 ? 'm' : W >= 480 ? 's' : 'xs'; }
 const wide = lv => lv === 'xl' || lv === 'l';
 const stacked = lv => lv === 's' || lv === 'xs';
+// Height classes: shallow windows lose the footer and the tall message box,
+// tall ones get the roomier vertical spacing.
+const SHALLOW = 560, TALL = 1000;
+// Spacing between things steps with the window, one step per class: the side
+// margins and pane gaps follow its width (XL comfortable, L/M regular, S/XS
+// compact), the block gap its height (tall, normal, shallow).
+function density(W, H) {
+  const lv = levelFor(W);
+  const x = lv === 'xl' ? 'comfortable' : stacked(lv) ? 'compact' : 'regular';
+  const y = H >= TALL ? 'comfortable' : H < SHALLOW ? 'compact' : 'regular';
+  return { x, y, margin: DENSITY[x].margin, block: DENSITY[y].block };
+}
+const REGULAR = { x: 'regular', y: 'regular', ...DENSITY.regular }; // standalone patterns
+const TOP_BAR = BAR + BOX.control + BAR; // 44, its hairline the last pixel row
+const SEP = 12; // a hairline between parts of a card stands 12 below the part above it and 12 above the next
 
 // ------------------------------------------------------------ sample data
 const FILES = [
@@ -33,6 +50,41 @@ const COMMITS = [
   { sha: 'aa90c11', msg: 'Add merge view with merge-tree preview', author: 'Andras', date: '2026-09-07 19:20', refs: [], lane: 0 },
   { sha: '0c4e77d', msg: 'Add fetch, pull and push with ahead/behind badges', author: 'Andras', date: '2026-09-06 22:15', refs: [], lane: 0 },
   { sha: '77b3d90', msg: 'Initial import of the project skeleton', author: 'Andras', date: '2026-09-06 09:00', refs: [], lane: 0 },
+];
+// A filter's matches out of the whole history ("fix"): no graph, several
+// authors, years apart — the search is not limited to the loaded commits.
+const FIX_MATCHES = [
+  { sha: 'e41c2a7', msg: 'Fix the diff scroll after a refresh', author: 'Andras', date: '2026-09-22 16:03', refs: [['main', 'head']],
+    body: 'The diff kept its document but not its scroll position when a refresh re-read the same file, so it jumped back to the first hunk.' },
+  { sha: '8b0f3d1', msg: 'Fix askpass prompt showing twice for one remote', author: 'Andras', date: '2026-09-19 11:47', refs: [] },
+  { sha: 'c93e5a0', msg: 'Fix crash when the repository has no commits', author: 'Halina', date: '2026-08-30 09:12', refs: [['v0.3.1', 'tag']] },
+  { sha: '51d7ee4', msg: 'Prefix remote branch names in the merge dialog', author: 'Istvan', date: '2026-08-11 13:26', refs: [] },
+  { sha: '2a6f190', msg: 'Fix tree view losing folded folders on sort', author: 'Andras', date: '2026-07-14 18:20', refs: [] },
+  { sha: 'f07b3c8', msg: 'Hotfix: keep the window geometry on Hyprland', author: 'Halina', date: '2026-06-02 08:55', refs: [] },
+  { sha: '9e24d6b', msg: 'Fix syntax colours for raw string literals', author: 'Istvan', date: '2026-04-19 21:10', refs: [] },
+  { sha: '06ac5f2', msg: 'Fix off-by-one in the lane layout for octopus merges', author: 'Andras', date: '2025-12-03 14:32', refs: [] },
+  { sha: '7d3b9a4', msg: 'Fix typo in README install steps', author: 'Halina', date: '2025-09-27 10:05', refs: [] },
+  { sha: 'b85e017', msg: 'Fix fetch backoff never resetting', author: 'Andras', date: '2025-05-11 19:48', refs: [] },
+  { sha: '3c1f6e9', msg: 'Fix Nautilus extension on paths with spaces', author: 'Istvan', date: '2024-11-20 12:00', refs: [] },
+  { sha: 'd2e84b0', msg: 'Fix the status bar clipping at base 18', author: 'Andras', date: '2024-02-08 17:25', refs: [] },
+  { sha: '64fa1c3', msg: 'Fix build with Qt 6.5', author: 'Halina', date: '2023-06-30 09:40', refs: [] },
+  { sha: 'a0e5d77', msg: 'Fix merge-tree verdict for renamed files', author: 'Istvan', date: '2023-03-14 15:05', refs: [] },
+  { sha: '5f9c2b1', msg: 'Fix blame view for files with CRLF endings', author: 'Andras', date: '2022-10-02 11:30', refs: [] },
+  { sha: 'ce37a48', msg: 'Fix keyboard focus after closing the branch menu', author: 'Halina', date: '2022-05-21 20:14', refs: [] },
+  { sha: '18b4e90', msg: 'Fix untracked files missing from the tree view', author: 'Andras', date: '2021-12-09 09:52', refs: [] },
+  { sha: '9a7d3f2', msg: 'Fix empty commit message check', author: 'Istvan', date: '2021-06-17 16:40', refs: [] },
+  { sha: '4e0b6c5', msg: 'Fix ahead/behind badge after a force push', author: 'Andras', date: '2020-11-24 13:08', refs: [] },
+  { sha: 'f3c81a9', msg: 'Fix the initial window size on small screens', author: 'Halina', date: '2020-04-03 10:21', refs: [] },
+  { sha: '72d5e0b', msg: 'Fix history filter ignoring e-mail addresses', author: 'Istvan', date: '2019-09-12 18:33', refs: [] },
+  { sha: 'b6a0f14', msg: 'Fix diff colours in the light theme', author: 'Andras', date: '2019-02-26 14:47', refs: [] },
+  { sha: '0d9e3c7', msg: 'Fix startup outside a repository', author: 'Halina', date: '2018-08-08 08:08', refs: [] },
+  { sha: 'e5b27f6', msg: 'Fix commit dialog losing the amend state', author: 'Istvan', date: '2018-01-30 12:19', refs: [] },
+  { sha: '83f1a0d', msg: 'Fix crash on an empty .gitmodules', author: 'Andras', date: '2017-07-05 17:36', refs: [] },
+  { sha: '2c4d9b8', msg: 'Fix scrollbar jumping while matches stream in', author: 'Halina', date: '2017-02-14 09:44', refs: [] },
+  { sha: 'a7e03f5', msg: 'Fix pull with a detached HEAD', author: 'Istvan', date: '2016-10-10 10:10', refs: [] },
+  { sha: '61b8c2e', msg: 'Fix tag chips for annotated tags', author: 'Andras', date: '2016-03-22 15:55', refs: [] },
+  { sha: 'd90f47a', msg: 'Fix line numbers in the unified diff', author: 'Halina', date: '2015-09-01 11:11', refs: [] },
+  { sha: '3b6e8d1', msg: 'Fix the first commit of the project', author: 'Istvan', date: '2015-01-19 19:19', refs: [] },
 ];
 const CODE = [
   '#include "Toolbar.h"', '#include "UiHelpers.h"', '', '#include <QHBoxLayout>', '#include <QResizeEvent>', '#include <QToolButton>', '',
@@ -83,51 +135,49 @@ function tokens(line) {
   return out;
 }
 
+
 // ------------------------------------------------------------ top bar
 // Repo + branch context on the left, sync + layout on the right.
 function topBar(c, W, lv, o = {}) {
-  const t = T(), h = 40, y = 6; let x = 12;
+  const t = T(), d = o.d || REGULAR, h = TOP_BAR, y = BAR; let x = d.margin;
   c.group('TopBar', () => {
     // repo chip: label + chevron when there is room, a bare folder icon when stacked (never hidden)
     const w = button(c, { x, y, variant: 'ghost', icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv), id: 'RepoChip' });
-    x += w + 4;
+    x += w + GAP.cluster;
     // branch chip (accent, bold)
     const branch = o.merging ? 'main · merging feature/askpass' : 'main';
     const bw = button(c, { x, y, variant: 'ghost', icon: 'branch', label: branch, chevron: true, weight: 700, iconFill: t.accent, id: 'BranchChip' });
     // paint label accent: overlay
-    c.add(`<g id="BranchChip/label-accent">`); text(c, x + 10 + 14 + 6, y + 14, branch, { weight: 700, fill: t.accent }); c.add('</g>');
+    c.add(`<g id="BranchChip/label-accent">`); text(c, x + PAD.control + BOX.icon + GAP.icon, y + BOX.control / 2, branch, { weight: 700, fill: t.accent }); c.add('</g>');
     x += bw;
-    if (o.merging) { rect(c, x + 2, y + 6, 16, 16, { fill: t.red, fo: 0.18 }); text(c, x + 10, y + 14, '!', { size: 10, weight: 700, fill: t.red, anchor: 'middle' }); x += 20; }
-    // right side
-    let rx = W - 12;
+    if (o.merging) { x += GAP.cluster; rect(c, x, y + (BOX.control - BOX.pill) / 2, BOX.pill, BOX.pill, { fill: t.red, fo: 0.18 }); text(c, x + BOX.pill / 2, y + BOX.control / 2, '!', { size: 10, weight: 700, fill: t.red, anchor: 'middle' }); x += BOX.pill; }
+    // right side, right to left; rx ends on the left edge of the right-hand group
+    let rx = W - d.margin;
     if (wide(lv) || lv === 'm') {
       // layout toggles
-      rx -= 28; button(c, { x: rx, y, w: 28, variant: 'ghost', icon: 'dockRight', state: o.diffHidden ? 'normal' : 'selected', id: 'Toggle/diff pane' });
-      rx -= 4 + 28; button(c, { x: rx, y, w: 28, variant: 'ghost', icon: 'mini', state: o.mini ? 'selected' : 'normal', id: 'Toggle/mini' });
-      rx -= 10; vline(c, rx, y + 6, 16, { fo: 0.2 }); rx -= 10;
-      if (lv === 'm') { rx -= 28; button(c, { x: rx, y, w: 28, icon: 'dots', id: 'More' }); rx -= 6; }
+      rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, variant: 'ghost', icon: 'dockRight', state: o.diffHidden ? 'normal' : 'selected', id: 'Toggle/diff pane' });
+      rx -= GAP.cluster + BOX.control; button(c, { x: rx, y, w: BOX.control, variant: 'ghost', icon: 'mini', state: o.mini ? 'selected' : 'normal', id: 'Toggle/mini' });
+      rx -= GAP.group / 2; vline(c, rx, y + (BOX.control - BOX.divider) / 2, BOX.divider, { fo: 0.2 }); rx -= GAP.group / 2;
+      if (lv === 'm') { rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, icon: 'dots', id: 'More' }); rx -= GAP.item; }
       const labels = lv === 'xl';
       const items = lv === 'm' ? [['push', 'Push', 1], ['pull', 'Pull', 2]] : [['merge', 'Merge'], ['fetch', 'Fetch'], ['push', 'Push', 1], ['pull', 'Pull', 2]];
-      items.forEach(([ic, lb, b]) => {
+      // item gaps (8) leave room for the badges hanging 4 past each button's right edge
+      items.forEach(([ic, lb, b], i) => {
+        if (i) rx -= GAP.item;
         const w = measureButton({ icon: ic, label: labels ? lb : '' });
-        rx -= w; button(c, { x: rx, y, icon: ic, label: labels ? lb : '', badge: b, mark: ic === 'merge' && o.merging, id: 'Sync/' + lb }); rx -= 6;
+        rx -= w; button(c, { x: rx, y, icon: ic, label: labels ? lb : '', badge: b, mark: ic === 'merge' && o.merging, id: 'Sync/' + lb });
       });
     } else {
-      rx -= 28; button(c, { x: rx, y, w: 28, icon: 'dots', id: 'More' }); rx -= 6;
+      rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, icon: 'dots', id: 'More' }); rx -= GAP.item;
       // one sync dropdown carrying both counts
-      const w = 92; rx -= w;
-      c.record({ k: 'SyncDropdown', id: 'SyncDropdown', x: rx, y, w, h: 28, down: 2, up: 1 });
-      c.group('SyncDropdown', () => {
-        fillBox(c, rx, y, w, 28, 0.04); border(c, rx, y, w, 28, { stroke: t.fg, so: 0.4 });
-        icon(c, 'down', rx + 8, y + 7, 14); text(c, rx + 24, y + 14, '2', { weight: 700, fill: t.accent });
-        icon(c, 'up', rx + 38, y + 7, 14); text(c, rx + 54, y + 14, '1', { weight: 700, fill: t.accent });
-        icon(c, 'chevron', rx + 68, y + 8, 12, { opacity: 0.7 });
-      });
+      rx -= SYNC_W;
+      c.record({ k: 'SyncDropdown', id: 'SyncDropdown', x: rx, y, w: SYNC_W, h: BOX.control, down: 2, up: 1 });
+      syncDropdown(c, rx, y, 2, 1);
     }
     // page tabs: a view toggle centred in the window, like a toolbar mode switch.
-    // It keeps clear of the repo/branch group and the sync group: nudged aside first, labels → icons second.
+    // It keeps a group gap clear of the repo/branch group and the sync group: nudged aside first, labels → icons second.
     {
-      const lo = x + 16, hi = rx - 16;
+      const lo = x + GAP.group, hi = rx - GAP.group;
       let items = navItems(lv, o.page || 'changes', true), w = measureSegmented(items);
       if (w > hi - lo) { items = navItems(lv, o.page || 'changes', false); w = measureSegmented(items); }
       const sx = Math.max(lo, Math.min(Math.round(W / 2 - w / 2), hi - w));
@@ -138,6 +188,18 @@ function topBar(c, W, lv, o = {}) {
   return h;
 }
 
+// The stacked top bar's sync dropdown: [8][↓ 16][4][2][8][↑ 16][4][1][4][chevron 12][8], a digit in an 8 slot.
+const SYNC_W = 96;
+function syncDropdown(c, x, y, down, up) {
+  const t = T(), mid = y + BOX.control / 2, iy = y + (BOX.control - BOX.icon) / 2;
+  c.group('SyncDropdown', () => {
+    fillBox(c, x, y, SYNC_W, BOX.control, 0.04); border(c, x, y, SYNC_W, BOX.control, { stroke: t.fg, so: 0.4 });
+    icon(c, 'down', x + 8, iy); text(c, x + 28, mid, String(down), { weight: 700, fill: t.accent });
+    icon(c, 'up', x + 44, iy); text(c, x + 64, mid, String(up), { weight: 700, fill: t.accent });
+    icon(c, 'chevron', x + 76, y + (BOX.control - BOX.chevron) / 2, BOX.chevron, { opacity: 0.7 });
+  });
+}
+
 // ------------------------------------------------------------ page tabs
 // The page tabs: Changes | History, plus Diff when the layout is stacked.
 function navItems(lv, page, labels) {
@@ -146,51 +208,65 @@ function navItems(lv, page, labels) {
   items.push({ icon: 'history', label: labels ? 'History' : '', selected: page === 'history' });
   return items;
 }
-const measureSegmented = items => items.reduce((a, it) => a + 24 + (it.icon ? 14 + (it.label ? 6 : 0) : 0) + (it.label ? tw(it.label) : 0) + (it.count !== undefined ? 6 + tw(String(it.count), 10) + 8 : 0), 0);
-
 
 // ------------------------------------------------------------ changes page
+// Icon buttons in a header row stand 4 in from the column's edge, so their
+// glyph sits on the 8 px text padding of the boxes below (the St pills, the
+// sparkle in the message box).
+const headerButtonX = (x, w) => x + w - GAP.icon - BOX.row;
 function changesPage(c, x, y, w, h, lv, o = {}) {
-  const t = T(); let cy = y;
+  const t = T(), d = o.d || REGULAR; let cy = y;
   const shallow = o.shallow;
   c.group('CommitPage', () => {
     // Section header rows are 24 px (label and 24 px icon buttons centred),
-    // content follows 6 px below, and sections sit 16 px apart.
-    const HR = 24, HGAP = 6, SGAP = 16;
-    // MESSAGE
-    sectionLabel(c, x, cy + HR / 2, 'Message');
-    button(c, { x: x + w - 26, y: cy, w: 24, h: 24, variant: 'ghost', icon: 'cog', id: 'AgentSettings' });
-    cy += HR + HGAP;
-    const mh = shallow ? 34 : lv === 'xl' ? 96 : lv === 'l' ? 84 : 68;
-    c.group('MessageBox', () => {
-      fillBox(c, x, cy, w, mh, 0.04); border(c, x, cy, w, mh, { stroke: t.fg, so: 0.4 });
-      if (o.message) {
-        text(c, x + 8, cy + 14, o.message, { fill: t.fg });
-        if (o.messageBody && !shallow) o.messageBody.forEach((l, i) => text(c, x + 8, cy + 14 + 18 * (i + 1), l, { fill: t.fg }));
-      } else text(c, x + 8, cy + 14, 'Commit message', { fill: t.dim });
-      button(c, { x: x + w - 26, y: cy + 2, w: 24, h: 24, variant: 'ghost', icon: 'sparkle', id: 'Generate' });
-    });
-    cy += mh + SGAP;
+    // their content 8 below, sections a block gap apart like every other
+    // part of the pane. CHANGES comes first and MESSAGE last, so the message
+    // is written right above Commit.
+    const HR = BOX.row, HGAP = GAP.header, SGAP = d.block;
+    // the message box: 5, 4, 3 lines of 16 inside 8 px padding; one line (a field) when shallow
+    const mh = shallow ? BOX.control : lv === 'xl' ? 96 : lv === 'l' ? 80 : 64;
     // CHANGES header: the title carries the checked / total count (it used to be
     // a separate "n / m selected" label, which crowded the row on narrow panes)
     const files = o.rows || FILES, checked = files.filter(f => f.checked).length;
     sectionLabel(c, x, cy + HR / 2, 'Changes · ' + checked + '/' + files.length, { id: 'Section/Changes' });
-    // how the files are listed: table (wide default), compact (narrow default), tree
-    // …then a divider and the unversioned-files filter, which acts on the same list
-    // …and Refresh at the far right behind its own divider (it reloads this list)
-    let ex = x + w - 26;
-    button(c, { x: ex, y: cy, w: 24, h: 24, variant: 'ghost', icon: 'refresh', id: 'Refresh' }); vline(c, ex - 8, cy + 3, 18, { fo: 0.25 }); ex -= 38;
-    const view = filesView(lv, o), vx = ex - 12 - 3 * 26;
-    FILE_VIEWS.forEach(([id, ic], i) => button(c, { x: vx + i * 26, y: cy, w: 24, h: 24, variant: 'ghost', icon: ic, state: view === id ? 'selected' : 'normal', id: 'FilesView/' + id }));
-    vline(c, vx + 3 * 26 + 4, cy + 3, 18, { fo: 0.25 });
-    button(c, { x: ex, y: cy, w: 24, h: 24, variant: 'ghost', icon: 'eye', state: o.unversioned === false ? 'normal' : 'selected', id: 'ShowUnversioned' });
+    // right to left: Refresh (it reloads this list) | the unversioned-files filter | how the files are
+    // listed (table: wide default, compact: narrow default, tree); dividers stand in 16 px group gaps
+    let ex = headerButtonX(x, w);
+    button(c, { x: ex, y: cy, w: HR, h: HR, variant: 'ghost', icon: 'refresh', id: 'Refresh' });
+    ex -= GAP.group / 2; vline(c, ex, cy + (HR - BOX.divider) / 2, BOX.divider, { fo: 0.25 }); ex -= GAP.group / 2 + HR;
+    button(c, { x: ex, y: cy, w: HR, h: HR, variant: 'ghost', icon: 'eye', state: o.unversioned === false ? 'normal' : 'selected', id: 'ShowUnversioned' });
+    ex -= GAP.group / 2; vline(c, ex, cy + (HR - BOX.divider) / 2, BOX.divider, { fo: 0.25 }); ex -= GAP.group / 2;
+    const view = filesView(lv, o), vx = ex - 3 * HR - 2 * GAP.cluster;
+    FILE_VIEWS.forEach(([id, ic], i) => button(c, { x: vx + i * (HR + GAP.cluster), y: cy, w: HR, h: HR, variant: 'ghost', icon: ic, state: view === id ? 'selected' : 'normal', id: 'FilesView/' + id }));
     cy += HR + HGAP;
-    // table
-    const tableH = h - (cy - y) - 48;
+    // table: whatever the other parts leave
+    const tableH = h - (cy - y) - SGAP - HR - HGAP - mh - d.block - BOX.control;
     changesTable(c, x, cy, w, tableH, lv, o);
-    cy += tableH;
-    // action bar
-    actionBar(c, x, cy + 8, w, lv, o);
+    cy += tableH + SGAP;
+    // MESSAGE
+    sectionLabel(c, x, cy + HR / 2, 'Message');
+    button(c, { x: headerButtonX(x, w), y: cy, w: HR, h: HR, variant: 'ghost', icon: 'cog', id: 'AgentSettings' });
+    cy += HR + HGAP;
+    messageBox(c, x, cy, w, mh, o, shallow);
+    cy += mh + d.block;
+    // action row
+    actionBar(c, x, cy, w, lv, o);
+  });
+}
+
+// The message box: text 8 in, lines 16 apart. The sparkle's glyph sits on the
+// text padding (its 24 button 4 in); in the one-line form it is centred.
+function messageBox(c, x, y, w, h, o, oneLine) {
+  const t = T(), P = PAD.control;
+  c.group('MessageBox', () => {
+    fillBox(c, x, y, w, h, 0.04); border(c, x, y, w, h, { stroke: t.fg, so: 0.4 });
+    const first = oneLine ? y + h / 2 : y + P + BOX.line / 2;
+    if (o.message) {
+      text(c, x + P, first, o.message, { fill: t.fg });
+      if (o.messageBody && !oneLine) o.messageBody.forEach((l, i) => text(c, x + P, first + BOX.line * (i + 1), l, { fill: t.fg }));
+    } else text(c, x + P, first, 'Commit message', { fill: t.dim });
+    const inset = oneLine ? (h - BOX.row) / 2 : P - GAP.icon;
+    button(c, { x: x + w - inset - BOX.row, y: y + inset, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'sparkle', id: 'Generate' });
   });
 }
 
@@ -214,59 +290,67 @@ function fileTree(rows, collapsed = []) {
   walk(root, 0);
   return out;
 }
+// Rows and the header are 24; the header's hairline is its last pixel row. The
+// check and St columns are 32: a 16 box with 8 either side. Cells pad text by 8.
+// Tree levels nest by 16, so a file's name starts under its folder's icon.
+const INDENT = 16;
 function changesTable(c, x, y, w, h, lv, o = {}) {
-  const t = T(), rh = 26, hh = 26, view = filesView(lv, o);
+  const t = T(), rh = BOX.row, hh = BOX.row, P = PAD.control, view = filesView(lv, o);
   c.group(view === 'tree' ? 'ChangesTree' : 'ChangesTable', () => {
     border(c, x, y, w, h, { stroke: t.fg, so: 0.4 });
     // columns
     const wide = lv === 'xl' || lv === 'l';
-    const cols = view === 'compact' ? [['', 30], ['Name', 0], ['St', 30]]
-      : view === 'tree' ? (wide ? [['', 30], ['Name', 0], ['+ −', 70], ['St', 30]] : [['', 30], ['Name', 0], ['St', 30]])
-      : lv === 'xl' ? [['', 30], ['Name', 0], ['Path', 130], ['Status', 70], ['+ −', 70], ['Size', 70]]
-      : lv === 'l' ? [['', 30], ['Name', 0], ['Path', 120], ['Status', 60], ['+ −', 60]]
-      : lv === 'm' ? [['', 30], ['Name', 0], ['Path', 110], ['St', 30]]
-      : [['', 30], ['Name', 0], ['St', 30]];
+    const cols = view === 'compact' ? [['', 32], ['Name', 0], ['St', 32]]
+      : view === 'tree' ? (wide ? [['', 32], ['Name', 0], ['+ −', 72], ['St', 32]] : [['', 32], ['Name', 0], ['St', 32]])
+      : lv === 'xl' ? [['', 32], ['Name', 0], ['Path', 128], ['Status', 72], ['+ −', 72], ['Size', 72]]
+      : lv === 'l' ? [['', 32], ['Name', 0], ['Path', 120], ['Status', 72], ['+ −', 60]]
+      : lv === 'm' ? [['', 32], ['Name', 0], ['Path', 112], ['St', 32]]
+      : [['', 32], ['Name', 0], ['St', 32]];
     const fixed = cols.reduce((a, [, cw]) => a + cw, 0); cols.find(cc => cc[1] === 0)[1] = w - fixed;
+    const box = (cw, s) => (cw - s) / 2;
     // header
-    let cx = x; hairline(c, x, y + hh, w, { fo: 0.2 });
+    let cx = x; hairline(c, x, y + hh - 1, w, { fo: 0.2 });
     cols.forEach(([name, cw], i) => {
-      if (i > 0) vline(c, cx, y + 1, hh - 1, { fo: 0.1 });
-      if (name === '') { const rows = o.rows || FILES; checkbox(c, { x: cx + 8, y: y + hh / 2 - 7, checked: rows.every(f => f.checked) ? true : rows.some(f => f.checked) ? 'partial' : false, id: 'CheckAll' }); }
-      if (name) text(c, name === 'Name' || name === 'Path' ? cx + 10 : cx + cw / 2, y + hh / 2, name, { size: 10, weight: 700, fill: t.dim, anchor: name === 'Name' || name === 'Path' ? 'start' : 'middle' });
+      if (i > 0) vline(c, cx, y + 1, hh - 2, { fo: 0.1 });
+      if (name === '') { const rows = o.rows || FILES; checkbox(c, { x: cx + box(cw, BOX.check), y: y + (hh - BOX.check) / 2, checked: rows.every(f => f.checked) ? true : rows.some(f => f.checked) ? 'partial' : false, id: 'CheckAll' }); }
+      if (name) text(c, name === 'Name' || name === 'Path' ? cx + P : cx + cw / 2, y + hh / 2, name, { size: 10, weight: 700, fill: t.dim, anchor: name === 'Name' || name === 'Path' ? 'start' : 'middle' });
       cx += cw;
     });
     // rows
-    let ry = y + hh + 1;
+    let ry = y + hh;
     const rows = o.rows || FILES;
     const lines = view === 'tree' ? fileTree(rows, o.collapsed || ['tests']) : rows.map(f => ({ kind: 'file', depth: 0, f }));
     lines.forEach((ln) => {
       if (ry + rh > y + h) return;
       const f = ln.f || { name: ln.name, checked: ln.checked, st: '' };
-      const indent = ln.depth * 14;
+      const indent = ln.depth * INDENT;
       c.add(`<g id="${K.esc((ln.kind === 'dir' ? 'DirRow/' + (ln.open ? 'open' : 'collapsed') : 'Row/' + (f.selected ? 'selected' : 'normal')) + ' ' + f.name)}">`);
       if (f.selected) fillBox(c, x + 1, ry, w - 2, rh, 0.08);
       let cx = x;
       cols.forEach(([name, cw]) => {
         const mid = ry + rh / 2;
-        if (name === '') checkbox(c, { x: cx + 8, y: mid - 7, checked: f.checked });
+        if (name === '') checkbox(c, { x: cx + box(cw, BOX.check), y: ry + (rh - BOX.check) / 2, checked: f.checked });
         else if (name === 'Name' && ln.kind === 'dir') {
-          icon(c, ln.open ? 'chevron' : 'chevronR', cx + 6 + indent, mid - 6, 12, { fill: t.dim });
-          icon(c, 'folderOutline', cx + 20 + indent, mid - 7, 14, { fill: t.dim });
-          text(c, cx + 38 + indent, mid, ln.name, { fill: t.fg });
-          if (!ln.open) text(c, cx + 38 + indent + tw(ln.name) + 8, mid, ln.files.length + (ln.files.length === 1 ? ' file' : ' files'), { fill: t.dim, size: SIZE.small });
+          // [8][chevron 12][4][folder 16][4][name]
+          const ix = cx + P + indent;
+          icon(c, ln.open ? 'chevron' : 'chevronR', ix, ry + (rh - BOX.chevron) / 2, BOX.chevron, { fill: t.dim });
+          icon(c, 'folderOutline', ix + BOX.chevron + GAP.icon, ry + (rh - BOX.icon) / 2, BOX.icon, { fill: t.dim });
+          const nx = ix + BOX.chevron + GAP.icon + BOX.icon + GAP.icon;
+          text(c, nx, mid, ln.name, { fill: t.fg });
+          if (!ln.open) text(c, nx + tw(ln.name) + GAP.item, mid, ln.files.length + (ln.files.length === 1 ? ' file' : ' files'), { fill: t.dim, size: SIZE.small });
         }
         else if (name === 'Name') {
           const col = f.selected ? t.accent : (f.st === '?' ? t.dim : statusColor(f.st));
-          const nx = view === 'tree' ? cx + 8 + indent : cx + 10;
+          const nx = cx + P + (view === 'tree' ? indent : 0);
           text(c, nx, mid, f.name, { fill: col, weight: f.st === 'C' ? 700 : 400 });
-          if (view === 'compact' && f.path) text(c, nx + tw(f.name) + 8, mid, f.path + '/', { fill: t.dim, size: SIZE.small });
+          if (view === 'compact' && f.path) text(c, nx + tw(f.name) + GAP.item, mid, f.path + '/', { fill: t.dim, size: SIZE.small });
         }
         else if (ln.kind === 'dir') { /* directories carry no status cells */ }
-        else if (name === 'Path') text(c, cx + 10, mid, f.path, { fill: t.dim });
+        else if (name === 'Path') text(c, cx + P, mid, f.path, { fill: t.dim });
         else if (name === 'Status') text(c, cx + cw / 2, mid, K.statusName(f.st), { fill: statusColor(f.st), anchor: 'middle', size: SIZE.small });
-        else if (name === 'St') statusPill(c, cx + (cw - 16) / 2, mid - 8, f.st);
+        else if (name === 'St') statusPill(c, cx + box(cw, BOX.pill), ry + (rh - BOX.pill) / 2, f.st);
         else if (name === '+ −') { if (f.add || f.del) { text(c, cx + cw / 2 - 2, mid, '+' + f.add, { fill: t.green, anchor: 'end', size: SIZE.small }); text(c, cx + cw / 2 + 2, mid, '−' + f.del, { fill: t.red, size: SIZE.small }); } }
-        else if (name === 'Size') text(c, cx + cw - 10, mid, f.size, { fill: t.dim, anchor: 'end', size: SIZE.small });
+        else if (name === 'Size') text(c, cx + cw - P, mid, f.size, { fill: t.dim, anchor: 'end', size: SIZE.small });
         cx += cw;
       });
       c.add('</g>');
@@ -279,87 +363,121 @@ function changesTable(c, x, y, w, h, lv, o = {}) {
 // The Commit button says how many files it will commit ("Commit 5 files").
 const commitLabel = rows => { const n = rows.filter(f => f.checked).length; return n === 1 ? 'Commit 1 file' : 'Commit ' + n + ' files'; };
 
-// Bottom action bar of the commit page: options left, Commit right; always the same place.
+// Bottom action row of the commit page (y: its top): options left, Commit right; always the same place.
 function actionBar(c, x, y, w, lv, o = {}) {
-  const t = T();
+  const t = T(), H = BOX.control;
   c.group('ActionBar', () => {
     const label = o.amend ? 'Amend' : o.merging ? 'Commit merge' : commitLabel(o.rows || FILES);
     if (stacked(lv) || o.shallow) {
       let bx = x;
-      bx += button(c, { x: bx, y, w: 28, icon: 'dots', id: 'Options' }) + 6;
-      if (o.merging) { bx += button(c, { x: bx, y, variant: 'danger', label: 'Abort', id: 'AbortMerge' }) + 6; }
-      button(c, { x: bx, y, w: x + w - bx, variant: 'primary', icon: 'commit', label: label, state: o.commitDisabled ? 'disabled' : 'normal', id: 'Commit' });
-      // centre the label: overlay handled by button (left aligned); acceptable
+      bx += button(c, { x: bx, y, w: H, icon: 'dots', id: 'Options' }) + GAP.item;
+      if (o.merging) { bx += button(c, { x: bx, y, variant: 'danger', label: 'Abort', id: 'AbortMerge' }) + GAP.item; }
+      button(c, { x: bx, y, w: x + w - bx, variant: 'primary', icon: 'commit', label: label, px: PAD.primary, state: o.commitDisabled ? 'disabled' : 'normal', id: 'Commit' });
     } else {
       let bx = x;
       // amend sits by the Commit it changes (the button reads "Amend" once it is on)
-      bx += checkbox(c, { x: bx, y: y + 7, checked: !!o.amend, label: lv === 'm' ? 'Amend' : 'Amend last commit', id: 'AmendLastCommit' }) + 16;
-      if (o.merging) { bx += button(c, { x: bx, y, variant: 'danger', icon: 'close', label: 'Abort merge', id: 'AbortMerge' }); }
-      dimText(c, bx, y + 14, o.hint || '', { size: SIZE.small });
-      const cw = measureButton({ icon: 'commit', label, px: 16 }) + 30;
-      button(c, { x: x + w - cw, y, w: cw, variant: 'primary', icon: 'commit', label: label + '  ⏎', px: 16, state: o.commitDisabled ? 'disabled' : 'normal', id: 'Commit' });
+      bx += checkbox(c, { x: bx, y: y + (H - BOX.check) / 2, checked: !!o.amend, label: lv === 'm' ? 'Amend' : 'Amend last commit', id: 'AmendLastCommit' }) + GAP.group;
+      if (o.merging) { bx += button(c, { x: bx, y, variant: 'danger', icon: 'close', label: 'Abort merge', id: 'AbortMerge' }) + GAP.item; }
+      dimText(c, bx, y + H / 2, o.hint || '', { size: SIZE.small });
+      const full = label + '  ⏎', cw = measureButton({ icon: 'commit', label: full, px: PAD.primary });
+      button(c, { x: x + w - cw, y, w: cw, variant: 'primary', icon: 'commit', label: full, px: PAD.primary, state: o.commitDisabled ? 'disabled' : 'normal', id: 'Commit' });
     }
   });
 }
 
 // ------------------------------------------------------------ history page
+// The filter row is a control row (28 + 4, the same band as the diff
+// toolbar's), then the commits, the details card and the commit's files a block
+// gap apart, and the count row (24) at the bottom.
 function historyPage(c, x, y, w, h, lv, o = {}) {
-  const t = T(); let cy = y;
+  const t = T(), d = o.d || REGULAR; let cy = y;
+  const s = o.search; // a filter's matches, see searchCountRow()
   c.group('HistoryPage', () => {
-    // filter row
-    let fx = x;
-    const abw = stacked(lv) ? 28 : measureButton({ icon: 'branch', label: 'All branches' });
-    const rw = 28 + 6; // Refresh at the right end of the filter row
-    const fw = w - abw - 8 - rw; const ph = fw < 300 ? (fw < 200 ? 'Filter' : 'Filter commits') : 'Filter by message, author or SHA'; field(c, { x: fx, y: cy, w: fw, icon: 'search', placeholder: ph });
-    button(c, { x: x + w - abw - rw, y: cy, w: abw, icon: 'branch', label: stacked(lv) ? '' : 'All branches', state: o.allBranches ? 'selected' : 'normal', id: 'AllBranches' });
-    if (rw) button(c, { x: x + w - 28, y: cy, w: 28, icon: 'refresh', id: 'Refresh' });
-    cy += 36;
-    const detailsH = o.shallow ? 0 : stacked(lv) ? 132 : 150;
-    const filesH = o.shallow ? 0 : stacked(lv) ? 0 : 110;
-    const tableH = h - (cy - y) - detailsH - filesH - (detailsH ? 10 : 0) - (filesH ? 10 : 0) - 22;
+    // filter row: the field takes what All branches and Refresh leave (and,
+    // proposal B, the no-limit toggle between them)
+    const abw = stacked(lv) ? BOX.control : measureButton({ icon: 'branch', label: 'All branches' });
+    const rowToggle = s && s.proposal === 'B';
+    const fw = w - GAP.item - abw - GAP.item - BOX.control - (rowToggle ? BOX.control + GAP.item : 0);
+    const ph = fw < 300 ? (fw < 200 ? 'Filter' : 'Filter commits') : 'Filter by message, author or SHA';
+    field(c, { x, y: cy, w: fw, icon: 'search', placeholder: ph, value: s ? s.value : '', trailingIcon: s ? 'close' : '' });
+    if (s && (s.proposal === 'C' || s.proposal === 'D')) {
+      // proposals C and D: a 24 px ghost button inside the field, 4 before its clear glyph
+      button(c, { x: x + fw - PAD.control - BOX.icon - GAP.icon - BOX.row, y: cy + (BOX.control - BOX.row) / 2, w: BOX.row, h: BOX.row, variant: 'ghost',
+        icon: s.proposal === 'C' ? 'infinity' : 'tune', state: s.on || s.menu ? 'selected' : 'normal', id: s.proposal === 'C' ? 'NoLimit' : 'SearchOptions' });
+    }
+    button(c, { x: x + fw + GAP.item, y: cy, w: abw, icon: 'branch', label: stacked(lv) ? '' : 'All branches', state: o.allBranches ? 'selected' : 'normal', id: 'AllBranches' });
+    if (rowToggle) button(c, { x: x + fw + GAP.item + abw + GAP.item, y: cy, w: BOX.control, icon: 'infinity', state: s.on ? 'selected' : 'normal', id: 'NoLimit' });
+    button(c, { x: x + w - BOX.control, y: cy, w: BOX.control, icon: 'refresh', id: 'Refresh' });
+    cy += BOX.control + GAP.controlRow;
+    const detailsH = o.shallow ? 0 : stacked(lv) ? 132 : 152;
+    const filesH = o.shallow || stacked(lv) ? 0 : 4 * BOX.row;
+    const tableH = h - (cy - y) - (detailsH ? d.block + detailsH : 0) - (filesH ? d.block + filesH : 0) - BOX.row;
     commitsTable(c, x, cy, w, tableH, lv, o);
-    cy += tableH + 10;
-    if (detailsH) { commitDetails(c, x, cy, w, detailsH, lv, o); cy += detailsH + 10; }
-    if (filesH) { changesTable(c, x, cy, w, filesH, lv, { rows: [{ name: 'Toolbar.cpp', path: 'src/ui', ext: '.cpp', size: '6.2 KiB', st: 'M', add: 4, del: 2, checked: true, selected: true }, { name: 'Toolbar.h', path: 'src/ui', ext: '.h', size: '1.9 KiB', st: 'M', add: 3, del: 0, checked: true }].map(r => ({ ...r, checked: undefined })) }); cy += filesH + 10; }
-    dimText(c, x, cy + 6, '12 commits', { size: SIZE.small });
+    cy += tableH;
+    if (detailsH) { cy += d.block; commitDetails(c, x, cy, w, detailsH, lv, o); cy += detailsH; }
+    if (filesH) { cy += d.block; changesTable(c, x, cy, w, filesH, lv, { rows: [{ name: 'Toolbar.cpp', path: 'src/ui', ext: '.cpp', size: '6.2 KiB', st: 'M', add: 4, del: 2, checked: true, selected: true }, { name: 'Toolbar.h', path: 'src/ui', ext: '.h', size: '1.9 KiB', st: 'M', add: 3, del: 0, checked: true }].map(r => ({ ...r, checked: undefined })) }); cy += filesH; }
+    if (s) searchCountRow(c, x, cy, w, s);
+    else dimText(c, x, cy + BOX.row / 2, '12 commits', { size: SIZE.small });
   });
 }
 
+// The count row of a filter that stopped at the 10,000-match cap (`on`: the
+// full search running). Proposal A carries its own action on the row; the
+// others point at their control while capped.
+function searchCountRow(c, x, y, w, s) {
+  const mid = y + BOX.row / 2;
+  const count = s.on ? 'Searching… 14,203 matches' : s.proposal === 'A' || s.proposal === 'D' ? '10,000+ matches' : '10,000+ matches — ∞ finds all';
+  dimText(c, x, mid, count, { size: SIZE.small, id: 'SearchCount' });
+  if (s.proposal !== 'A') return;
+  const action = s.on ? { icon: 'stop', label: 'Stop', id: 'StopSearch' } : { icon: 'infinity', label: 'Find all matches', id: 'FindAll' };
+  const bw = measureButton(action);
+  button(c, { x: x + w - bw, y, h: BOX.row, variant: 'ghost', ...action });
+}
+
 function commitsTable(c, x, y, w, h, lv, o = {}) {
-  const t = T(), rh = 28, hh = 26;
+  const t = T(), rh = BOX.row, hh = BOX.row, P = PAD.control;
   c.group('CommitsTable', () => {
     border(c, x, y, w, h, { stroke: t.fg, so: 0.4 });
-    const cols = lv === 'xl' ? [['Graph', 40], ['Message', 0], ['Author', 90], ['Date', 130]]
-      : lv === 'l' ? [['Graph', 40], ['Message', 0], ['Author', 90], ['Date', 100]]
-      : lv === 'm' ? [['Graph', 36], ['Message', 0], ['Date', 90]]
-      : [['Graph', 30], ['Message', 0]];
-    const fixed = cols.reduce((a, [, cw]) => a + cw, 0); cols.find(cc => cc[1] === 0)[1] = w - fixed;
-    let cx = x; hairline(c, x, y + hh, w, { fo: 0.2 });
+    // A filter's matches have no graph (a zero-wide column keeps the indices)
+    // and, as in the app since 2026-09-25 (the user's rule), Author in every class.
+    const cols = o.search ? (lv === 'xl' ? [['Graph', 0], ['Message', -1], ['Author', 88], ['Date', 128]]
+      : lv === 'l' ? [['Graph', 0], ['Message', -1], ['Author', 88], ['Date', 120]]
+      : lv === 'm' ? [['Graph', 0], ['Message', -1], ['Author', 88], ['Date', 88]]
+      : [['Graph', 0], ['Message', -1], ['Author', 72]])
+      : lv === 'xl' ? [['Graph', 40], ['Message', 0], ['Author', 88], ['Date', 128]]
+      : lv === 'l' ? [['Graph', 40], ['Message', 0], ['Author', 88], ['Date', 120]]
+      : lv === 'm' ? [['Graph', 36], ['Message', 0], ['Date', 88]]
+      : [['Graph', 32], ['Message', 0]];
+    const stretch = o.search ? -1 : 0;
+    const fixed = cols.reduce((a, [, cw]) => a + Math.max(0, cw), 0); cols.find(cc => cc[1] === stretch)[1] = w - fixed;
+    let cx = x; hairline(c, x, y + hh - 1, w, { fo: 0.2 });
     cols.forEach(([name, cw], i) => {
-      if (i > 0) vline(c, cx, y + 1, hh - 1, { fo: 0.1 });
-      if (name !== 'Graph') text(c, cx + 10, y + hh / 2, name, { size: 10, weight: 700, fill: t.dim });
+      if (i > 0 && cx > x) vline(c, cx, y + 1, hh - 2, { fo: 0.1 });
+      if (name !== 'Graph') text(c, cx + P, y + hh / 2, name, { size: 10, weight: 700, fill: t.dim });
       cx += cw;
     });
-    let ry = y + hh + 1;
+    let ry = y + hh;
     const gx = x + cols[0][1] / 2;
-    COMMITS.forEach((cm, i) => {
+    (o.search ? FIX_MATCHES : COMMITS).forEach((cm, i) => {
       if (ry + rh > y + h) return;
       c.add(`<g id="${K.esc('CommitRow/' + (i === 0 ? 'selected' : 'normal') + ' ' + cm.sha)}">`);
       if (i === 0) fillBox(c, x + 1, ry, w - 2, rh, 0.08);
       // graph
-      const lx = gx - 6 + cm.lane * 12;
-      rect(c, gx - 6 - 0.5, ry, 2, rh, { fill: t.accent, fo: 0.9 });
-      if (cm.lane === 1 || (COMMITS[i + 1] && COMMITS[i + 1].lane === 1) || (COMMITS[i - 1] && COMMITS[i - 1].lane === 1)) rect(c, gx + 6 - 0.5, ry, 2, rh, { fill: t.magenta, fo: 0.9 });
-      circle(c, lx, ry + rh / 2, 4, { fill: cm.lane ? t.magenta : t.accent, stroke: t.bg, sw: 1.5 });
-      let mx = x + cols[0][1] + 10;
-      cm.refs.forEach(([lb, kind]) => { if (lv === 'xs' && kind === 'remote') return; mx += refChip(c, mx, ry + rh / 2 - 8, lb, kind) + 6; });
-      const avail = cols[1][1] - (mx - (x + cols[0][1])) - 10;
+      if (!o.search) {
+        const lx = gx - 6 + cm.lane * 12;
+        rect(c, gx - 6 - 0.5, ry, 2, rh, { fill: t.accent, fo: 0.9 });
+        if (cm.lane === 1 || (COMMITS[i + 1] && COMMITS[i + 1].lane === 1) || (COMMITS[i - 1] && COMMITS[i - 1].lane === 1)) rect(c, gx + 6 - 0.5, ry, 2, rh, { fill: t.magenta, fo: 0.9 });
+        circle(c, lx, ry + rh / 2, 4, { fill: cm.lane ? t.magenta : t.accent, stroke: t.bg, sw: 1.5 });
+      }
+      let mx = x + cols[0][1] + P;
+      cm.refs.forEach(([lb, kind]) => { if (lv === 'xs' && kind === 'remote') return; mx += refChip(c, mx, ry + (rh - BOX.pill) / 2, lb, kind) + GAP.cluster; });
+      const avail = cols[1][1] - (mx - (x + cols[0][1])) - P;
       let msg = cm.msg; const maxc = Math.floor(avail / (0.6 * 12)); if (msg.length > maxc) msg = msg.slice(0, Math.max(0, maxc - 1)) + '…';
       text(c, mx, ry + rh / 2, msg, { fill: i === 0 ? t.accent : t.fg });
       let ccx = x + cols[0][1] + cols[1][1];
       cols.slice(2).forEach(([name, cw]) => {
         const v = name === 'Author' ? cm.author : name === 'Date' ? (lv === 'm' ? cm.date.slice(0, 10) : cm.date) : cm.sha;
-        text(c, ccx + 10, ry + rh / 2, v, { fill: t.dim, size: SIZE.small });
+        text(c, ccx + P, ry + rh / 2, v, { fill: t.dim, size: SIZE.small });
         ccx += cw;
       });
       c.add('</g>');
@@ -369,72 +487,81 @@ function commitsTable(c, x, y, w, h, lv, o = {}) {
   });
 }
 
+// A card: 12 padding, the title on a 24 row with the copy button (its glyph on
+// the padding), then 16 px text lines.
 function commitDetails(c, x, y, w, h, lv, o = {}) {
-  const t = T();
+  const t = T(), P = PAD.popover, L = BOX.line;
   c.group('CommitDetails', () => {
     border(c, x, y, w, h, { stroke: t.fg, so: 0.4 });
-    const cm = COMMITS[0]; let cy = y + 16;
-    text(c, x + 12, cy, cm.msg, { weight: 700, size: SIZE.subtitle });
-    cy += 22;
-    let mx = x + 12;
-    mx += text(c, mx, cy, cm.sha, { fill: t.accent, size: SIZE.small }) + 12;
-    mx += text(c, mx, cy, cm.author + ' <andras@example.org>', { fill: t.dim, size: SIZE.small }) + 12;
-    if (!stacked(lv)) mx += text(c, mx, cy, cm.date, { fill: t.dim, size: SIZE.small }) + 12;
-    cy += 18;
-    mx = x + 12; dimText(c, mx, cy, 'Parent 6bd79ab', { size: SIZE.small }); mx += tw('Parent 6bd79ab', SIZE.small) + 12;
-    cm.refs.forEach(([lb, kind]) => { mx += refChip(c, mx, cy - 8, lb, kind) + 6; });
-    cy += 22;
-    const body = 'The toolbar folds its buttons in three steps now, and the whole window picks a layout from its width and height.';
-    const maxc = Math.floor((w - 24) / 7.2); const words = body.split(' '); let line = ''; const lines = [];
+    const cm = o.search ? FIX_MATCHES[0] : COMMITS[0], top = y + P - GAP.icon;
+    button(c, { x: x + w - (P - GAP.icon) - BOX.row, y: top, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'copy', id: 'CopySha' });
+    let cy = top + BOX.row / 2;
+    text(c, x + P, cy, cm.msg, { weight: 700, size: SIZE.subtitle });
+    cy += BOX.row / 2 + L / 2;
+    let mx = x + P;
+    mx += text(c, mx, cy, cm.sha, { fill: t.accent, size: SIZE.small }) + P;
+    mx += text(c, mx, cy, cm.author + ' <andras@example.org>', { fill: t.dim, size: SIZE.small }) + P;
+    if (!stacked(lv)) mx += text(c, mx, cy, cm.date, { fill: t.dim, size: SIZE.small }) + P;
+    cy += L + GAP.cluster;
+    mx = x + P; dimText(c, mx, cy, 'Parent 6bd79ab', { size: SIZE.small }); mx += tw('Parent 6bd79ab', SIZE.small) + P;
+    cm.refs.forEach(([lb, kind]) => { mx += refChip(c, mx, cy - BOX.pill / 2, lb, kind) + GAP.cluster; });
+    cy += L + GAP.item;
+    const body = cm.body || 'The toolbar folds its buttons in three steps now, and the whole window picks a layout from its width and height.';
+    const maxc = Math.floor((w - 2 * P) / 7.2); const words = body.split(' '); let line = ''; const lines = [];
     words.forEach(wd => { if ((line + ' ' + wd).trim().length > maxc) { lines.push(line); line = wd; } else line = (line ? line + ' ' : '') + wd; }); lines.push(line);
-    const limit = y + h - (stacked(lv) ? 30 : 8);
-    lines.forEach(l => { if (cy < limit) { text(c, x + 12, cy, l, { size: SIZE.body }); cy += 17; } });
-    if (stacked(lv)) { button(c, { x: x + w - 8 - 90, y: y + h - 32, w: 90, h: 24, label: '2 files ›', variant: 'ghost', id: 'ShowFiles' }); }
-    button(c, { x: x + w - 30, y: y + 6, w: 24, h: 24, variant: 'ghost', icon: 'copy', id: 'CopySha' });
+    const bw = measureButton({ label: '2 files ›' }), limit = y + h - P - (stacked(lv) ? BOX.row : 0);
+    lines.forEach(l => { if (cy + L / 2 <= limit) { text(c, x + P, cy, l, { size: SIZE.body }); cy += L; } });
+    if (stacked(lv)) button(c, { x: x + w - (P - GAP.icon) - bw, y: y + h - (P - GAP.icon) - BOX.row, h: BOX.row, label: '2 files ›', variant: 'ghost', id: 'ShowFiles' });
   });
 }
 
 // ------------------------------------------------------------ diff pane
+// The toolbar is a control row (28 + 4). The diff: a 24 header per side, then
+// 16 px code lines 4 below it: [mark 20: ± in a 16 box][numbers, right-aligned 8 short of 52][8][code].
 function diffPane(c, x, y, w, h, lv, o = {}) {
-  const t = T();
+  const t = T(), H = BOX.control, P = PAD.control;
   const split = o.split ?? (w >= 720);
   c.group('DiffPane', () => {
     // toolbar row
-    let tx = x; const ty = y;
+    let tx = x; const ty = y, mid = y + H / 2;
     const compact = w < 560;
-    tx += button(c, { x: tx, y: ty, w: compact ? 28 : undefined, icon: 'up', label: compact ? '' : 'Prev', state: 'disabled', id: 'PrevChange' }) + 4;
-    tx += button(c, { x: tx, y: ty, w: compact ? 28 : undefined, icon: 'down', label: compact ? '' : 'Next', id: 'NextChange' }) + 10;
-    text(c, tx, ty + 14, compact ? '1/2' : 'Change 1 of 2', { fill: t.dim, size: SIZE.small }); tx += tw(compact ? '1/2' : 'Change 1 of 2', SIZE.small) + 10;
-    if (!compact) { text(c, tx, ty + 14, '·', { fill: t.dim }); tx += 12; text(c, tx, ty + 14, 'Modified', { fill: t.blue, size: SIZE.small }); tx += tw('Modified', SIZE.small) + 8; text(c, tx, ty + 14, '+4', { fill: t.green, size: SIZE.small }); tx += 22; text(c, tx, ty + 14, '−2', { fill: t.red, size: SIZE.small }); }
+    tx += button(c, { x: tx, y: ty, w: compact ? H : undefined, icon: 'up', label: compact ? '' : 'Prev', state: 'disabled', id: 'PrevChange' }) + GAP.cluster;
+    tx += button(c, { x: tx, y: ty, w: compact ? H : undefined, icon: 'down', label: compact ? '' : 'Next', id: 'NextChange' }) + GAP.item;
+    const run = (s, o2) => { tx += text(c, tx, mid, s, o2); };
+    run(compact ? '1/2' : 'Change 1 of 2', { fill: t.dim, size: SIZE.small });
+    if (!compact) {
+      tx += GAP.item; run('·', { fill: t.dim }); tx += GAP.item; run('Modified', { fill: t.blue, size: SIZE.small });
+      tx += GAP.item; run('+4', { fill: t.green, size: SIZE.small }); tx += GAP.cluster; run('−2', { fill: t.red, size: SIZE.small });
+    }
     let rx = x + w;
-    if (compact) { rx -= 28; button(c, { x: rx, y: ty, w: 28, icon: 'dots', id: 'DiffMore' }); }
+    if (compact) { rx -= H; button(c, { x: rx, y: ty, w: H, icon: 'dots', id: 'DiffMore' }); }
     else {
       const labels = w >= 900;
-      rx -= 28; button(c, { x: rx, y: ty, w: 28, icon: 'code', state: 'selected', id: 'Syntax' }); rx -= 4;
-      rx -= 28; button(c, { x: rx, y: ty, w: 28, icon: 'pilcrow', id: 'Whitespace' }); rx -= 4;
+      rx -= H; button(c, { x: rx, y: ty, w: H, icon: 'code', state: 'selected', id: 'Syntax' }); rx -= GAP.cluster;
+      rx -= H; button(c, { x: rx, y: ty, w: H, icon: 'pilcrow', id: 'Whitespace' }); rx -= GAP.cluster;
       const vw = measureButton({ icon: split ? 'split' : 'unified', label: labels ? (split ? 'Split' : 'Unified') : '', chevron: true });
       rx -= vw; button(c, { x: rx, y: ty, icon: split ? 'split' : 'unified', label: labels ? (split ? 'Split' : 'Unified') : '', chevron: true, id: 'ViewMode' });
     }
-    const by = y + 36, bh = h - 36;
+    const by = y + H + GAP.controlRow, bh = h - (by - y);
     border(c, x, by, w, bh, { stroke: t.fg, so: 0.4 });
-    const hh = 26, rh = 18, gutter = 34, mark = 18;
+    const hh = BOX.row, rh = BOX.line, mark = 20, gutter = 32;
     const drawSide = (sx, sw, side, title, rows) => {
-      // header
-      fillBox(c, sx, by + 1, sw, hh, 0.04);
-      text(c, sx + 10, by + 1 + hh / 2, 'src/ui/Toolbar.cpp', { weight: 700 });
-      text(c, sx + sw - 10, by + 1 + hh / 2, title, { fill: t.dim, anchor: 'end', size: SIZE.small });
-      hairline(c, sx, by + hh + 1, sw, { fo: 0.2 });
-      let ry = by + hh + 4;
-      const maxRows = Math.floor((bh - hh - 8) / rh);
+      // header (inside the border's top pixel; its hairline is its last row)
+      fillBox(c, sx, by + 1, sw, hh - 1, 0.04);
+      text(c, sx + P, by + hh / 2, 'src/ui/Toolbar.cpp', { weight: 700 });
+      text(c, sx + sw - P, by + hh / 2, title, { fill: t.dim, anchor: 'end', size: SIZE.small });
+      hairline(c, sx, by + hh - 1, sw, { fo: 0.2 });
+      const top = by + hh + GAP.cluster; let ry = top;
+      const maxRows = Math.floor((by + bh - 1 - top) / rh);
       rows.slice(0, maxRows).forEach(r => {
         const seg = r[side];
         if (seg.k === 'filler') fillBox(c, sx + 1, ry, sw - 2, rh, 0.05);
         else if (seg.k === 'del') fillBox(c, sx + 1, ry, sw - 2, rh, 0.16, { fill: t.red });
         else if (seg.k === 'add') fillBox(c, sx + 1, ry, sw - 2, rh, 0.16, { fill: t.green });
-        if (seg.k === 'del' || seg.k === 'add') icon(c, seg.k === 'del' ? 'minus' : 'plus', sx + 3, ry + 2, 14, { fill: seg.k === 'del' ? t.red : t.green });
-        if (seg.n !== undefined) text(c, sx + mark + gutter - 6, ry + rh / 2, String(seg.n), { fill: t.dim, anchor: 'end', size: SIZE.small });
+        if (seg.k === 'del' || seg.k === 'add') icon(c, seg.k === 'del' ? 'minus' : 'plus', sx + (mark - BOX.icon) / 2, ry + (rh - BOX.icon) / 2, BOX.icon, { fill: seg.k === 'del' ? t.red : t.green });
+        if (seg.n !== undefined) text(c, sx + mark + gutter - P, ry + rh / 2, String(seg.n), { fill: t.dim, anchor: 'end', size: SIZE.small });
         if (seg.t !== undefined) {
-          let cx = sx + mark + gutter + 8; const maxc = Math.floor((sw - (mark + gutter + 16)) / 7.2);
+          let cx = sx + mark + gutter + P; const maxc = Math.floor((sw - (mark + gutter + 2 * P)) / 7.2);
           (seg.hl || []).forEach(([a, b]) => { if (a < maxc) fillBox(c, cx + a * 7.2, ry + 1, Math.min(b, maxc) * 7.2 - a * 7.2, rh - 2, 0.35, { fill: seg.k === 'del' ? t.red : t.green }); });
           let used = 0;
           tokens(seg.t).forEach(tk => {
@@ -448,7 +575,7 @@ function diffPane(c, x, y, w, h, lv, o = {}) {
       });
       // change marks at the right edge
       const marks = rows.slice(0, maxRows).map((r, i) => [i, r[side].k]).filter(([, k]) => k === 'del' || k === 'add');
-      marks.forEach(([i, k]) => rect(c, sx + sw - 6, by + hh + 4 + i * rh, 3, rh, { fill: k === 'del' ? t.red : t.green }));
+      marks.forEach(([i, k]) => rect(c, sx + sw - 6, top + i * rh, 3, rh, { fill: k === 'del' ? t.red : t.green }));
     };
     if (split) {
       const half = Math.floor(w / 2);
@@ -461,13 +588,14 @@ function diffPane(c, x, y, w, h, lv, o = {}) {
       DIFF.forEach(r => { if (r.l.k === 'ctx') rows.push({ u: { ...r.l, n2: r.r.n } }); else { if (r.l.k === 'del') rows.push({ u: r.l }); if (r.r.k === 'add') rows.push({ u: r.r }); } });
       drawSide(x, w, 'u', 'HEAD → Working tree', rows);
     }
-    scrollbar(c, x + w - 16, by + hh + 4, bh - hh - 8, { ratio: 0.6 });
+    scrollbar(c, x + w - 16, by + hh + GAP.cluster, bh - hh - 2 * GAP.cluster, { ratio: 0.6 });
   });
 }
 
 // ------------------------------------------------------------ mini rail
+// 40 px tiles 4 apart (a cluster); the commit tile at the bottom behind a hairline.
 function miniRail(c, x, y, h, o = {}) {
-  const t = T(), s = 40, gap = 6; let ty = y;
+  const t = T(), s = BOX.tile, gap = GAP.cluster; let ty = y;
   c.group('MiniRail', () => {
     FILES.forEach((f, i) => {
       c.add(`<g id="${K.esc('Tile/' + (f.selected ? 'selected' : f.checked ? 'checked' : 'unchecked') + ' ' + f.name)}">`);
@@ -482,12 +610,13 @@ function miniRail(c, x, y, h, o = {}) {
       ty += s + gap;
     });
     // the commit tile: Commit stays reachable while the diff has the window (Ctrl+Enter opens the popover)
-    if (o.commitTile !== false && y + h - s >= ty + 8) {
-      const cy = y + h - s, n = FILES.filter(f => f.checked).length;
+    const cy = y + h - s;
+    if (o.commitTile !== false && cy >= ty + 12) {
+      const n = FILES.filter(f => f.checked).length;
       hairline(c, x, cy - 8, s, { fo: 0.2 });
       c.group('Tile/commit', () => {
         fillBox(c, x, cy, s, s, 0.08, { fill: t.accent }); border(c, x, cy, s, s, { stroke: t.accent, so: 1 });
-        icon(c, 'commit', x + (s - 16) / 2, cy + (s - 16) / 2 + 2, 16, { fill: t.accent });
+        icon(c, 'commit', x + (s - BOX.icon) / 2, cy + (s - BOX.icon) / 2 + 2, BOX.icon, { fill: t.accent });
         rect(c, x + s - 13, cy + 1, 12, 12, { fill: t.accent }); text(c, x + s - 7, cy + 7, String(n), { size: 8, weight: 700, fill: t.bg, anchor: 'middle' });
       });
       (c.anchors = c.anchors || {}).CommitTile = { x, y: cy, w: s, h: s }; // for the popover; not a control, so not in the manifest
@@ -499,66 +628,67 @@ function miniRail(c, x, y, h, o = {}) {
 // ------------------------------------------------------------ commit popover (Mini layout, Diff tab)
 // Anchored to the rail's commit tile: the message box, Amend and Commit, nothing the action bar would not show.
 function commitPopover(c, o) {
-  const t = T(), { x, w } = o, pad = 10, inner = w - pad * 2, mh = 84;
-  const h = pad + 22 + mh + 10 + 16 + 10 + 1 + 12 + 28 + pad;
+  const t = T(), { x, w } = o, P = PAD.popover, inner = w - 2 * P, mh = 80;
+  const h = P + BOX.row + GAP.header + mh + GAP.item + BOX.line + 2 * SEP + BOX.control + P;
   const y = o.bottom !== undefined ? o.bottom - h : o.y;
   c.group(o.id || 'CommitPopover', () => {
     rect(c, x, y, w, h, { fill: t.bg }); border(c, x, y, w, h, { stroke: t.accent, so: 1, sw: 2 });
-    let cy = y + pad;
-    sectionLabel(c, x + pad, cy + 6, 'Message');
-    button(c, { x: x + w - pad - 24, y: cy - 6, w: 24, h: 24, variant: 'ghost', icon: 'cog', id: 'AgentSettings' });
-    cy += 22;
-    c.group('MessageBox', () => {
-      fillBox(c, x + pad, cy, inner, mh, 0.04); border(c, x + pad, cy, inner, mh, { stroke: t.fg, so: 0.4 });
-      if (o.message) { text(c, x + pad + 8, cy + 14, o.message, { fill: t.fg }); (o.messageBody || []).forEach((l, i) => text(c, x + pad + 8, cy + 14 + 18 * (i + 1), l, { fill: t.fg })); }
-      else text(c, x + pad + 8, cy + 14, 'Commit message', { fill: t.dim });
-      button(c, { x: x + w - pad - 26, y: cy + 2, w: 24, h: 24, variant: 'ghost', icon: 'sparkle', id: 'Generate' });
-    });
-    cy += mh + 10;
+    let cy = y + P;
+    sectionLabel(c, x + P, cy + BOX.row / 2, 'Message');
+    button(c, { x: headerButtonX(x + P, inner), y: cy, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'cog', id: 'AgentSettings' });
+    cy += BOX.row + GAP.header;
+    messageBox(c, x + P, cy, inner, mh, o, false);
+    cy += mh + GAP.item;
     const n = FILES.filter(f => f.checked).length;
-    dimText(c, x + pad, cy + 8, n + ' / ' + FILES.length + ' files selected · Space on a tile toggles it', { size: SIZE.small, id: 'SelectedCount' });
-    cy += 16 + 10;
-    hairline(c, x + pad, cy, inner, { fo: 0.15 }); cy += 12;
-    checkbox(c, { x: x + pad, y: cy + 7, checked: !!o.amend, label: 'Amend last commit', id: 'AmendLastCommit' });
-    const label = o.amend ? 'Amend' : commitLabel(FILES), cw = measureButton({ icon: 'commit', label, px: 16 }) + 30;
-    button(c, { x: x + w - pad - cw, y: cy, w: cw, variant: 'primary', icon: 'commit', label: label + '  ⏎', px: 16, id: 'Commit' });
+    dimText(c, x + P, cy + BOX.line / 2, n + ' / ' + FILES.length + ' files selected · Space on a tile toggles it', { size: SIZE.small, id: 'SelectedCount' });
+    cy += BOX.line + SEP;
+    hairline(c, x + P, cy, inner, { fo: 0.15 }); cy += SEP;
+    checkbox(c, { x: x + P, y: cy + (BOX.control - BOX.check) / 2, checked: !!o.amend, label: 'Amend last commit', id: 'AmendLastCommit' });
+    const full = (o.amend ? 'Amend' : commitLabel(FILES)) + '  ⏎', cw = measureButton({ icon: 'commit', label: full, px: PAD.primary });
+    button(c, { x: x + w - P - cw, y: cy, w: cw, variant: 'primary', icon: 'commit', label: full, px: PAD.primary, id: 'Commit' });
   });
   return h;
 }
 
 // ------------------------------------------------------------ footer
+// 28 high with its hairline as the top pixel row; the status text on the side
+// margin, the keys button flush with the other margin.
 function footer(c, W, H, lv, o = {}) {
-  const t = T(), h = 28, y = H - h;
+  const t = T(), d = o.d || REGULAR, h = BOX.footer, y = H - h, m = d.margin;
   c.group('Footer', () => {
     hairline(c, 0, y, W, { fo: 0.12 });
     const st = o.status || (lv === 'xs' ? '~/Projects/omagit' : 'Fetched origin 2 min ago · ~/Projects/omagit');
-    if (o.busy) { icon(c, 'loader', 12, y + 7, 14, { fill: t.accent }); text(c, 32, y + 14, st, { fill: t.dim, size: SIZE.small }); }
-    else text(c, 12, y + 14, st, { fill: t.dim, size: SIZE.small });
-    button(c, { x: W - 12 - 24, y: y + 2, w: 24, h: 24, variant: 'ghost', icon: 'keyboard', id: 'Keybindings' });
+    if (o.busy) { icon(c, 'loader', m, y + (h - BOX.icon) / 2, BOX.icon, { fill: t.accent }); text(c, m + BOX.icon + GAP.icon, y + h / 2, st, { fill: t.dim, size: SIZE.small }); }
+    else text(c, m, y + h / 2, st, { fill: t.dim, size: SIZE.small });
+    button(c, { x: W - m - BOX.row, y: y + (h - BOX.row) / 2, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'keyboard', id: 'Keybindings' });
   });
   return h;
 }
 
 // ------------------------------------------------------------ menus / cards
+// A menu: 4 around its rows; 24 px rows with [8][icon 16][4][label … hint][8];
+// section captions on 24 rows; separators 8 with the hairline in the middle;
+// the search prompt 28 over a separator.
+const menuRowH = it => it.type === 'search' ? BOX.control + 8 : it.type === 'sep' ? 8 : BOX.row;
+const menuHeight = items => 2 * PAD.menu + items.reduce((a, it) => a + menuRowH(it), 0);
 function menuCard(c, o) {
-  const t = T(), { x, y, w } = o, pad = 6, rh = 30;
-  let total = pad * 2; o.items.forEach(it => total += it.type === 'section' ? 22 : it.type === 'sep' ? 9 : it.type === 'search' ? 34 : rh);
-  const h = o.h || total;
+  const t = T(), { x, y, w } = o, pad = PAD.menu, P = PAD.control, rh = BOX.row, iy = (rh - BOX.icon) / 2;
+  const h = o.h || menuHeight(o.items);
   c.group(o.id || 'MenuCard', () => {
     rect(c, x, y, w, h, { fill: t.bg });
     border(c, x, y, w, h, { stroke: t.accent, so: 1, sw: 2 });
     let cy = y + pad;
     o.items.forEach(it => {
-      if (it.type === 'search') { field(c, { x: x + pad, y: cy, w: w - pad * 2, icon: 'search', placeholder: it.label, state: 'prompt', value: it.value }); hairline(c, x + pad + 4, cy + 31, w - pad * 2 - 8); cy += 34; return; }
-      if (it.type === 'section') { sectionLabel(c, x + pad + 8, cy + 13, it.label); cy += 22; return; }
-      if (it.type === 'sep') { hairline(c, x + pad + 4, cy + 4, w - pad * 2 - 8); cy += 9; return; }
+      if (it.type === 'search') { field(c, { x: x + pad, y: cy, w: w - pad * 2, icon: 'search', placeholder: it.label, state: 'prompt', value: it.value }); hairline(c, x + pad + 4, cy + BOX.control + 4, w - pad * 2 - 8); cy += menuRowH(it); return; }
+      if (it.type === 'section') { sectionLabel(c, x + pad + P, cy + rh / 2, it.label); cy += rh; return; }
+      if (it.type === 'sep') { hairline(c, x + pad + 4, cy + 4, w - pad * 2 - 8); cy += menuRowH(it); return; }
       c.add(`<g id="${K.esc('MenuRow/' + (it.hover ? 'hover' : 'normal') + ' ' + it.label)}">`);
       if (it.hover) fillBox(c, x + pad, cy, w - pad * 2, rh, 0.08);
-      let ix = x + pad + 10;
-      if (it.icon) { icon(c, it.icon, ix, cy + 8, 14, { fill: it.hover ? t.accent : t.fg, opacity: it.disabled ? 0.45 : 1 }); ix += 22; }
+      let ix = x + pad + P;
+      if (it.icon) { icon(c, it.icon, ix, cy + iy, BOX.icon, { fill: it.hover ? t.accent : t.fg, opacity: it.disabled ? 0.45 : 1 }); ix += BOX.icon + GAP.icon; }
       text(c, ix, cy + rh / 2, it.label, { fill: it.hover ? t.accent : t.fg, opacity: it.disabled ? 0.45 : 1 });
-      if (it.hint) text(c, x + w - pad - 10 - (it.checked ? 20 : 0), cy + rh / 2, it.hint, { fill: t.dim, anchor: 'end', size: SIZE.small });
-      if (it.checked) icon(c, 'check', x + w - pad - 24, cy + 8, 14, { fill: t.accent });
+      if (it.hint) text(c, x + w - pad - P - (it.checked ? BOX.icon + GAP.icon : 0), cy + rh / 2, it.hint, { fill: t.dim, anchor: 'end', size: SIZE.small });
+      if (it.checked) icon(c, 'check', x + w - pad - P - BOX.icon, cy + iy, BOX.icon, { fill: t.accent });
       c.add('</g>');
       cy += rh;
     });
@@ -566,52 +696,66 @@ function menuCard(c, o) {
   return h;
 }
 
+// A dialog: 16 padding, the title on a 24 row with the close button 4 in from
+// the content edge, the subtitle on the 16 line under it.
 function dialogCard(c, o) {
-  const t = T(), { x, y, w, h } = o;
+  const t = T(), { x, y, w, h } = o, P = PAD.dialog;
   c.group(o.id || 'Dialog', () => {
     rect(c, x, y, w, h, { fill: t.bg });
     border(c, x, y, w, h, { stroke: t.accent, so: 1, sw: 2 });
-    text(c, x + 20, y + 30, o.title, { size: SIZE.heading, weight: 500 });
-    if (o.subtitle) text(c, x + 20, y + 52, o.subtitle, { fill: t.dim, size: SIZE.small });
-    button(c, { x: x + w - 20 - 24, y: y + 18, w: 24, h: 24, variant: 'ghost', icon: 'close', id: 'Close' });
+    text(c, x + P, y + P + BOX.row / 2, o.title, { size: SIZE.heading, weight: 500 });
+    if (o.subtitle) text(c, x + P, y + P + BOX.row + BOX.line / 2, o.subtitle, { fill: t.dim, size: SIZE.small });
+    button(c, { x: headerButtonX(x + P, w - 2 * P), y: y + P, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'close', id: 'Close' });
   });
 }
 
+// Merge dialog, top to bottom: title and subtitle, the branch pickers (36 px,
+// side by side or stacked), the verdict card, the option, Cancel · Merge.
+const PICKER = 36, VERDICT = 80;
+const DIALOG_HEAD = PAD.dialog + BOX.row + BOX.line + GAP.group;
+function mergeDialogHeight(narrow) {
+  const pickers = narrow ? BOX.line + GAP.caption + PICKER + GAP.item + BOX.control + GAP.item + PICKER : BOX.line + GAP.caption + PICKER;
+  return DIALOG_HEAD + pickers + GAP.group + VERDICT + GAP.group + BOX.check + GAP.group + BOX.control + PAD.dialog;
+}
 function mergeDialog(c, x, y, w, o = {}) {
-  const t = T(), h = o.h || 300, narrow = w < 520;
-  dialogCard(c, { x, y, w, h, title: 'Merge', subtitle: 'Worked out on the trees alone — nothing touches the working tree yet.', id: 'MergeDialog' });
-  let cy = y + 74; const px = 20;
-  const inner = w - px * 2;
+  const h = o.h || mergeDialogHeight(w < 520);
+  c.group('MergeDialog', () => mergeDialogContent(c, x, y, w, h));
+  return h;
+}
+function mergeDialogContent(c, x, y, w, h) {
+  const t = T(), narrow = w < 520, P = PAD.dialog;
+  dialogCard(c, { x, y, w, h, title: 'Merge', subtitle: 'Worked out on the trees alone — nothing touches the working tree yet.', id: 'MergeDialog/card' });
+  let cy = y + DIALOG_HEAD;
+  const inner = w - P * 2, picker = (px, py, pw, label, id) => button(c, { x: px, y: py, w: pw, h: PICKER, px: PAD.big, icon: 'branch', label, chevron: true, weight: 700, id });
   if (narrow) {
-    sectionLabel(c, x + px, cy, 'Merge'); cy += 14;
-    button(c, { x: x + px, y: cy, w: inner, h: 34, icon: 'branch', label: 'feature/askpass', chevron: true, weight: 700, id: 'BranchPicker/source' }); cy += 40;
-    button(c, { x: x + px, y: cy, w: 34, h: 28, variant: 'ghost', icon: 'swap', id: 'Swap' });
-    text(c, x + px + 44, cy + 14, 'INTO', { size: 10, weight: 700, fill: t.dim, ls: 0.8 }); cy += 34;
-    button(c, { x: x + px, y: cy, w: inner, h: 34, icon: 'branch', label: 'main', chevron: true, weight: 700, id: 'BranchPicker/target' }); cy += 46;
+    sectionLabel(c, x + P, cy + BOX.line / 2, 'Merge'); cy += BOX.line + GAP.caption;
+    picker(x + P, cy, inner, 'feature/askpass', 'BranchPicker/source'); cy += PICKER + GAP.item;
+    button(c, { x: x + P, y: cy, w: BOX.control, h: BOX.control, variant: 'ghost', icon: 'swap', id: 'Swap' });
+    text(c, x + P + BOX.control + GAP.item, cy + BOX.control / 2, 'INTO', { size: 10, weight: 700, fill: t.dim, ls: 0.8 }); cy += BOX.control + GAP.item;
+    picker(x + P, cy, inner, 'main', 'BranchPicker/target'); cy += PICKER + GAP.group;
   } else {
-    const pw = Math.floor((inner - 46) / 2);
-    sectionLabel(c, x + px, cy, 'Merge'); sectionLabel(c, x + px + pw + 46, cy, 'Into'); cy += 14;
-    button(c, { x: x + px, y: cy, w: pw, h: 34, icon: 'branch', label: 'feature/askpass', chevron: true, weight: 700, id: 'BranchPicker/source' });
-    button(c, { x: x + px + pw + 6, y: cy, w: 34, h: 34, icon: 'swap', id: 'Swap' });
-    button(c, { x: x + px + pw + 46, y: cy, w: pw, h: 34, icon: 'branch', label: 'main', chevron: true, weight: 700, id: 'BranchPicker/target' });
-    cy += 46;
+    const pw = Math.floor((inner - PICKER - 2 * GAP.item) / 2), tx = x + P + pw + GAP.item + PICKER + GAP.item;
+    sectionLabel(c, x + P, cy + BOX.line / 2, 'Merge'); sectionLabel(c, tx, cy + BOX.line / 2, 'Into'); cy += BOX.line + GAP.caption;
+    picker(x + P, cy, pw, 'feature/askpass', 'BranchPicker/source');
+    button(c, { x: x + P + pw + GAP.item, y: cy, w: PICKER, h: PICKER, icon: 'swap', id: 'Swap' });
+    picker(tx, cy, x + P + inner - tx, 'main', 'BranchPicker/target');
+    cy += PICKER + GAP.group;
   }
-  // verdict card
-  const vh = narrow ? 96 : 84;
+  // verdict card: 12 padding, the icon's 16 box then 8, a title line and two 16 lines 8 under it
+  const cp = PAD.popover, tx = x + P + cp + BOX.icon + GAP.item;
   c.group('VerdictCard', () => {
-    fillBox(c, x + px, cy, inner, vh, 0.04); border(c, x + px, cy, inner, vh, { stroke: t.fg, so: 0.4 });
-    icon(c, 'checkCircle', x + px + 12, cy + 12, 16, { fill: t.green });
-    text(c, x + px + 36, cy + 20, 'Clean merge — no conflicts.', { weight: 700, fill: t.green });
-    text(c, x + px + 36, cy + 40, narrow ? '2 commits · 3 files' : 'Creates a merge commit bringing 2 commits and 3 changed files into main.', { fill: t.dim, size: SIZE.small });
-    if (narrow) text(c, x + px + 36, cy + 56, '+41 −7 lines', { fill: t.dim, size: SIZE.small });
-    else text(c, x + px + 36, cy + 58, '+41 −7 lines', { fill: t.dim, size: SIZE.small });
+    fillBox(c, x + P, cy, inner, VERDICT, 0.04); border(c, x + P, cy, inner, VERDICT, { stroke: t.fg, so: 0.4 });
+    icon(c, 'checkCircle', x + P + cp, cy + cp, BOX.icon, { fill: t.green });
+    text(c, tx, cy + cp + BOX.line / 2, 'Clean merge — no conflicts.', { weight: 700, fill: t.green });
+    text(c, tx, cy + cp + BOX.line + GAP.item + BOX.line / 2, narrow ? '2 commits · 3 files' : 'Creates a merge commit bringing 2 commits and 3 changed files into main.', { fill: t.dim, size: SIZE.small });
+    text(c, tx, cy + cp + 2 * BOX.line + GAP.item + BOX.line / 2, '+41 −7 lines', { fill: t.dim, size: SIZE.small });
   });
-  cy += vh + 14;
-  checkbox(c, { x: x + px, y: cy, checked: false, label: 'Always create a merge commit' }); cy += 30;
-  const by = y + h - 20 - 28;
-  const mw = measureButton({ icon: 'merge', label: 'Merge', px: 16 });
-  button(c, { x: x + w - px - mw, y: by, icon: 'merge', label: 'Merge', variant: 'primary', px: 16, id: 'MergeButton' });
-  button(c, { x: x + w - px - mw - 8 - measureButton({ label: 'Cancel' }), y: by, label: 'Cancel', id: 'Cancel' });
+  cy += VERDICT + GAP.group;
+  checkbox(c, { x: x + P, y: cy, checked: false, label: 'Always create a merge commit' });
+  const by = y + h - P - BOX.control;
+  const mw = measureButton({ icon: 'merge', label: 'Merge', px: PAD.primary });
+  button(c, { x: x + w - P - mw, y: by, icon: 'merge', label: 'Merge', variant: 'primary', px: PAD.primary, id: 'MergeButton' });
+  button(c, { x: x + w - P - mw - GAP.item - measureButton({ label: 'Cancel' }), y: by, label: 'Cancel', id: 'Cancel' });
 }
 
 // The cog's popover: which agent writes the commit message, with which model
@@ -624,189 +768,215 @@ const AGENTS = {
   codex: { name: 'Codex', bin: 'codex', models: [['', 'Default', 'whatever codex uses'], ['gpt-6-astra', 'GPT-6 Astra', 'gpt-6-astra'], ['gpt-5.5', 'GPT-5.5', 'gpt-5.5'], ['gpt-5.5-mini', 'GPT-5.5 mini', 'gpt-5.5-mini']],
     levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], modelFlag: '-m', effortFlag: '-c model_reasoning_effort=' },
 };
+// The popover's height, from a dry run of its layout.
+function agentPopoverHeight(agent = 'claude') { return agentPopover(new K.Canvas('measure', 1, 1), { x: 0, y: 0, w: 360, agent }); }
+// 12 padding; captions on 16 lines 4 over their content, sections 16 apart;
+// model rows 24; the level track 40; a hairline 12 above Generate now.
 function agentPopover(c, o) {
-  const t = T(), { x, y, w } = o, pad = 10, inner = w - pad * 2, rh = 28;
+  const t = T(), { x, y, w } = o, P = PAD.popover, inner = w - 2 * P, rh = BOX.row, L = BOX.line;
   const agent = o.agent || 'claude', A = AGENTS[agent], model = o.model ?? 'opus', effort = o.effort ?? 'high';
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const levels = A ? ['', ...A.levels] : [];
-  // height: sections + rows + track + footer
-  const modelRows = A ? A.models.length : 0;
-  const h = A ? pad + 22 + 28 + 16 + 22 + modelRows * rh + 6 + 28 + 16 + 22 + 44 + 12 + 1 + 12 + 28 + pad : 184;
-  c.group(o.id || 'AgentPopover', () => {
-    rect(c, x, y, w, h, { fill: t.bg }); border(c, x, y, w, h, { stroke: t.accent, so: 1, sw: 2 });
-    let cy = y + pad;
-    if (!A) { // nothing installed: say what is missing and how to get it, copyable
-      icon(c, 'robot', x + pad + 2, cy + 2, 20, { fill: t.dim });
-      text(c, x + pad + 32, cy + 12, 'No coding agent installed', { weight: 700 });
-      text(c, x + pad + 32, cy + 30, 'Claude Code or Codex writes it for you.', { fill: t.dim, size: SIZE.small });
-      cy += 52;
-      sectionLabel(c, x + pad, cy + 6, 'Install one'); cy += 20;
-      const cmds = ['omarchy default agent claude', 'omarchy default agent codex'];
-      cmds.forEach(cmd => {
-        c.group('CommandRow ' + cmd, () => {
-          fillBox(c, x + pad, cy, inner, 30, 0.04); border(c, x + pad, cy, inner, 30, { stroke: t.fg, so: 0.25 });
-          text(c, x + pad + 10, cy + 15, '$ ' + cmd, { fill: t.fg });
-          button(c, { x: x + w - pad - 3 - 24, y: cy + 3, w: 24, h: 24, variant: 'ghost', icon: 'copy', id: 'Copy' });
-        });
-        cy += 36;
+  c.add(`<g id="${K.esc(o.id || 'AgentPopover')}">`);
+  const bgAt = c.parts.length;
+  let cy = y + P;
+  const caption = (label, right) => {
+    sectionLabel(c, x + P, cy + L / 2, label);
+    if (right) dimText(c, x + w - P, cy + L / 2, right, { anchor: 'end', size: SIZE.caption });
+    cy += L + GAP.caption;
+  };
+  if (!A) { // nothing installed: say what is missing and how to get it, copyable
+    icon(c, 'robot', x + P, cy + GAP.caption, 24, { fill: t.dim });
+    text(c, x + P + 24 + GAP.item, cy + L / 2, 'No coding agent installed', { weight: 700 });
+    text(c, x + P + 24 + GAP.item, cy + L + GAP.caption + L / 2, 'Claude Code or Codex writes it for you.', { fill: t.dim, size: SIZE.small });
+    cy += 2 * L + GAP.caption + GAP.group;
+    caption('Install one');
+    ['omarchy default agent claude', 'omarchy default agent codex'].forEach((cmd, i) => {
+      if (i) cy += GAP.item;
+      c.group('CommandRow ' + cmd, () => {
+        fillBox(c, x + P, cy, inner, BOX.control, 0.04); border(c, x + P, cy, inner, BOX.control, { stroke: t.fg, so: 0.25 });
+        text(c, x + P + PAD.control, cy + BOX.control / 2, '$ ' + cmd, { fill: t.fg });
+        button(c, { x: x + w - P - GAP.icon - BOX.row, y: cy + (BOX.control - BOX.row) / 2, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'copy', id: 'Copy' });
       });
-      text(c, x + pad, cy + 10, 'Reopen this menu once one is installed.', { fill: t.dim, size: SIZE.small });
-      return;
-    }
+      cy += BOX.control;
+    });
+    cy += GAP.item;
+    text(c, x + P, cy + L / 2, 'Reopen this menu once one is installed.', { fill: t.dim, size: SIZE.small });
+    cy += L;
+  } else {
     // AGENT: only installed ones, the Omarchy default named
-    sectionLabel(c, x + pad, cy + 6, 'Agent');
-    dimText(c, x + w - pad, cy + 6, 'claude is the Omarchy default', { anchor: 'end', size: SIZE.caption });
-    cy += 22;
-    segmented(c, { x: x + pad, y: cy, w: inner, stretch: true, id: 'AgentPicker', items: [
+    caption('Agent', 'claude is the Omarchy default');
+    segmented(c, { x: x + P, y: cy, w: inner, stretch: true, id: 'AgentPicker', items: [
       { icon: 'robot', label: 'Claude Code', selected: agent === 'claude' }, { icon: 'robot', label: 'Codex', selected: agent === 'codex' }] });
-    cy += 28 + 16;
+    cy += BOX.control + GAP.group;
     // MODEL: the names the CLI uses, the exact id at the right, tick on the chosen one
-    sectionLabel(c, x + pad, cy + 6, 'Model');
-    dimText(c, x + w - pad, cy + 6, 'from ' + (agent === 'claude' ? 'claude --help' : 'codex debug models'), { anchor: 'end', size: SIZE.caption });
-    cy += 22;
+    caption('Model', 'from ' + (agent === 'claude' ? 'claude --help' : 'codex debug models'));
     A.models.forEach(([id, name, detail], i) => {
       const sel = id === model, hover = o.hover !== undefined ? o.hover === i : false;
       c.group('ModelRow/' + (sel ? 'selected' : hover ? 'hover' : 'normal') + ' ' + name, () => {
-        if (hover) fillBox(c, x + pad, cy, inner, rh, 0.08);
-        text(c, x + pad + 10, cy + rh / 2, name, { fill: sel || hover ? t.accent : t.fg, weight: sel ? 700 : 400 });
-        text(c, x + w - pad - 30, cy + rh / 2, detail, { fill: t.dim, size: SIZE.small, anchor: 'end' });
-        if (sel) icon(c, 'check', x + w - pad - 24, cy + 7, 14, { fill: t.accent });
+        if (hover) fillBox(c, x + P, cy, inner, rh, 0.08);
+        text(c, x + P + PAD.control, cy + rh / 2, name, { fill: sel || hover ? t.accent : t.fg, weight: sel ? 700 : 400 });
+        text(c, x + w - P - PAD.control - BOX.icon - GAP.icon, cy + rh / 2, detail, { fill: t.dim, size: SIZE.small, anchor: 'end' });
+        if (sel) icon(c, 'check', x + w - P - PAD.control - BOX.icon, cy + (rh - BOX.icon) / 2, BOX.icon, { fill: t.accent });
       });
       cy += rh;
     });
-    cy += 6;
+    cy += GAP.cluster;
     // a custom model name is the exception: a text button, the field only once asked for
-    if (o.otherOpen) field(c, { x: x + pad, y: cy, w: inner, state: 'focus', value: o.otherValue || '', placeholder: 'Model name, as ' + A.bin + ' ' + A.modelFlag + ' takes it', id: 'OtherModel' });
-    else button(c, { x: x + pad, y: cy, variant: 'ghost', label: 'Other model…', id: 'OtherModelButton' });
-    cy += 28 + 16;
-    // REASONING: an ordered scale, so a track with stops instead of a list
-    sectionLabel(c, x + pad, cy + 6, 'Reasoning');
-    dimText(c, x + w - pad, cy + 6, 'more thinking, slower answer', { anchor: 'end', size: SIZE.caption });
-    cy += 22;
+    if (o.otherOpen) field(c, { x: x + P, y: cy, w: inner, state: 'focus', value: o.otherValue || '', placeholder: 'Model name, as ' + A.bin + ' ' + A.modelFlag + ' takes it', id: 'OtherModel' });
+    else button(c, { x: x + P, y: cy, variant: 'ghost', label: 'Other model…', id: 'OtherModelButton' });
+    cy += BOX.control + GAP.group;
+    // REASONING: an ordered scale, so a track with stops instead of a list (40: stops 12 down, labels 20 under them)
+    caption('Reasoning', 'more thinking, slower answer');
     c.group('LevelTrack', () => {
-      const n = levels.length, step = (inner - 56) / (n - 1), tx = x + pad + 28, ty = cy + 12;
+      const n = levels.length, inset = 24, span = inner - 2 * inset, step = span / (n - 1), tx = x + P + inset, ty = cy + 12;
       const si = Math.max(0, levels.indexOf(effort));
-      hairline(c, tx, ty, inner - 56, { fo: 0.3 });
+      hairline(c, tx, ty, span, { fo: 0.3 });
       if (si > 0) rect(c, tx, ty - 0.5, step * si, 2, { fill: t.accent, fo: 0.7 });
       levels.forEach((lv, i) => {
         const cx = tx + step * i, sel = i === si;
         c.group('Stop/' + (sel ? 'selected' : 'normal') + ' ' + (lv || 'default'), () => {
           if (sel) { circle(c, cx, ty, 7, { fill: t.accent, fo: 0.25 }); circle(c, cx, ty, 4.5, { fill: t.accent }); }
           else { circle(c, cx, ty, 4, { fill: t.bg }); circle(c, cx, ty, 4, { fill: 'none', stroke: t.fg, so: i < si ? 0.9 : 0.5, sw: 1.5 }); }
-          text(c, cx, ty + 22, lv ? cap(lv) : 'Default', { size: SIZE.caption, weight: sel ? 700 : 400, fill: sel ? t.accent : t.dim, anchor: 'middle' });
+          text(c, cx, ty + 20, lv ? cap(lv) : 'Default', { size: SIZE.caption, weight: sel ? 700 : 400, fill: sel ? t.accent : t.dim, anchor: 'middle' });
         });
       });
     });
-    cy += 44 + 12;
-    hairline(c, x + pad, cy, inner, { fo: 0.15 }); cy += 12;
-    button(c, { x: x + pad, y: cy, w: inner, icon: 'sparkle', label: 'Generate now  Ctrl+G', variant: 'primary', px: 12, id: 'GenerateNow' });
-  });
+    cy += 40 + SEP;
+    hairline(c, x + P, cy, inner, { fo: 0.15 }); cy += SEP;
+    button(c, { x: x + P, y: cy, w: inner, icon: 'sparkle', label: 'Generate now  Ctrl+G', variant: 'primary', px: PAD.primary, id: 'GenerateNow' });
+    cy += BOX.control;
+  }
+  const h = cy + P - y;
+  c.insertAt(bgAt, () => { rect(c, x, y, w, h, { fill: t.bg }); border(c, x, y, w, h, { stroke: t.accent, so: 1, sw: 2 }); });
+  c.add('</g>');
   return h;
 }
 
+// The keys panel: 16 padding, the title on a 24 row, 40 px rows 4 apart.
 function keybindingsPanel(c, x, y, w, h) {
-  const t = T();
+  const t = T(), P = PAD.dialog, rh = 40;
   c.group('KeybindingsPanel', () => {
     rect(c, x, y, w, h, { fill: t.bg }); border(c, x, y, w, h, { stroke: t.accent, so: 1, sw: 2 });
-    text(c, x + 18, y + 18 + 12, 'Omagit keybindings…', { size: SIZE.title, fill: t.dim });
-    let cy = y + 18 + 34 + 6;
+    text(c, x + P, y + P + BOX.row / 2, 'Omagit keybindings…', { size: SIZE.title, fill: t.dim });
+    let cy = y + P + BOX.row + GAP.group;
     const rows = [['CTRL + K', 'Keybindings', true], ['CTRL + 1', 'Changes'], ['CTRL + 2', 'History'], ['CTRL + 3', 'Diff'], ['CTRL + ENTER', 'Commit'], ['CTRL + G', 'Generate message'], ['CTRL + P', 'Pull'], ['CTRL SHIFT + P', 'Push'], ['CTRL + F', 'Fetch'], ['CTRL SHIFT + M', 'Merge']];
-    const rh = 40;
+    const kx = x + P + 16, chx = kx + 152, vx = chx + BOX.icon + GAP.icon;
     rows.forEach(([k, v, hot]) => {
-      if (cy + rh > y + h - 18) return;
-      if (hot) fillBox(c, x + 18, cy, w - 36, rh, 0.08);
-      text(c, x + 18 + 14, cy + rh / 2, k, { size: SIZE.subtitle, weight: 500, fill: hot ? t.accent : t.fg });
-      icon(c, 'chevronR', x + 18 + 14 + 150, cy + rh / 2 - 7, 14, { fill: t.dim });
-      text(c, x + 18 + 14 + 170, cy + rh / 2, v, { size: SIZE.subtitle, weight: 500, fill: hot ? t.accent : t.fg });
-      cy += rh + 2;
+      if (cy + rh > y + h - P) return;
+      if (hot) fillBox(c, x + P, cy, w - 2 * P, rh, 0.08);
+      text(c, kx, cy + rh / 2, k, { size: SIZE.subtitle, weight: 500, fill: hot ? t.accent : t.fg });
+      icon(c, 'chevronR', chx, cy + (rh - BOX.icon) / 2, BOX.icon, { fill: t.dim });
+      text(c, vx, cy + rh / 2, v, { size: SIZE.subtitle, weight: 500, fill: hot ? t.accent : t.fg });
+      cy += rh + GAP.cluster;
     });
   });
 }
 
 // ------------------------------------------------------------ screen composer
+// The body stands BAR under the top bar's hairline and BAR over the footer's
+// (the side margin over the window's edge when shallow), a side margin in from
+// either edge; panes stand a margin apart.
 function screen(o) {
-  const { W, H } = o; const lv = o.level || levelFor(W); const shallow = H < 560;
+  const { W, H } = o; const lv = o.level || levelFor(W); const shallow = H < SHALLOW;
+  const d = density(W, H), m = d.margin;
   const c = new K.Canvas(o.id, W, H); const t = T();
   rect(c, 0, 0, W, H, { fill: t.bg, id: 'window' });
-  const top = topBar(c, W, lv, o);
-  const footH = shallow ? 0 : footer(c, W, H, lv, o);
-  const m = 12, bodyY = top + 10, bodyH = H - bodyY - footH - 10;
-  const page = o.page || 'changes';
+  const top = topBar(c, W, lv, { ...o, d });
+  const footH = shallow ? 0 : footer(c, W, H, lv, { ...o, d });
+  const bodyY = top + BAR, bodyH = (shallow ? H - m : H - footH - BAR) - bodyY;
+  const page = o.page || 'changes', po = { ...o, shallow, d };
   if (stacked(lv)) {
     const nx = m, nw = W - m * 2;
-    const py = bodyY, ph = bodyH;
-    if (page === 'changes') changesPage(c, nx, py, nw, ph, lv, { ...o, shallow });
-    else if (page === 'history') historyPage(c, nx, py, nw, ph, lv, { ...o, shallow });
+    if (page === 'changes') changesPage(c, nx, bodyY, nw, bodyH, lv, po);
+    else if (page === 'history') historyPage(c, nx, bodyY, nw, bodyH, lv, po);
     else { // diff tab: rail + diff
-      const rw = miniRail(c, nx, py, ph);
-      diffPane(c, nx + rw + 10, py, nw - rw - 10, ph, lv, { split: false });
+      const rw = miniRail(c, nx, bodyY, bodyH);
+      diffPane(c, nx + rw + m, bodyY, nw - rw - m, bodyH, lv, { split: false });
     }
   } else {
     const leftW = o.leftW || (lv === 'xl' ? 560 : lv === 'l' ? 400 : 340);
     if (o.mini) {
       const rw = miniRail(c, m, bodyY, bodyH);
-      diffPane(c, m + rw + 12, bodyY, W - m * 2 - rw - 12, bodyH, lv, o);
+      diffPane(c, m + rw + m, bodyY, W - m * 3 - rw, bodyH, lv, o);
     } else if (o.diffHidden) {
-      if (page === 'changes') changesPage(c, m, bodyY, W - m * 2, bodyH, lv, { ...o, shallow });
-      else historyPage(c, m, bodyY, W - m * 2, bodyH, lv, { ...o, shallow });
+      if (page === 'changes') changesPage(c, m, bodyY, W - m * 2, bodyH, lv, po);
+      else historyPage(c, m, bodyY, W - m * 2, bodyH, lv, po);
     } else {
-      if (page === 'changes') changesPage(c, m, bodyY, leftW, bodyH, lv, { ...o, shallow });
-      else historyPage(c, m, bodyY, leftW, bodyH, lv, { ...o, shallow });
-      // splitter handle
-      rect(c, m + leftW + 5, bodyY + bodyH / 2 - 16, 2, 32, { fill: t.fg, fo: 0.2, id: 'SplitterHandle' });
-      diffPane(c, m + leftW + 12, bodyY, W - m * 2 - leftW - 12, bodyH, lv, o);
+      if (page === 'changes') changesPage(c, m, bodyY, leftW, bodyH, lv, po);
+      else historyPage(c, m, bodyY, leftW, bodyH, lv, po);
+      // splitter handle, centred in the pane gap
+      rect(c, m + leftW + (m - 2) / 2, bodyY + bodyH / 2 - 16, 2, 32, { fill: t.fg, fo: 0.2, id: 'SplitterHandle' });
+      diffPane(c, m + leftW + m, bodyY, W - m * 3 - leftW, bodyH, lv, o);
     }
   }
-  // overlays
+  // overlays: menus hang 4 under the top bar and clamp to the window's margins
+  const menuY = TOP_BAR + GAP.cluster, clampW = dw => Math.min(dw, W - 2 * m);
   if (o.overlay === 'branch') {
-    const bx = 12 + measureButton({ icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv) }) + 4, by = 40 + 4;
-    menuCard(c, { x: bx, y: by, w: Math.min(300, W - 24), id: 'BranchMenu', items: [
+    const bx = m + measureButton({ icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv) }) + GAP.cluster;
+    menuCard(c, { x: bx, y: menuY, w: Math.min(300, W - m - bx), id: 'BranchMenu', items: [
       { type: 'search', label: 'Search branches…' }, { type: 'section', label: 'Local' },
       { label: 'main', icon: 'branch', checked: true }, { label: 'feature/askpass', icon: 'branch', hover: true, hint: '2 days ago' }, { label: 'feature/tiling', icon: 'branch', hint: 'today' },
       { type: 'section', label: 'Remote' }, { label: 'origin/main', icon: 'cloud' }, { label: 'origin/feature/askpass', icon: 'cloud' }] });
   }
   if (o.overlay === 'repo') {
-    menuCard(c, { x: 12, y: 44, w: 300, id: 'RepoMenu', items: [
+    menuCard(c, { x: m, y: menuY, w: clampW(300), id: 'RepoMenu', items: [
       { type: 'search', label: 'Search repositories…' }, { type: 'section', label: 'Recent' },
       { label: 'omagit', icon: 'folder', checked: true, hint: '~/Projects' }, { label: 'feelinmyskin-mobile', icon: 'folder', hint: '~/Projects' }, { label: 'dotfiles', icon: 'folder', hint: '~' },
       { type: 'sep' }, { label: 'Open…', icon: 'folderOpen', hint: 'Ctrl+O' }, { label: 'Clone…', icon: 'fetch', hint: 'Ctrl+Shift+O' }] });
   }
   if (o.overlay === 'sync') {
-    menuCard(c, { x: W - 12 - 260, y: 44, w: 260, id: 'SyncMenu', items: [
+    menuCard(c, { x: W - m - clampW(260), y: menuY, w: clampW(260), id: 'SyncMenu', items: [
       { label: 'Pull', icon: 'pull', hint: '2 behind · Ctrl+P', hover: true }, { label: 'Push', icon: 'push', hint: '1 ahead · Ctrl+Shift+P' }, { label: 'Fetch', icon: 'fetch', hint: 'Ctrl+F' },
       { type: 'sep' }, { label: 'Merge…', icon: 'merge', hint: 'Ctrl+Shift+M' }] });
   }
   if (o.overlay === 'more') {
-    menuCard(c, { x: W - 12 - 240, y: 44, w: 240, id: 'MoreMenu', items: [
+    menuCard(c, { x: W - m - clampW(240), y: menuY, w: clampW(240), id: 'MoreMenu', items: [
       { label: 'Fetch', icon: 'fetch', hint: 'Ctrl+F' }, { label: 'Merge…', icon: 'merge', hint: 'Ctrl+Shift+M' }, { type: 'sep' },
       { label: 'Refresh', icon: 'refresh', hint: 'F5' }, { label: 'Open repository…', icon: 'folderOpen', hint: 'Ctrl+O' }, { label: 'Clone…', icon: 'fetch' }, { type: 'sep' },
       { label: 'Keybindings', icon: 'keyboard', hint: 'Ctrl+K' }] });
   }
-  if (o.overlay === 'options') {
-    menuCard(c, { x: 12, y: H - 28 - 12 - 44 - 150, w: 240, id: 'OptionsMenu', items: [
-      { label: 'Select all', icon: 'check', hint: 'Ctrl+Shift+Space' }, { label: 'Show unversioned files', icon: 'checkCircle', checked: true }, { label: 'Amend last commit', icon: 'undo', hint: 'Ctrl+Shift+A' }, { type: 'sep' }, { label: 'Generate message', icon: 'sparkle', hint: 'Ctrl+G' }] });
+  if (o.overlay === 'options') { // opens upwards from the Options button, 4 over it
+    const opt = c.rec.find(r => r.id === 'Options');
+    const items = [{ label: 'Select all', icon: 'check', hint: 'Ctrl+Shift+Space' }, { label: 'Show unversioned files', icon: 'checkCircle', checked: true }, { label: 'Amend last commit', icon: 'undo', hint: 'Ctrl+Shift+A' }, { type: 'sep' }, { label: 'Generate message', icon: 'sparkle', hint: 'Ctrl+G' }];
+    menuCard(c, { x: opt.x, y: opt.y - GAP.cluster - menuHeight(items), w: clampW(240), id: 'OptionsMenu', items });
   }
   if (o.overlay === 'merge') {
-    const dw = Math.min(640, W - 24), dh = dw < 520 ? 384 : 300;
+    const dw = clampW(640), dh = mergeDialogHeight(dw < 520);
     fillBox(c, 0, 0, W, H, 0.5, { fill: t.bg, id: 'Scrim' });
     mergeDialog(c, Math.round((W - dw) / 2), Math.round((H - dh) / 2), dw, { h: dh });
   }
   if (o.overlay === 'keys') {
-    const kw = Math.min(800, W - 24), kh = Math.min(500, H - 24);
+    const kw = clampW(800), kh = Math.min(500, H - 2 * m);
     fillBox(c, 0, 0, W, H, 0.5, { fill: t.bg, id: 'Scrim' });
     keybindingsPanel(c, Math.round((W - kw) / 2), Math.round((H - kh) / 2), kw, kh);
   }
   if (o.overlay === 'commit') {
     const tile = c.anchors.CommitTile;
-    const pw = Math.min(360, W - 24 - tile.w - 8);
-    commitPopover(c, { x: tile.x + tile.w + 8, bottom: tile.y + tile.h, w: pw, message: o.message, messageBody: o.messageBody, amend: o.amend });
+    const pw = Math.min(360, W - 2 * m - tile.w - GAP.item);
+    commitPopover(c, { x: tile.x + tile.w + GAP.item, bottom: tile.y + tile.h, w: pw, message: o.message, messageBody: o.messageBody, amend: o.amend });
   }
   if (o.overlay === 'agent') {
     const cog = c.rec.find(r => r.id === 'AgentSettings');
-    const pw = Math.min(360, W - 24);
-    agentPopover(c, { x: Math.max(12, cog.x + cog.w - pw), y: cog.y + cog.h + 6, w: pw, ...(o.agent || {}) });
+    const pw = clampW(360), ph = agentPopoverHeight((o.agent || {}).agent);
+    // under the cog where the window has room for it, over it where it has
+    // not (the commit page's cog stands low, over the message box), and
+    // otherwise moved up to fit; right-aligned with the column the cog stands in
+    const under = cog.y + cog.h + GAP.cluster, over = cog.y - GAP.cluster - ph, bottom = H - m;
+    const py = under + ph <= bottom ? under : over >= m ? over : Math.max(m, bottom - ph);
+    agentPopover(c, { x: Math.max(m, cog.x + cog.w + GAP.icon - pw), y: py, w: pw, ...(o.agent || {}) });
+  }
+  if (o.overlay === 'searchOptions') { // proposal D: 4 under the filter field, right-aligned with it
+    const opt = c.rec.find(r => r.id === 'SearchOptions');
+    const fieldRight = opt.x + opt.w + GAP.icon + BOX.icon + PAD.control, fieldBottom = opt.y + opt.h + (BOX.control - BOX.row) / 2;
+    const mw = clampW(280);
+    menuCard(c, { x: Math.max(m, fieldRight - mw), y: fieldBottom + GAP.cluster, w: mw, id: 'SearchOptionsMenu', items: [
+      { type: 'section', label: 'Search in' },
+      { label: 'Message', checked: true }, { label: 'Author and e-mail', checked: true }, { label: 'SHA', checked: true },
+      { type: 'sep' }, { type: 'section', label: 'Matches' },
+      { label: 'First 10,000', checked: true, hint: 'fast' }, { label: 'All', hint: 'slower in huge repos', hover: true }] });
   }
   return c;
 }
 
-module.exports = { screen, agentPopover, commitPopover, levelFor, topBar, changesPage, changesTable, actionBar, historyPage, commitsTable, commitDetails, diffPane, miniRail, footer, menuCard, dialogCard, mergeDialog, keybindingsPanel, FILES, COMMITS, DIFF, tokens };
+module.exports = { screen, density, agentPopover, commitPopover, levelFor, topBar, syncDropdown, changesPage, changesTable, actionBar, historyPage, commitsTable, commitDetails, diffPane, miniRail, footer, menuCard, menuHeight, dialogCard, mergeDialog, mergeDialogHeight, keybindingsPanel, FILES, COMMITS, DIFF, tokens, TOP_BAR, SHALLOW, TALL };

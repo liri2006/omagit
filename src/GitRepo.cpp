@@ -11,6 +11,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <memory>
 
 // The whole file as context, so the diff viewer can show it like
 // a classic one-pane diff view.
@@ -225,8 +226,8 @@ QByteArray GitRepo::run(const QStringList &args, int *exitCode, QByteArray *err,
     return r.out;
 }
 
-QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs,
-                            const QStringList &env)
+QProcess *GitRepo::startAsync(const QStringList &args, int timeoutMs, const QStringList &env,
+                              const std::function<void(QProcess *)> &listen, const QByteArray &input)
 {
     // Parented here, not to the context: a context that dies first (the merge
     // view closed with Escape) must not take a running git down with it. The
@@ -245,24 +246,38 @@ QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback 
         if (error == QProcess::FailedToStart)
             p->deleteLater();
     });
-    connect(p, &QProcess::finished, context, [p, done](int code, QProcess::ExitStatus status) {
-        const QByteArray out = p->readAllStandardOutput();
-        QByteArray err = p->readAllStandardError();
-        if (status != QProcess::NormalExit) {
-            code = -1;
-            if (err.trimmed().isEmpty())
-                err = "git did not finish (killed after the timeout)";
-        }
-        done(code, out, err);
-    });
-    connect(p, &QProcess::errorOccurred, context, [done](QProcess::ProcessError error) {
-        if (error != QProcess::FailedToStart)
-            return; // every other error is followed by finished()
-        done(-1, QByteArray(), "could not start git");
-    });
+    listen(p);
     p->start(gitExecutable(), fullArgs(args));
+    // QProcess holds what is written before git is up and hands it over,
+    // closing the channel after it.
+    if (!input.isNull() && p->state() != QProcess::NotRunning) {
+        p->write(input);
+        p->closeWriteChannel();
+    }
     timeout->start();
     return p;
+}
+
+QProcess *GitRepo::runAsync(const QStringList &args, QObject *context, Callback done, int timeoutMs,
+                            const QStringList &env)
+{
+    return startAsync(args, timeoutMs, env, [context, done](QProcess *p) {
+        connect(p, &QProcess::finished, context, [p, done](int code, QProcess::ExitStatus status) {
+            const QByteArray out = p->readAllStandardOutput();
+            QByteArray err = p->readAllStandardError();
+            if (status != QProcess::NormalExit) {
+                code = -1;
+                if (err.trimmed().isEmpty())
+                    err = "git did not finish (killed after the timeout)";
+            }
+            done(code, out, err);
+        });
+        connect(p, &QProcess::errorOccurred, context, [done](QProcess::ProcessError error) {
+            if (error != QProcess::FailedToStart)
+                return; // every other error is followed by finished()
+            done(-1, QByteArray(), "could not start git");
+        });
+    });
 }
 
 void GitRepo::holdTimeout(QProcess *process)
@@ -1288,38 +1303,151 @@ QStringList GitRepo::remoteBranchesContainingHead() const
 // ---------------------------------------------------------------------------
 // History
 
+// The history, one NUL-ended record per commit with its fields apart by 0x1f;
+// log() adds the scope (HEAD, or every ref) and the page it wants,
+// logStream() the commits it starts from and those it skips.
+static QStringList logArgs()
+{
+    return {QStringLiteral("log"), QStringLiteral("-z"), QStringLiteral("--date-order"),
+            QStringLiteral("--format=%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b")};
+}
+
+// One record of logArgs()' format; false for anything that is not one.
+static bool parseLogRecord(QByteArrayView record, Commit *commit)
+{
+    if (record.isEmpty())
+        return false;
+    const QList<QByteArray> f = record.toByteArray().split('\x1f');
+    if (f.size() < 7)
+        return false;
+    Commit &c = *commit;
+    c.hash = QString::fromUtf8(f[0]);
+    c.shortHash = QString::fromUtf8(f[1]);
+    c.parents = QString::fromUtf8(f[2]).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    c.author = QString::fromUtf8(f[3]);
+    c.email = QString::fromUtf8(f[4]);
+    c.date = QDateTime::fromString(QString::fromUtf8(f[5]), Qt::ISODate);
+    c.subject = QString::fromUtf8(f[6]);
+    if (f.size() > 7)
+        c.body = QString::fromUtf8(f[7]).trimmed();
+    return true;
+}
+
+QList<Commit> LogStreamParser::feed(const QByteArray &chunk)
+{
+    m_tail += chunk;
+    QList<Commit> commits;
+    qsizetype start = 0;
+    for (qsizetype nul; (nul = m_tail.indexOf('\0', start)) >= 0; start = nul + 1) {
+        Commit c;
+        if (parseLogRecord(QByteArrayView(m_tail).sliced(start, nul - start), &c))
+            commits.append(c);
+    }
+    m_tail.remove(0, start);
+    return commits;
+}
+
+QList<Commit> LogStreamParser::finish()
+{
+    QList<Commit> commits;
+    Commit c;
+    if (parseLogRecord(m_tail, &c))
+        commits.append(c);
+    m_tail.clear();
+    return commits;
+}
+
 QList<Commit> GitRepo::log(int skip, int count, bool allRefs, bool *ok) const
 {
-    QStringList args{QStringLiteral("log"), QStringLiteral("-z"), QStringLiteral("--date-order"),
-                     QStringLiteral("--format=%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b"),
-                     QStringLiteral("--max-count=%1").arg(count), QStringLiteral("--skip=%1").arg(skip)};
+    QStringList args = logArgs();
     if (allRefs)
         args << QStringLiteral("--all");
+    args << QStringLiteral("--max-count=%1").arg(count) << QStringLiteral("--skip=%1").arg(skip);
     const GitResult r = exec(args, kHistoryTimeoutMs);
     if (ok)
         *ok = r.ok();
-    QList<Commit> commits;
     if (!r.ok())
-        return commits;
-    for (const QByteArray &record : r.out.split('\0')) {
-        if (record.isEmpty())
-            continue;
-        const QList<QByteArray> f = record.split('\x1f');
-        if (f.size() < 7)
-            continue;
-        Commit c;
-        c.hash = QString::fromUtf8(f[0]);
-        c.shortHash = QString::fromUtf8(f[1]);
-        c.parents = QString::fromUtf8(f[2]).split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        c.author = QString::fromUtf8(f[3]);
-        c.email = QString::fromUtf8(f[4]);
-        c.date = QDateTime::fromString(QString::fromUtf8(f[5]), Qt::ISODate);
-        c.subject = QString::fromUtf8(f[6]);
-        if (f.size() > 7)
-            c.body = QString::fromUtf8(f[7]).trimmed();
-        commits.append(c);
-    }
+        return {};
+    LogStreamParser parser;
+    QList<Commit> commits = parser.feed(r.out);
+    commits += parser.finish();
     return commits;
+}
+
+// rev-list without a walk prints the commits a walk of the same arguments
+// would start from, in their order and each once: with --all every ref's and
+// HEAD's (other worktrees' HEADs too, as for log()), tags peeled to their
+// commits and refs to anything but a commit left out. --ignore-missing makes
+// an unborn HEAD no commit rather than an error.
+QStringList GitRepo::logStartPoints(bool allRefs, bool *ok) const
+{
+    QStringList args{QStringLiteral("rev-list"), QStringLiteral("--no-walk=unsorted")};
+    if (allRefs)
+        args << QStringLiteral("--all");
+    else
+        args << QStringLiteral("--ignore-missing") << QStringLiteral("HEAD");
+    const GitResult r = exec(args);
+    if (ok)
+        *ok = r.ok();
+    return r.ok() ? trimmedLines(r.out) : QStringList();
+}
+
+QProcess *GitRepo::logStream(const QStringList &startPoints, int skip, QObject *context,
+                             std::function<void(const QList<Commit> &)> batch, std::function<void(bool ok)> done)
+{
+    // Given no commit, git log walks HEAD: none is an empty history here.
+    if (startPoints.isEmpty()) {
+        QTimer::singleShot(0, context, [done] { done(true); });
+        return nullptr;
+    }
+    auto parser = std::make_shared<LogStreamParser>();
+    // The start points go in on stdin, as many as there are refs, where the
+    // command line has a limit.
+    const QStringList args = logArgs() << QStringLiteral("--skip=%1").arg(skip) << QStringLiteral("--stdin");
+    const QByteArray input = (startPoints.join(QLatin1Char('\n')) + QLatin1Char('\n')).toUtf8();
+    return startAsync(args, kHistoryTimeoutMs, {}, [context, parser, batch, done](QProcess *p) {
+        connect(p, &QProcess::readyReadStandardOutput, context, [p, parser, batch] {
+            const QList<Commit> commits = parser->feed(p->readAllStandardOutput());
+            if (!commits.isEmpty())
+                batch(commits);
+        });
+        connect(p, &QProcess::finished, context, [p, parser, batch, done](int code, QProcess::ExitStatus status) {
+            const bool ok = status == QProcess::NormalExit && code == 0;
+            // What the pipe still held; a record left open counts only where
+            // git got to the end (a killed one is cut off anywhere).
+            QList<Commit> commits = parser->feed(p->readAllStandardOutput());
+            if (ok)
+                commits += parser->finish();
+            if (!commits.isEmpty())
+                batch(commits);
+            done(ok);
+        });
+        connect(p, &QProcess::errorOccurred, context, [done](QProcess::ProcessError error) {
+            if (error == QProcess::FailedToStart)
+                done(false); // every other error is followed by finished()
+        });
+    }, input);
+}
+
+// The graph is one file or a chain of them (`--split`); --git-path finds
+// either where it is, in the common directory for a worktree, relative to
+// the root or absolute. Both steps run without blocking, and the write only
+// for the repository that was asked about.
+void GitRepo::ensureCommitGraph()
+{
+    const QString root = m_root;
+    runAsync({QStringLiteral("rev-parse"), QStringLiteral("--git-path"), QStringLiteral("objects/info/commit-graph"),
+              QStringLiteral("--git-path"), QStringLiteral("objects/info/commit-graphs/commit-graph-chain")},
+             this, [this, root](int code, const QByteArray &out, const QByteArray &) {
+                 const QStringList paths = trimmedLines(out);
+                 if (code != 0 || paths.size() != 2 || root != m_root)
+                     return;
+                 for (const QString &path : paths)
+                     if (QFileInfo(QDir(root).absoluteFilePath(path)).isFile())
+                         return;
+                 runAsync({QStringLiteral("commit-graph"), QStringLiteral("write"), QStringLiteral("--reachable")},
+                          this, [](int, const QByteArray &, const QByteArray &) {});
+             });
 }
 
 QHash<QString, QList<RefLabel>> GitRepo::refs() const

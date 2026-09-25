@@ -1,6 +1,9 @@
 #pragma once
 
+#include "Grid.h"
+
 #include <QLabel>
+#include <QPushButton>
 #include <QRectF>
 #include <QString>
 #include <QStringList>
@@ -8,6 +11,7 @@
 
 #include <functional>
 
+class QAbstractButton;
 class QAction;
 class QDateTime;
 class QFont;
@@ -21,27 +25,27 @@ class QWidget;
 // of the shell, the label factories and the borderless buttons of its chrome.
 namespace ui {
 
-// The shell's spacing scale: the design's pixel values are meant for a 12 px
-// base font and grow with it (Style.space() in omarchy-shell).
+// The grid's unit at the text size of the moment: the design's 4 px, scaled
+// once with the base font (round(4 × base / 12), never below 1).
+int gridUnit();
+// A design distance (Grid.h, px at a 12 px base) at the text size of the
+// moment: whole units of gridUnit() and the rounded rest of one, so sums of
+// multiples of 4 add up exactly at every text size (two 4 px gaps are one
+// 8 px gap), never below 1. Hairlines stay 1 px and never go through it.
 int space(int px);
+// A text size of the design (px at a 12 px base) at the text size of the
+// moment: round(px × base / 12). Text is no grid value; it is centred in the
+// rows and controls that are.
+int fontPx(int px);
 
-// The design's grid for a section: a 24 px header row, its content 6 px below
-// it, and 16 px to the next section.
-int headerRowHeight();
-int headerGap();
-int sectionGap();
-// The room between a row of buttons and the line under it, and on from that
-// line to the next row: the top bar's row to its hairline, the hairline to
-// the body, the diff pane's toolbar to the diff. 5 px, one value, so the
-// window's rows keep one rhythm.
-int barGap();
-// A text button's height, the kit's 28 px: the height of a row of them.
-int buttonHeight();
-
-// The window's margin (screens.js screen(): m = 12): the body, the top bar's
-// row and the footer's keep it at either side, and the overlays stay inside
-// it all round.
-int windowMargin();
+// The side margin of `widget`'s window (screens.js density()): the one the
+// main window keeps for its width class, which the body, the top bar's and
+// the footer's rows keep at either side and every overlay and menu stays
+// inside of; the regular 12 for a window that keeps none (a dialog on its
+// own, a test's widget).
+int windowMargin(const QWidget *widget);
+// What windowMargin() reads for the widgets of `window`, in design px.
+void setWindowMargin(QWidget *window, int px);
 
 // Nerd Font (Material Design) glyphs used by the shell; empty if the font lacks them.
 QString icon(uint cp, const QString &fallback = QString());
@@ -81,6 +85,8 @@ constexpr uint kCheck = 0xF012C, kContentCopy = 0xF018F;
 // md-file_compare: the stacked layout's Diff tab; md-undo: amending, in the
 // action bar's options menu; md-dots_horizontal: the more and options menus.
 constexpr uint kDiff = 0xF08AA, kUndo = 0xF054C, kDotsHorizontal = 0xF01D8;
+// md-close: clears the history filter, at the end of its field.
+constexpr uint kClose = 0xF0156;
 
 // The frames of the generate button while an agent thinks: a braille spinner
 // when the font has one, a turning circle otherwise.
@@ -101,6 +107,12 @@ QString tildePath(const QString &path);
 QString ago(const QDateTime &when);
 
 QLabel *sectionLabel(const QString &text);
+
+// Puts a label's text in `font` on a line of `px` design px the way kit.js
+// text() centres text on its line: the baseline at the line's middle plus
+// 0.36 of the size, which centring by Qt's metrics leaves a pixel off. The
+// label becomes the line's height, its text at its top.
+void placeOnLine(QLabel *label, const QFont &font, int px);
 
 QLabel *dimLabel(const QString &text = QString());
 
@@ -148,18 +160,36 @@ protected:
 };
 
 // A text button of the window's chrome laid out the way the design kit
-// measures one (kit.js measureButton()): 10 px, a 14 px glyph, 6 px, the
-// label, 6 px and a 12 px chevron when it drops a menu down, 10 px — and
-// 28 px tall. Its text is written the usual way, icon(glyph) + label, with
-// chevron() at the end for a dropdown; the button reads the three parts back
-// out of it, so every caller keeps setting plain text. A glyph alone, or the
-// icon form (setIconForm()), is the design's 28 px square with the glyph
-// centred by its ink. The chrome is the style's.
+// measures one (kit.js measureButton()): [8][glyph box 16][4][label][4]
+// [chevron box 12][8], the chevron only when it drops a menu down, and 28 px
+// tall; the primary action of a surface (setPrimary()) pads 16 instead of 8.
+// Its text is written the usual way, icon(glyph) + label, with chevron() at
+// the end for a dropdown; the button reads the three parts back out of it, so
+// every caller keeps setting plain text. A glyph alone, or the icon form
+// (setIconForm()), is the design's 28 px square with the glyph centred by its
+// ink. The chrome is the style's.
 class KitButton : public QToolButton
 {
     Q_OBJECT
 public:
     explicit KitButton(QWidget *parent = nullptr);
+
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+};
+
+// A push button with a KitButton's face: the one behind the Enter key of a
+// surface (Commit, Merge, Generate now) keeps QPushButton's default-button
+// behaviour and its stylesheet chrome, and lays out its glyph and label the
+// kit's way. Stretched wider than it asks, its content stays at the left.
+class KitPushButton : public QPushButton
+{
+    Q_OBJECT
+public:
+    explicit KitPushButton(QWidget *parent = nullptr);
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -182,7 +212,7 @@ Button *toolButton(const QString &text, const QString &tip = QString())
 
 // Icon-only buttons: Inline is a 24 px square for a section header row, Toolbar
 // is 28 px wide and exactly as tall as a text button of the row it sits in.
-enum class IconButtonSize { Inline = 24, Toolbar = 28 };
+enum class IconButtonSize { Inline = box::row, Toolbar = box::control };
 
 // A centred glyph in a square that follows the text size. Ghost ones carry no
 // chrome until the pointer is on them; the others look like any other button.
@@ -190,16 +220,23 @@ QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip,
                         IconButtonSize size = IconButtonSize::Inline, bool ghost = true);
 
 // A text button of a folding row wearing its glyph alone: the `iconForm`
-// property makes a KitButton the design's 28 px square, the glyph centred by
-// its ink, and the button takes that width; switched off, its width is free
-// again. The caller swaps the text. Only a button that really changes form
-// is repolished, so a row may apply its form on every resize.
-void setIconForm(QToolButton *button, bool on);
+// property makes a KitButton the design's 28 px square (or `px` wide: the top
+// bar's sync buttons are 8 + 16 + 8), the glyph centred by its ink, and the
+// button takes that width; switched off, its width is free again. The caller
+// swaps the text. Only a button that really changes form is repolished, so a
+// row may apply its form on every resize.
+void setIconForm(QToolButton *button, bool on, int px = box::control);
+
+// The primary action of a surface (Commit, Merge, Generate now): the
+// `primary` property pads it 16 at either side instead of 8 — a KitButton by
+// its own measure, a QPushButton through the stylesheet.
+void setPrimary(QAbstractButton *button, bool on = true);
 
 // The search prompt of a popup, in the Omarchy menu look: no box of its own —
 // the popup's accent frame is the focus cue — with a magnifier that stays put
-// while typing. promptBox() is the row it lives in, hairline included, ready
-// for a QWidgetAction.
+// while typing, on a menu row's grid: [8][magnifier 16][4][text], 28 high.
+// promptBox() is the row it lives in, with the 8 px band of a menu separator
+// under it, ready for a QWidgetAction.
 QLineEdit *promptField(const QString &placeholder);
 QWidget *promptBox(QLineEdit *field);
 
@@ -219,40 +256,41 @@ QToolButton *dropdownButton(const QString &objectName);
 enum class HairlineTone { Border, Chrome };
 QWidget *hairline(Qt::Orientation orientation = Qt::Horizontal, HairlineTone tone = HairlineTone::Border);
 
-// A dim caption inside a menu, like the section labels of the dialog.
+// A dim caption inside a menu, like the section labels of the dialog: on a
+// 24 px row of its own, 8 in.
 QAction *addMenuHeader(QMenu *menu, const QString &text);
 
 // A button's drop-down menu that stays inside the button's window: where it
 // would run past the window's right edge it keeps the window's right margin
 // instead (never further left than the window's own edge), and where it
-// would run past the bottom it opens upwards — what Qt does at the edges of
-// the screen, at the edges of the tile the user reads it against. With a
-// `bar`, a menu opening downwards hangs from the bar rather than from the
-// button: popupTop() under it, like the design's top-bar popups.
+// would run past the bottom it opens upwards, 4 over the button — what Qt
+// does at the edges of the screen, at the edges of the tile the user reads
+// it against. With a `bar`, a menu opening downwards hangs from the bar
+// rather than from the button: popupTop() under it, like the design's
+// top-bar popups.
 void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar = nullptr);
 
 // Where a popup of the top bar starts, in global coordinates: 4 px under the
-// bar's bottom edge (screens.js: menus at y = 40 + 4).
+// bar's bottom edge (screens.js screen(): menus at y = TOP_BAR + 4).
 int popupTop(const QWidget *bar);
 
 // A popup's width from the design (menuCard() w), `px` at base 12, never
-// wider than the window less its margins.
+// wider than the window less its margins (windowMargin()).
 int popupWidth(const QWidget *window, int px);
 
-// The shared geometry of the window's tables: one row of the commit list, one
-// row of a file list (the changes table and tree, a commit's files, a little
-// tighter), the header every table has, and the narrowest the column taking
-// up the leftover width may get — below that the table scrolls sideways
-// instead of squeezing it further.
-int tableRowHeight();
-int fileRowHeight();
+// The shared geometry of the window's tables: every clickable row is 24 px
+// (the commit list's, a file list's, a menu's); the header every table has is
+// 24 too, its hairline its last row, the table's top border its first — so
+// inside the table's 1 px frame it is one pixel shorter. And the narrowest the
+// column taking up the leftover width may get — below that the table scrolls
+// sideways instead of squeezing it further: the design leaves it 100 and more
+// in the narrowest section it lives in (the Medium class's 340 px).
+int rowHeight();
 int tableHeaderHeight();
-constexpr int kMinStretchColumn = 240;
+constexpr int kMinStretchColumn = 100;
 
 // Gives `column` whatever the other columns, `others` px wide together, leave,
-// never less than `floor`: a table with a narrower home than the commit
-// page's (the history's, whose design leaves its stretch column 100 px and
-// more) passes a floor of its own.
+// never less than `floor` design px.
 void fitStretchColumn(QTableView *table, int column, int others, int floor = kMinStretchColumn);
 
 // Runs `fit` on every resize of the table's horizontal header.

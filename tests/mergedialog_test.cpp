@@ -2,6 +2,7 @@
 // Run: QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ../build/tests/mergedialog_test
 #include "../src/MergeDialog.h"
 #include "../src/OmarchyTheme.h"
+#include "../src/UiHelpers.h"
 
 #include <QApplication>
 #include <QLabel>
@@ -44,7 +45,7 @@ bool shows(const QDialog &dialog, const QString &text)
 }
 
 // The window is exactly as tall as its content, and the buttons sit inside
-// it, 16 px above its bottom edge and under the verdict.
+// it, the dialog's padding above its bottom edge and under the verdict.
 void checkFitsContent(QDialog &dialog, const QWidget *verdict)
 {
     dialog.layout()->activate();
@@ -54,7 +55,7 @@ void checkFitsContent(QDialog &dialog, const QWidget *verdict)
         if (!button->isVisible())
             continue;
         QVERIFY(dialog.rect().contains(button->geometry()));
-        QCOMPARE(dialog.height() - button->geometry().bottom() - 1, 16);
+        QCOMPARE(dialog.height() - button->geometry().bottom() - 1, ui::space(ui::pad::dialog));
         QVERIFY(button->y() > verdict->geometry().bottom());
     }
 }
@@ -137,9 +138,10 @@ private slots:
         checkLayout();
     }
 
-    // Over a narrow window the dialog is the window's width less 24 px, and
-    // under 520 px the pickers stack: MERGE, the source across the width, the
-    // swap button with INTO beside it, then the destination across the width.
+    // Over a narrow window the dialog is the window's width less its margins
+    // (12 either side for a window that keeps none of its own), and under
+    // 520 px the pickers stack: MERGE, the source across the width, the swap
+    // button with INTO beside it, then the destination across the width.
     void narrowWindowsStackThePickers()
     {
         QTemporaryDir directory;
@@ -174,15 +176,22 @@ private slots:
         QCOMPARE(dialog.width(), 446);
         QVERIFY(source->y() < swapButton->y());
         QVERIFY(swapButton->y() < destination->y());
-        QCOMPARE(source->width(), dialog.width() - 40);
-        QCOMPARE(destination->width(), dialog.width() - 40);
+        QCOMPARE(source->width(), dialog.width() - 2 * ui::space(ui::pad::dialog));
+        QCOMPARE(destination->width(), dialog.width() - 2 * ui::space(ui::pad::dialog));
+        // Narrow, the swap is a 28 px ghost button between the pickers, an
+        // item gap from either.
+        QCOMPARE(swapButton->size(), QSize(ui::space(ui::box::control), ui::space(ui::box::control)));
+        QCOMPARE(swapButton->y() - (source->geometry().bottom() + 1), ui::space(ui::gap::item));
+        QCOMPARE(destination->y() - (swapButton->geometry().bottom() + 1), ui::space(ui::gap::item));
+        QCOMPARE(source->height(), ui::space(36));
         QVERIFY(intoCaption->x() > swapButton->geometry().right());
         QVERIFY(mergeCaption->geometry().bottom() < source->y());
         QTRY_VERIFY(shows(dialog, "no conflicts"));
         checkFitsContent(dialog, verdict);
         QVERIFY(!QTest::currentTestFailed());
 
-        // A wider window: side by side again, at the window's width less 24.
+        // A wider window: side by side again, at the window's width less its
+        // margins, the swap the pickers' 36 px square an item gap from either.
         dialog.hide();
         host.resize(627, 612);
         QApplication::processEvents();
@@ -191,6 +200,9 @@ private slots:
         QCOMPARE(dialog.width(), 603);
         QCOMPARE(swapButton->y(), source->y());
         QCOMPARE(swapButton->y(), destination->y());
+        QCOMPARE(swapButton->size(), QSize(ui::space(36), ui::space(36)));
+        QCOMPARE(swapButton->x() - (source->geometry().right() + 1), ui::space(ui::gap::item));
+        QCOMPARE(destination->x() - (swapButton->geometry().right() + 1), ui::space(ui::gap::item));
         QVERIFY(source->x() < swapButton->x());
         QVERIFY(swapButton->x() < destination->x());
         QTRY_VERIFY(shows(dialog, "no conflicts"));

@@ -11,12 +11,10 @@
 #include <QtMath>
 
 namespace {
-// The design's generate button (screens.js changesPage(), the MessageBox
-// group), in 12 px-base pixels: a 24 px square whose right edge is 2 px
-// inside the box's and whose top is 2 px under the box's top.
-constexpr int kButtonSide = 24;
-constexpr int kInset = 2;
-constexpr int kTextGap = 4; // between the text's right edge and the button's column
+// The design's generate button (screens.js messageBox()): a 24 px ghost square
+// 4 in from the box's top and right edges, so its glyph sits on the text's
+// 8 px padding — or centred, in the one-line box too low for that.
+constexpr int kInset = 4;
 constexpr int kClaimWidth = 1 << 16; // wider than any other box of the document can be
 } // namespace
 
@@ -41,11 +39,9 @@ void MessageEdit::applyTheme()
     m_button->setFont(font());
     // The design's square, whatever the button shows: the sparkle or a
     // spinner frame, so a frame does not make it jiggle.
-    const int side = ui::space(kButtonSide);
+    const int side = ui::space(ui::box::row);
     m_button->setFixedSize(side, side);
-    // The text keeps clear of the button's column: the button, its inset
-    // and a gap before the text.
-    setViewportMargins(0, 0, side + ui::space(kInset) + ui::space(kTextGap), 0);
+    updateMargins();
     placeButton();
     // A theme change re-measures every box of a shared document, the hidden
     // ones too; the one on screen takes the wrapping back afterwards.
@@ -87,15 +83,42 @@ void MessageEdit::insertFromMimeData(const QMimeData *source)
 
 // QPlainTextDocumentLayout measures its document in lines rather than pixels,
 // and those are the wrapped ones: the box wraps at the viewport width, so a
-// single long paragraph counts for as many lines as it takes.
+// single long paragraph counts for as many lines as it takes. The lines stand
+// 8 from the box's edges (updateMargins()) — or, one line, centred in a box
+// as low as a field, which holds it as well.
 int MessageEdit::contentHeight() const
 {
     const int lines = qMax(1, qCeil(document()->documentLayout()->documentSize().height()));
-    const QMargins margins = viewportMargins();
-    return lines * fontMetrics().lineSpacing()
-        + qCeil(2 * document()->documentMargin())
-        + margins.top() + margins.bottom()
-        + 2 * frameWidth();
+    const int frame = height() - contentsRect().height(); // whatever the stylesheet makes of it
+    const int margin = qRound(document()->documentMargin());
+    const int inset = qMax(0, ui::space(ui::pad::control) - frame / 2 - margin);
+    // The pixel QPlainTextEdit keeps free under the last line is the one the
+    // bottom margin leaves out.
+    const int needed = lines * fontMetrics().lineSpacing() + 2 * margin + 2 * inset + frame;
+    return lines == 1 ? qMin(needed, ui::space(ui::box::control)) : needed;
+}
+
+// The text 8 from the box's top edge and 8 clear of its bottom (screens.js
+// messageBox()), or centred in a box too low for that (the one-line field):
+// the frame, these margins and the document's own margin together — less a
+// pixel at the bottom, which QPlainTextEdit wants free under the last line
+// before it calls the text too long for the box. At the right, the button's
+// column: the button, its inset and the same again before the text.
+void MessageEdit::updateMargins()
+{
+    const int frame = (height() - contentsRect().height()) / 2;
+    const int inset = qMin(ui::space(ui::pad::control), (height() - ui::space(ui::box::line)) / 2);
+    const int vertical = qMax(0, inset - frame - qRound(document()->documentMargin()));
+    const QMargins margins(0, vertical, ui::space(ui::box::row) + 2 * ui::space(kInset), qMax(0, vertical - 1));
+    if (viewportMargins() != margins)
+        setViewportMargins(margins);
+}
+
+void MessageEdit::resizeEvent(QResizeEvent *event)
+{
+    QPlainTextEdit::resizeEvent(event);
+    updateMargins();
+    placeButton();
 }
 
 void MessageEdit::showEvent(QShowEvent *event)
@@ -173,13 +196,16 @@ bool MessageEdit::eventFilter(QObject *watched, QEvent *event)
 }
 
 // The button lives in the margin to the right of the viewport, in the box's
-// top right corner: 2 px inside its right edge (or the scrollbar's left one)
-// and 2 px under its top.
+// top right corner: 4 inside its right edge (or the scrollbar's left one)
+// and 4 under its top — in a box too low for that (the one-line field), as
+// far from either edge as it is from the top and the bottom.
 void MessageEdit::placeButton()
 {
     int right = width();
+    // The bar lives in a container of the scroll area's: its own geometry is
+    // the container's, not the box's.
     if (verticalScrollBar()->isVisible())
-        right = verticalScrollBar()->geometry().left();
-    const int inset = ui::space(kInset);
+        right = verticalScrollBar()->mapTo(this, QPoint(0, 0)).x();
+    const int inset = qMax(0, qMin(ui::space(kInset), (height() - m_button->height()) / 2));
     m_button->move(right - inset - m_button->width(), inset);
 }

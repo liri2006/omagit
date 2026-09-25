@@ -2,254 +2,256 @@
 <rect x="0" y="0" width="470" height="612" id="window" fill="#181c22"/>
 <g id="TopBar">
 <g id="RepoChip">
-<g id="icon/folderOpen" transform="translate(22,13) scale(0.5833)"><path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" fill="#e0e6ed"/></g>
+<g id="icon/folderOpen" transform="translate(17,15) scale(0.5833)"><path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" fill="#e0e6ed"/></g>
 </g>
 <g id="BranchChip">
-<g id="icon/branch" transform="translate(60,13) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#4ecdc4"/></g>
-<text x="80" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
-<g id="icon/chevron" transform="translate(117,14) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+<g id="icon/branch" transform="translate(53,15) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#4ecdc4"/></g>
+<text x="72" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
+<g id="icon/chevron" transform="translate(105.75,16.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
 </g>
 <g id="BranchChip/label-accent">
-<text x="80" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">main</text>
+<text x="72" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">main</text>
 </g>
 <g id="More">
-<rect x="430" y="6" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="430.5" y="6.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/dots" transform="translate(437,13) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
+<rect x="434" y="8" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="434.5" y="8.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/dots" transform="translate(441,15) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
 </g>
 <g id="SyncDropdown">
-<rect x="332" y="6" width="92" height="28" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="332.5" y="6.5" width="91" height="27" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/down" transform="translate(340,13) scale(0.5833)"><path d="M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z" fill="#e0e6ed"/></g>
-<text x="356" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">2</text>
-<g id="icon/up" transform="translate(370,13) scale(0.5833)"><path d="M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z" fill="#e0e6ed"/></g>
-<text x="386" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">1</text>
-<g id="icon/chevron" transform="translate(400,14) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+<rect x="330" y="8" width="96" height="28" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="330.5" y="8.5" width="95" height="27" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/down" transform="translate(339,15) scale(0.5833)"><path d="M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z" fill="#e0e6ed"/></g>
+<text x="358" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">2</text>
+<g id="icon/up" transform="translate(375,15) scale(0.5833)"><path d="M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z" fill="#e0e6ed"/></g>
+<text x="394" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">1</text>
+<g id="icon/chevron" transform="translate(406.75,16.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
 </g>
 <g id="NavTabs">
-<rect x="168" y="6" width="134" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="177" y="8" width="116" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
 <g id="Segment/selected commit">
-<rect x="168" y="6" width="58" height="28" fill="#e0e6ed" fill-opacity="0.18"/>
-<g id="icon/commit" transform="translate(180,13) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#4ecdc4"/></g>
-<rect x="200" y="13" width="14" height="14" fill="#4ecdc4" fill-opacity="1"/>
-<text x="207" y="23.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">7</text>
+<rect x="177" y="8" width="52" height="28" fill="#e0e6ed" fill-opacity="0.18"/>
+<g id="icon/commit" transform="translate(186,15) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#4ecdc4"/></g>
+<rect x="205" y="14" width="16" height="16" fill="#4ecdc4" fill-opacity="1"/>
+<text x="213" y="25.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">7</text>
 </g>
 <g id="Segment/normal diff">
-<g id="icon/diff" transform="translate(238,13) scale(0.5833)"><path d="M10,18H6V16H10V18M10,14H6V12H10V14M10,1V2H6C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H10V23H12V1H10M20,8V20C20,21.11 19.11,22 18,22H14V20H18V11H14V9H18.5L14,4.5V2L20,8M16,14H14V12H16V14M16,18H14V16H16V18Z" fill="#e0e6ed"/></g>
+<g id="icon/diff" transform="translate(238,15) scale(0.5833)"><path d="M10,18H6V16H10V18M10,14H6V12H10V14M10,1V2H6C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H10V23H12V1H10M20,8V20C20,21.11 19.11,22 18,22H14V20H18V11H14V9H18.5L14,4.5V2L20,8M16,14H14V12H16V14M16,18H14V16H16V18Z" fill="#e0e6ed"/></g>
 </g>
-<rect x="226" y="6" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
+<rect x="229" y="8" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
 <g id="Segment/normal history">
-<g id="icon/history" transform="translate(276,13) scale(0.5833)"><path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" fill="#e0e6ed"/></g>
+<g id="icon/history" transform="translate(270,15) scale(0.5833)"><path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" fill="#e0e6ed"/></g>
 </g>
-<rect x="264" y="6" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
-<rect x="168.5" y="6.5" width="133" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="261" y="8" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
+<rect x="177.5" y="8.5" width="115" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<rect x="0" y="39" width="470" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
+<rect x="0" y="43" width="470" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
 </g>
 <g id="Footer">
 <rect x="0" y="584" width="470" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
-<text x="12" y="602.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">~/Projects/omagit</text>
+<text x="8" y="602.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">~/Projects/omagit</text>
 <g id="Keybindings">
-<g id="icon/keyboard" transform="translate(439,591) scale(0.5833)"><path d="M4,5A2,2 0 0,0 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7A2,2 0 0,0 20,5H4M4,7H20V17H4V7M5,8V10H7V8H5M8,8V10H10V8H8M11,8V10H13V8H11M14,8V10H16V8H14M17,8V10H19V8H17M5,11V13H7V11H5M8,11V13H10V11H8M11,11V13H13V11H11M14,11V13H16V11H14M17,11V13H19V11H17M8,14V16H16V14H8Z" fill="#e0e6ed"/></g>
+<g id="icon/keyboard" transform="translate(443,591) scale(0.5833)"><path d="M4,5A2,2 0 0,0 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7A2,2 0 0,0 20,5H4M4,7H20V17H4V7M5,8V10H7V8H5M8,8V10H10V8H8M11,8V10H13V8H11M14,8V10H16V8H14M17,8V10H19V8H17M5,11V13H7V11H5M8,11V13H10V11H8M11,11V13H13V11H11M14,11V13H16V11H14M17,11V13H19V11H17M8,14V16H16V14H8Z" fill="#e0e6ed"/></g>
 </g>
 </g>
 <g id="CommitPage">
-<text x="12" y="65.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" id="Section/Message" letter-spacing="0.8" xml:space="preserve">MESSAGE</text>
-<g id="AgentSettings">
-<g id="icon/cog" transform="translate(437,55) scale(0.5833)"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z" fill="#e0e6ed"/></g>
-</g>
-<g id="MessageBox">
-<rect x="12" y="80" width="446" height="68" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="12.5" y="80.5" width="445" height="67" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<text x="20" y="98.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">Commit message</text>
-<g id="Generate">
-<g id="icon/sparkle" transform="translate(437,87) scale(0.5833)"><path d="M19,1L17.74,3.75L15,5L17.74,6.26L19,9L20.25,6.26L23,5L20.25,3.75M9,4L6.5,9.5L1,12L6.5,14.5L9,20L11.5,14.5L17,12L11.5,9.5M19,15L17.74,17.74L15,19L17.74,20.25L19,23L20.25,20.25L23,19L20.25,17.74" fill="#e0e6ed"/></g>
-</g>
-</g>
-<text x="12" y="179.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" id="Section/Changes" letter-spacing="0.8" xml:space="preserve">CHANGES · 5/7</text>
+<text x="8" y="67.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" id="Section/Changes" letter-spacing="0.8" xml:space="preserve">CHANGES · 5/7</text>
 <g id="Refresh">
-<g id="icon/refresh" transform="translate(437,169) scale(0.5833)"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" fill="#e0e6ed"/></g>
+<g id="icon/refresh" transform="translate(439,57) scale(0.5833)"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" fill="#e0e6ed"/></g>
 </g>
-<rect x="424" y="167" width="1" height="18" fill="#e0e6ed" fill-opacity="0.25"/>
+<rect x="426" y="56" width="1" height="16" fill="#e0e6ed" fill-opacity="0.25"/>
+<g id="ShowUnversioned">
+<rect x="394" y="52" width="24" height="24" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="394.5" y="52.5" width="23" height="23" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
+<g id="icon/eye" transform="translate(399,57) scale(0.5833)"><path d="M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z" fill="#4ecdc4"/></g>
+</g>
+<rect x="386" y="56" width="1" height="16" fill="#e0e6ed" fill-opacity="0.25"/>
 <g id="FilesView/compact">
-<rect x="304" y="164" width="24" height="24" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
-<rect x="304.5" y="164.5" width="23" height="23" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
-<g id="icon/list" transform="translate(309,169) scale(0.5833)"><path d="M7,5H21V7H7V5M7,13V11H21V13H7M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M7,19V17H21V19H7M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5Z" fill="#4ecdc4"/></g>
+<rect x="298" y="52" width="24" height="24" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="298.5" y="52.5" width="23" height="23" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
+<g id="icon/list" transform="translate(303,57) scale(0.5833)"><path d="M7,5H21V7H7V5M7,13V11H21V13H7M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M7,19V17H21V19H7M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5Z" fill="#4ecdc4"/></g>
 </g>
 <g id="FilesView/tree">
-<g id="icon/tree" transform="translate(335,169) scale(0.5833)"><path d="M3,3H9V7H3V3M15,10H21V14H15V10M15,17H21V21H15V17M13,13H7V18H13V20H7L5,20V9H7V11H13V13Z" fill="#e0e6ed"/></g>
+<g id="icon/tree" transform="translate(331,57) scale(0.5833)"><path d="M3,3H9V7H3V3M15,10H21V14H15V10M15,17H21V21H15V17M13,13H7V18H13V20H7L5,20V9H7V11H13V13Z" fill="#e0e6ed"/></g>
 </g>
 <g id="FilesView/table">
-<g id="icon/table" transform="translate(361,169) scale(0.5833)"><path d="M5,4H19A2,2 0 0,1 21,6V18A2,2 0 0,1 19,20H5A2,2 0 0,1 3,18V6A2,2 0 0,1 5,4M5,8V12H11V8H5M13,8V12H19V8H13M5,14V18H11V14H5M13,14V18H19V14H13Z" fill="#e0e6ed"/></g>
-</g>
-<rect x="386" y="167" width="1" height="18" fill="#e0e6ed" fill-opacity="0.25"/>
-<g id="ShowUnversioned">
-<rect x="394" y="164" width="24" height="24" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
-<rect x="394.5" y="164.5" width="23" height="23" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
-<g id="icon/eye" transform="translate(399,169) scale(0.5833)"><path d="M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z" fill="#4ecdc4"/></g>
+<g id="icon/table" transform="translate(359,57) scale(0.5833)"><path d="M5,4H19A2,2 0 0,1 21,6V18A2,2 0 0,1 19,20H5A2,2 0 0,1 3,18V6A2,2 0 0,1 5,4M5,8V12H11V8H5M13,8V12H19V8H13M5,14V18H11V14H5M13,14V18H19V14H13Z" fill="#e0e6ed"/></g>
 </g>
 <g id="ChangesTable">
-<rect x="12.5" y="194.5" width="445" height="331" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<rect x="12" y="220" width="446" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
+<rect x="8.5" y="84.5" width="453" height="351" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="8" y="107" width="454" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
 <g id="CheckAll">
-<rect x="20" y="200" width="14" height="14" fill="#e0e6ed" fill-opacity="0.18"/>
-<rect x="20.5" y="200.5" width="13" height="13" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
-<g id="icon/minus" transform="translate(21,201) scale(0.5000)"><path d="M19,13H5V11H19V13Z" fill="#4ecdc4"/></g>
+<rect x="16" y="88" width="16" height="16" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="16.5" y="88.5" width="15" height="15" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<g id="icon/minus" transform="translate(17,89) scale(0.5833)"><path d="M19,13H5V11H19V13Z" fill="#4ecdc4"/></g>
 </g>
-<rect x="42" y="195" width="1" height="25" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="52" y="210.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Name</text>
-<rect x="428" y="195" width="1" height="25" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="443" y="210.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">St</text>
+<rect x="40" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="48" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Name</text>
+<rect x="430" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="446" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">St</text>
 <g id="Row/normal GitRepo.cpp">
 <g id="Checkbox/checked">
-<rect x="20" y="227" width="14" height="14" fill="#4ecdc4"/>
-<g id="icon/check" transform="translate(21,228) scale(0.5000)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+<rect x="16" y="112" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(17,113) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="52" y="238.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">GitRepo.cpp</text>
-<text x="139" y="238.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/core/</text>
+<text x="48" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">GitRepo.cpp</text>
+<text x="135" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/core/</text>
 <g id="StatusPill/M">
-<rect x="435" y="226" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
-<text x="443" y="237.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
+<rect x="438" y="112" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="446" y="123.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
 </g>
 <g id="Row/normal RemoteSync.cpp">
 <g id="Checkbox/checked">
-<rect x="20" y="253" width="14" height="14" fill="#4ecdc4"/>
-<g id="icon/check" transform="translate(21,254) scale(0.5000)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+<rect x="16" y="136" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(17,137) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="52" y="264.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">RemoteSync.cpp</text>
-<text x="161" y="264.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/core/</text>
+<text x="48" y="148.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">RemoteSync.cpp</text>
+<text x="157" y="148.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/core/</text>
 <g id="StatusPill/M">
-<rect x="435" y="252" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
-<text x="443" y="263.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
+<rect x="438" y="136" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="446" y="147.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
 </g>
 <g id="Row/selected Toolbar.cpp">
-<rect x="13" y="273" width="444" height="26" fill="#e0e6ed" fill-opacity="0.08"/>
+<rect x="9" y="156" width="452" height="24" fill="#e0e6ed" fill-opacity="0.08"/>
 <g id="Checkbox/checked">
-<rect x="20" y="279" width="14" height="14" fill="#4ecdc4"/>
-<g id="icon/check" transform="translate(21,280) scale(0.5000)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+<rect x="16" y="160" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(17,161) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="52" y="290.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Toolbar.cpp</text>
-<text x="139" y="290.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui/</text>
+<text x="48" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Toolbar.cpp</text>
+<text x="135" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui/</text>
 <g id="StatusPill/M">
-<rect x="435" y="278" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
-<text x="443" y="289.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
+<rect x="438" y="160" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="446" y="171.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
 </g>
 <g id="Row/normal README.md">
 <g id="Checkbox/checked">
-<rect x="20" y="305" width="14" height="14" fill="#4ecdc4"/>
-<g id="icon/check" transform="translate(21,306) scale(0.5000)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+<rect x="16" y="184" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(17,185) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="52" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#ff7b92" xml:space="preserve">README.md</text>
-<text x="125" y="316.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">docs/</text>
+<text x="48" y="196.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#ff7b92" xml:space="preserve">README.md</text>
+<text x="121" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">docs/</text>
 <g id="StatusPill/D">
-<rect x="435" y="304" width="16" height="16" fill="#ff7b92" fill-opacity="0.18"/>
-<text x="443" y="315.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#ff7b92" text-anchor="middle" xml:space="preserve">D</text>
+<rect x="438" y="184" width="16" height="16" fill="#ff7b92" fill-opacity="0.18"/>
+<text x="446" y="195.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#ff7b92" text-anchor="middle" xml:space="preserve">D</text>
 </g>
 </g>
 <g id="Row/normal ui_tests.cpp">
 <g id="Checkbox/checked">
-<rect x="20" y="331" width="14" height="14" fill="#4ecdc4"/>
-<g id="icon/check" transform="translate(21,332) scale(0.5000)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+<rect x="16" y="208" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(17,209) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="52" y="342.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">ui_tests.cpp</text>
-<text x="146" y="342.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">tests/</text>
+<text x="48" y="220.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">ui_tests.cpp</text>
+<text x="142" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">tests/</text>
 <g id="StatusPill/R">
-<rect x="435" y="330" width="16" height="16" fill="#b388eb" fill-opacity="0.18"/>
-<text x="443" y="341.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#b388eb" text-anchor="middle" xml:space="preserve">R</text>
+<rect x="438" y="208" width="16" height="16" fill="#b388eb" fill-opacity="0.18"/>
+<text x="446" y="219.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#b388eb" text-anchor="middle" xml:space="preserve">R</text>
 </g>
 </g>
 <g id="Row/normal notes.txt">
 <g id="Checkbox/off">
-<rect x="20" y="357" width="14" height="14" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="20.5" y="357.5" width="13" height="13" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="16" y="232" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="16.5" y="232.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<text x="52" y="368.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">notes.txt</text>
+<text x="48" y="244.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">notes.txt</text>
 <g id="StatusPill/?">
-<rect x="435" y="356" width="16" height="16" fill="#8791a6" fill-opacity="0.18"/>
-<text x="443" y="367.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">?</text>
+<rect x="438" y="232" width="16" height="16" fill="#8791a6" fill-opacity="0.18"/>
+<text x="446" y="243.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">?</text>
 </g>
 </g>
 <g id="Row/normal NewWidget.cpp">
 <g id="Checkbox/off">
-<rect x="20" y="383" width="14" height="14" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="20.5" y="383.5" width="13" height="13" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="16" y="256" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="16.5" y="256.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<text x="52" y="394.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">NewWidget.cpp</text>
-<text x="154" y="394.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui/</text>
+<text x="48" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">NewWidget.cpp</text>
+<text x="150" y="268.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui/</text>
 <g id="StatusPill/?">
-<rect x="435" y="382" width="16" height="16" fill="#8791a6" fill-opacity="0.18"/>
-<text x="443" y="393.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">?</text>
+<rect x="438" y="256" width="16" height="16" fill="#8791a6" fill-opacity="0.18"/>
+<text x="446" y="267.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">?</text>
 </g>
+</g>
+</g>
+<text x="8" y="459.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" id="Section/Message" letter-spacing="0.8" xml:space="preserve">MESSAGE</text>
+<g id="AgentSettings">
+<g id="icon/cog" transform="translate(439,449) scale(0.5833)"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z" fill="#e0e6ed"/></g>
+</g>
+<g id="MessageBox">
+<rect x="8" y="476" width="454" height="64" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="8.5" y="476.5" width="453" height="63" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="16" y="496.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">Commit message</text>
+<g id="Generate">
+<g id="icon/sparkle" transform="translate(439,485) scale(0.5833)"><path d="M19,1L17.74,3.75L15,5L17.74,6.26L19,9L20.25,6.26L23,5L20.25,3.75M9,4L6.5,9.5L1,12L6.5,14.5L9,20L11.5,14.5L17,12L11.5,9.5M19,15L17.74,17.74L15,19L17.74,20.25L19,23L20.25,20.25L23,19L20.25,17.74" fill="#e0e6ed"/></g>
 </g>
 </g>
 <g id="ActionBar">
 <g id="Options">
-<rect x="12" y="534" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="12.5" y="534.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/dots" transform="translate(19,541) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
+<rect x="8" y="548" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="8.5" y="548.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/dots" transform="translate(15,555) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
 </g>
 <g id="Commit">
-<rect x="46" y="534" width="412" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.08"/>
-<rect x="46.5" y="534.5" width="411" height="27" id="border" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
-<g id="icon/commit" transform="translate(56,541) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#4ecdc4"/></g>
-<text x="76" y="552.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" id="label" xml:space="preserve">Commit 5 files</text>
+<rect x="44" y="548" width="418" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.08"/>
+<rect x="44.5" y="548.5" width="417" height="27" id="border" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<g id="icon/commit" transform="translate(61,555) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#4ecdc4"/></g>
+<text x="80" y="566.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" id="label" xml:space="preserve">Commit 5 files</text>
 </g>
 </g>
 </g>
 <rect x="0" y="0" width="470" height="612" id="Scrim" fill="#181c22" fill-opacity="0.5"/>
 <g id="MergeDialog">
-<rect x="12" y="114" width="446" height="384" fill="#181c22"/>
-<rect x="13" y="115" width="444" height="382" fill="none" stroke="#4ecdc4" stroke-width="2" stroke-opacity="1"/>
-<text x="32" y="149.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" xml:space="preserve">Merge</text>
-<text x="32" y="170.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Worked out on the trees alone — nothing touches the working tree yet.</text>
+<g id="MergeDialog/card">
+<rect x="8" y="108" width="454" height="396" fill="#181c22"/>
+<rect x="9" y="109" width="452" height="394" fill="none" stroke="#4ecdc4" stroke-width="2" stroke-opacity="1"/>
+<text x="24" y="141.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" xml:space="preserve">Merge</text>
+<text x="24" y="160.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Worked out on the trees alone — nothing touches the working tree yet.</text>
 <g id="Close">
-<g id="icon/close" transform="translate(419,137) scale(0.5833)"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" fill="#e0e6ed"/></g>
+<g id="icon/close" transform="translate(423,129) scale(0.5833)"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" fill="#e0e6ed"/></g>
 </g>
 </g>
-<text x="32" y="191.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" id="Section/Merge" letter-spacing="0.8" xml:space="preserve">MERGE</text>
+<text x="24" y="191.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" id="Section/Merge" letter-spacing="0.8" xml:space="preserve">MERGE</text>
 <g id="BranchPicker/source">
-<rect x="32" y="202" width="406" height="34" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="32.5" y="202.5" width="405" height="33" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/branch" transform="translate(42,212) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#e0e6ed"/></g>
-<text x="62" y="223.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">feature/askpass</text>
-<g id="icon/chevron" transform="translate(418,213) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+<rect x="24" y="200" width="422" height="36" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="24.5" y="200.5" width="421" height="35" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/branch" transform="translate(37,211) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#e0e6ed"/></g>
+<text x="56" y="222.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">feature/askpass</text>
+<g id="icon/chevron" transform="translate(422.75,212.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
 </g>
 <g id="Swap">
-<g id="icon/swap" transform="translate(42,249) scale(0.5833)"><path d="M21,9L17,5V8H10V10H17V13M7,11L3,15L7,19V16H14V14H7V11Z" fill="#e0e6ed"/></g>
+<g id="icon/swap" transform="translate(31,251) scale(0.5833)"><path d="M21,9L17,5V8H10V10H17V13M7,11L3,15L7,19V16H14V14H7V11Z" fill="#e0e6ed"/></g>
 </g>
-<text x="76" y="259.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" letter-spacing="0.8" xml:space="preserve">INTO</text>
+<text x="60" y="261.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" letter-spacing="0.8" xml:space="preserve">INTO</text>
 <g id="BranchPicker/target">
-<rect x="32" y="276" width="406" height="34" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="32.5" y="276.5" width="405" height="33" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/branch" transform="translate(42,286) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#e0e6ed"/></g>
-<text x="62" y="297.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
-<g id="icon/chevron" transform="translate(418,287) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+<rect x="24" y="280" width="422" height="36" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="24.5" y="280.5" width="421" height="35" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/branch" transform="translate(37,291) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#e0e6ed"/></g>
+<text x="56" y="302.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
+<g id="icon/chevron" transform="translate(422.75,292.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
 </g>
 <g id="VerdictCard">
-<rect x="32" y="322" width="406" height="96" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="32.5" y="322.5" width="405" height="95" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/checkCircle" transform="translate(44,334) scale(0.6667)"><path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#4ecdc4"/></g>
-<text x="68" y="346.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">Clean merge — no conflicts.</text>
-<text x="68" y="366.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2 commits · 3 files</text>
-<text x="68" y="382.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">+41 −7 lines</text>
+<rect x="24" y="332" width="422" height="80" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="24.5" y="332.5" width="421" height="79" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/checkCircle" transform="translate(37,345) scale(0.5833)"><path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#4ecdc4"/></g>
+<text x="60" y="356.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">Clean merge — no conflicts.</text>
+<text x="60" y="380.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2 commits · 3 files</text>
+<text x="60" y="396.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">+41 −7 lines</text>
 </g>
 <g id="Checkbox/off Always create a merge commit">
-<rect x="32" y="432" width="14" height="14" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="32.5" y="432.5" width="13" height="13" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<text x="54" y="443.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" fill-opacity="1" xml:space="preserve">Always create a merge commit</text>
+<rect x="24" y="428" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="24.5" y="428.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="48" y="440.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" fill-opacity="1" xml:space="preserve">Always create a merge commit</text>
 </g>
 <g id="MergeButton">
-<rect x="350" y="450" width="88" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.08"/>
-<rect x="350.5" y="450.5" width="87" height="27" id="border" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
-<g id="icon/merge" transform="translate(366,457) scale(0.5833)"><path d="M7,3A3,3 0 0,1 10,6C10,7.29 9.19,8.39 8.04,8.81C8.58,13.81 13.08,14.77 15.19,14.96C15.61,13.81 16.71,13 18,13A3,3 0 0,1 21,16A3,3 0 0,1 18,19C16.69,19 15.57,18.16 15.16,17C10.91,16.8 9.44,15.19 8,13.39V15.17C9.17,15.58 10,16.69 10,18A3,3 0 0,1 7,21A3,3 0 0,1 4,18C4,16.69 4.83,15.58 6,15.17V8.83C4.83,8.42 4,7.31 4,6A3,3 0 0,1 7,3M7,5A1,1 0 0,0 6,6A1,1 0 0,0 7,7A1,1 0 0,0 8,6A1,1 0 0,0 7,5M7,17A1,1 0 0,0 6,18A1,1 0 0,0 7,19A1,1 0 0,0 8,18A1,1 0 0,0 7,17M18,15A1,1 0 0,0 17,16A1,1 0 0,0 18,17A1,1 0 0,0 19,16A1,1 0 0,0 18,15Z" fill="#4ecdc4"/></g>
-<text x="386" y="468.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" id="label" xml:space="preserve">Merge</text>
+<rect x="358" y="460" width="88" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.08"/>
+<rect x="358.5" y="460.5" width="87" height="27" id="border" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<g id="icon/merge" transform="translate(375,467) scale(0.5833)"><path d="M7,3A3,3 0 0,1 10,6C10,7.29 9.19,8.39 8.04,8.81C8.58,13.81 13.08,14.77 15.19,14.96C15.61,13.81 16.71,13 18,13A3,3 0 0,1 21,16A3,3 0 0,1 18,19C16.69,19 15.57,18.16 15.16,17C10.91,16.8 9.44,15.19 8,13.39V15.17C9.17,15.58 10,16.69 10,18A3,3 0 0,1 7,21A3,3 0 0,1 4,18C4,16.69 4.83,15.58 6,15.17V8.83C4.83,8.42 4,7.31 4,6A3,3 0 0,1 7,3M7,5A1,1 0 0,0 6,6A1,1 0 0,0 7,7A1,1 0 0,0 8,6A1,1 0 0,0 7,5M7,17A1,1 0 0,0 6,18A1,1 0 0,0 7,19A1,1 0 0,0 8,18A1,1 0 0,0 7,17M18,15A1,1 0 0,0 17,16A1,1 0 0,0 18,17A1,1 0 0,0 19,16A1,1 0 0,0 18,15Z" fill="#4ecdc4"/></g>
+<text x="394" y="478.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" id="label" xml:space="preserve">Merge</text>
 </g>
 <g id="Cancel">
-<rect x="279" y="450" width="63" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="279.5" y="450.5" width="62" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<text x="289" y="468.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">Cancel</text>
+<rect x="291" y="460" width="59" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="291.5" y="460.5" width="58" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="299" y="478.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">Cancel</text>
+</g>
 </g>
 </svg>

@@ -87,6 +87,7 @@ private:
     MiniRail *m_rail = nullptr;
     QPointer<QWidget> m_companion;
     QVBoxLayout *m_layout;
+    QHBoxLayout *m_header; // MESSAGE and the cog
     QSpacerItem *m_editorGap;
     QSpacerItem *m_hintGap;
     QSpacerItem *m_ruleGap;

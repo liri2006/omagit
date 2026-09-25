@@ -35,18 +35,20 @@
 
 namespace {
 // As wide as the merge view: its list of repositories and the folder row with
-// its Browse button both want the room.
+// its Browse button both want the room. Everything else is the grid's
+// (Grid.h), as the merge view and the sign-in dialog have it: a dialog's 16
+// of padding, its groups a group gap apart, controls an item gap apart,
+// captions 4 over their 28 px fields, the list's rows 24 with their text 8 in.
 constexpr int kDialogWidth = 640;
-// The fields are as tall as the sign-in dialog's, so the two read as one kit.
-constexpr int kFieldPadding = 8;
 // The list area is this many rows tall, whichever page it shows, and the list
 // scrolls beyond them.
 constexpr int kRepositoryRows = 7;
-// The padding the stylesheet gives a row of the list, above and below.
-constexpr int kRowPadding = 6;
 // The name field takes the row after the folder it goes into, and never less
 // than this: the folder shortens before the name field does.
 constexpr int kNameMinWidth = 220;
+// The idle progress bar's line, always there so a command starting moves
+// nothing.
+constexpr int kProgressHeight = 4;
 // How much of a command's output the message line repeats: the bytes first,
 // then the lines that carry the reason.
 constexpr int kMessageBytes = 1500, kMessageLines = 4;
@@ -148,12 +150,18 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     setObjectName(QStringLiteral("cloneDialog"));
     setWindowModality(Qt::WindowModal);
     setSizeGripEnabled(false);
+    // The groups, top to bottom, a group gap apart (applyTheme() scales every
+    // gap): the heading and its line, the source tabs, the source, a rule,
+    // the destination, the progress and the message, the buttons.
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 18, 20, 16);
-    layout->setSpacing(10);
+    auto *head = new QVBoxLayout;
+    head->setContentsMargins(0, 0, 0, 0);
+    head->setSpacing(0);
     m_heading = new QLabel(tr("Clone repository"));
-    layout->addWidget(m_heading);
-    layout->addWidget(ui::dimLabel(tr("Download a repository and open it in Omagit.")));
+    head->addWidget(m_heading);
+    m_subtitle = ui::dimLabel(tr("Download a repository and open it in Omagit."));
+    head->addWidget(m_subtitle);
+    layout->addLayout(head);
 
     auto *tabs = new QHBoxLayout;
     tabs->setSpacing(0);
@@ -175,10 +183,9 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     m_sources = new QStackedWidget;
     m_sources->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto *urlPage = new QWidget;
-    auto *urlLayout = new QVBoxLayout(urlPage);
+    auto *urlLayout = m_urlLayout = new QVBoxLayout(urlPage);
     urlLayout->setContentsMargins(0, 0, 0, 0);
-    urlLayout->setSpacing(6);
-    auto *urlCaption = ui::sectionLabel(tr("Repository URL"));
+    auto *urlCaption = m_urlCaption = ui::sectionLabel(tr("Repository URL"));
     urlLayout->addWidget(urlCaption);
     m_url = new QLineEdit;
     m_url->setObjectName(QStringLiteral("cloneUrl"));
@@ -186,17 +193,18 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     m_url->setAccessibleName(tr("Repository URL"));
     urlCaption->setBuddy(m_url);
     urlLayout->addWidget(m_url);
+    // An item gap under the field, with the layout's caption gap before it.
+    m_urlHintGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    urlLayout->addItem(m_urlHintGap);
     urlLayout->addWidget(ui::dimLabel(tr("HTTPS or SSH · git@github.com:owner/repo.git")));
     m_sources->addWidget(urlPage);
 
     // The GitHub page keeps its three rows whatever it has to say, so it
     // never re-shapes itself between one account and the next.
     auto *githubPage = new QWidget;
-    auto *githubLayout = new QVBoxLayout(githubPage);
+    auto *githubLayout = m_githubLayout = new QVBoxLayout(githubPage);
     githubLayout->setContentsMargins(0, 0, 0, 0);
-    githubLayout->setSpacing(6);
-    auto *accountRow = new QHBoxLayout;
-    accountRow->setSpacing(8);
+    auto *accountRow = m_accountRow = new QHBoxLayout;
     m_account = ui::dimLabel();
     m_account->setTextFormat(Qt::PlainText);
     m_account->setAccessibleName(tr("GitHub account"));
@@ -226,9 +234,7 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     m_listArea->addWidget(m_repositories);
     m_placeholderPage = new QFrame;
     m_placeholderPage->setObjectName(QStringLiteral("clonePlaceholder"));
-    auto *placeholderLayout = new QVBoxLayout(m_placeholderPage);
-    placeholderLayout->setContentsMargins(20, 12, 20, 12);
-    placeholderLayout->setSpacing(10);
+    auto *placeholderLayout = m_placeholderLayout = new QVBoxLayout(m_placeholderPage);
     placeholderLayout->addStretch();
     m_placeholder = ui::dimLabel();
     m_placeholder->setTextFormat(Qt::PlainText);
@@ -247,11 +253,10 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
 
     layout->addWidget(ui::hairline());
     // Caption above field, the way the sign-in dialog captions its fields.
-    auto *destination = new QVBoxLayout;
-    destination->setSpacing(6);
-    auto *folderCaption = ui::sectionLabel(tr("Destination folder"));
+    auto *destination = m_destinationLayout = new QVBoxLayout;
+    auto *folderCaption = m_folderCaption = ui::sectionLabel(tr("Destination folder"));
     destination->addWidget(folderCaption);
-    auto *folderRow = new QHBoxLayout;
+    auto *folderRow = m_folderRow = new QHBoxLayout;
     m_folder = new QLineEdit(ui::tildePath(folder));
     m_folder->setObjectName(QStringLiteral("cloneFolder"));
     m_folder->setAccessibleName(tr("Destination folder"));
@@ -260,8 +265,10 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     folderRow->addWidget(m_folder, 1);
     folderRow->addWidget(m_browse);
     destination->addLayout(folderRow);
-    auto *destinationRow = new QHBoxLayout;
-    destinationRow->setSpacing(6);
+    m_destinationGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    destination->addItem(m_destinationGap);
+    // The folder and the name read as one path: a cluster apart.
+    auto *destinationRow = m_destinationRow = new QHBoxLayout;
     m_destinationPrefix = new ElidedLabel;
     m_destinationPrefix->setAccessibleName(tr("Destination"));
     m_name = new QLineEdit;
@@ -269,7 +276,6 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     m_name->setAccessibleName(tr("Repository folder name"));
     m_name->setPlaceholderText(tr("repository"));
     m_name->setToolTip(tr("Edit the name of the folder created for this repository"));
-    m_name->setMinimumWidth(kNameMinWidth);
     m_destinationPrefix->setBuddy(m_name);
     destinationRow->addWidget(m_destinationPrefix);
     destinationRow->addWidget(m_name, 1);
@@ -278,10 +284,11 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
 
     // Always on screen, so a command starting does not move the buttons: the
     // idle bar has an empty range and a transparent track, and shows nothing.
+    auto *status = m_statusLayout = new QVBoxLayout;
+    status->setContentsMargins(0, 0, 0, 0);
     m_progress = new QProgressBar;
     m_progress->setTextVisible(false);
-    m_progress->setFixedHeight(3);
-    layout->addWidget(m_progress);
+    status->addWidget(m_progress);
     // One line for everything the dialog has to say: what a command is doing
     // or how it ended, and the destination hint when nothing is running.
     m_message = ui::dimLabel();
@@ -290,10 +297,10 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     m_message->setWordWrap(true);
     m_message->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     m_message->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    layout->addWidget(m_message);
+    status->addWidget(m_message);
+    layout->addLayout(status);
 
-    auto *buttons = new QHBoxLayout;
-    buttons->setSpacing(10);
+    auto *buttons = m_buttonRow = new QHBoxLayout;
     m_open = new QPushButton(tr("Open existing…"));
     m_open->setVisible(allowOpen);
     buttons->addWidget(m_open);
@@ -309,6 +316,7 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
         button->setCursor(Qt::PointingHandCursor);
     }
     m_clone->setDefault(true);
+    ui::setPrimary(m_clone); // 16 in, the dialog's primary action
     connect(m_cancel, &QPushButton::clicked, this, &CloneDialog::reject);
     connect(m_clone, &QPushButton::clicked, this, &CloneDialog::clone);
     connect(m_open, &QPushButton::clicked, this, &CloneDialog::openExisting);
@@ -359,7 +367,7 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &CloneDialog::applyTheme);
 
     // The width is fixed; the height follows the content (fitToContent()).
-    setFixedWidth(kDialogWidth);
+    setFixedWidth(ui::space(kDialogWidth));
     setTabOrder(m_urlTab, m_githubTab);
     setTabOrder(m_githubTab, m_url);
     setTabOrder(m_url, m_search);
@@ -383,12 +391,33 @@ CloneDialog::~CloneDialog() { stopProcess(); }
 void CloneDialog::applyTheme()
 {
     const auto *theme = OmarchyTheme::instance();
+    using namespace ui;
+    const int pad = space(pad::dialog), item = space(gap::item), caption = space(gap::caption);
+    layout()->setContentsMargins(pad, pad, pad, pad);
+    layout()->setSpacing(space(gap::group));
+    for (QBoxLayout *captioned : {m_urlLayout, m_destinationLayout})
+        captioned->setSpacing(caption);
+    m_urlHintGap->changeSize(0, item - caption, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_destinationGap->changeSize(0, item - caption, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    for (QBoxLayout *row : {static_cast<QBoxLayout *>(m_githubLayout), static_cast<QBoxLayout *>(m_accountRow),
+                            static_cast<QBoxLayout *>(m_folderRow), static_cast<QBoxLayout *>(m_buttonRow)})
+        row->setSpacing(item);
+    m_destinationRow->setSpacing(space(gap::cluster));
+    m_placeholderLayout->setContentsMargins(pad, space(pad::popover), pad, space(pad::popover));
+    m_placeholderLayout->setSpacing(item);
+    m_statusLayout->setSpacing(caption);
+    m_progress->setFixedHeight(space(kProgressHeight));
     m_heading->setFont(theme->titleFont());
+    placeOnLine(m_heading, theme->titleFont(), box::row);
+    for (QLabel *label : {m_urlCaption, m_folderCaption})
+        placeOnLine(label, theme->captionFont(), box::line);
     for (auto *edit : {m_url, m_folder, m_search}) {
         edit->setFont(theme->uiFont());
-        edit->setMinimumHeight(QFontMetrics(theme->titleFont()).height() + 2 * kFieldPadding + 2);
+        edit->setFixedHeight(space(box::control));
     }
     m_name->setFont(theme->captionFont());
+    m_name->setFixedHeight(space(box::row));
+    m_name->setMinimumWidth(space(kNameMinWidth));
     for (auto *label : {m_account, m_count, m_placeholder, m_destinationPrefix, m_message})
         label->setFont(theme->captionFont());
     m_repositories->setFont(theme->uiFont());
@@ -782,7 +811,7 @@ void CloneDialog::updateListHeight()
 {
     const int row = m_repositories->count() > 0 && m_repositories->sizeHintForRow(0) > 0
         ? m_repositories->sizeHintForRow(0)
-        : QFontMetrics(OmarchyTheme::instance()->uiFont()).height() + 2 * kRowPadding;
+        : ui::space(ui::box::row);
     m_listArea->setFixedHeight(row * kRepositoryRows + 2 * qMax(1, m_repositories->frameWidth()));
     refit();
 }

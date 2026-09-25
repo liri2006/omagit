@@ -16,37 +16,39 @@
 #include <QVBoxLayout>
 
 namespace {
-// The design's rail (screens.js miniRail()), in 12 px-base pixels: 40 px
-// square tiles, 6 px apart, filling the rail's width.
-constexpr int kTile = 40, kTileGap = 6;
+// The design's rail (screens.js miniRail()), on the grid of Grid.h: 40 px
+// square tiles a cluster (4) apart, filling the rail's width; the commit tile
+// at the bottom, the separator 8 over it and 8 under Refresh.
 // A tile's extension label and its row number (bottom left, 4 px in, its
-// centre 6 px over the tile's bottom).
+// centre 6 px over the tile's bottom): text sizes, and the label's optical
+// drop.
 constexpr int kLabelText = 10, kLabelDrop = 2;
 constexpr int kNumberText = 8, kNumberX = 4, kNumberBox = 12;
 constexpr qreal kUncheckedLabel = 0.45; // the label of a tile not in the commit
 // A tile's corner badge — a miniature's status letter, the commit tile's
 // count: a 12 px square 1 px inside the tile's top right corner, widened
-// leftwards for a longer text, its text 8 px bold in the window colour.
-constexpr int kBadge = 12, kBadgeInset = 1, kBadgeText = 8, kBadgeTextPad = 4;
+// leftwards for a longer text (2 either side of it), its text 8 px bold in
+// the window colour.
+constexpr int kBadgeInset = 1, kBadgeText = 8, kBadgeTextPad = 2;
 constexpr qreal kUncheckedBadge = 0.5; // the badge's fill on an unchecked tile
-// The commit tile's square and its glyph.
-constexpr int kCommitSquare = 40, kCommitGlyph = 16;
-// The gap the design keeps on either side of the separator above the tile.
-constexpr int kCommitGap = 8;
+// The commit glyph's text size.
+constexpr int kCommitGlyph = 16;
 
 QFont boldFont(int px)
 {
     QFont f = OmarchyTheme::instance()->uiFont();
     f.setBold(true);
-    f.setPixelSize(ui::space(px));
+    f.setPixelSize(ui::fontPx(px));
     return f;
 }
 
 // The corner badge of `tile` for `text`.
 QRect cornerBadge(const QRect &tile, const QString &text)
 {
-    const int w = qMax(ui::space(kBadge), QFontMetrics(boldFont(kBadgeText)).horizontalAdvance(text) + ui::space(kBadgeTextPad));
-    return QRect(tile.right() + 1 - ui::space(kBadgeInset) - w, tile.top() + ui::space(kBadgeInset), w, ui::space(kBadge));
+    const int w = qMax(ui::space(ui::box::badge),
+                       QFontMetrics(boldFont(kBadgeText)).horizontalAdvance(text) + 2 * ui::space(kBadgeTextPad));
+    return QRect(tile.right() + 1 - ui::space(kBadgeInset) - w, tile.top() + ui::space(kBadgeInset), w,
+                 ui::space(ui::box::badge));
 }
 
 void paintCornerBadge(QPainter *p, const QRect &badge, const QColor &fill, const QString &text)
@@ -84,7 +86,7 @@ public:
 
     QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override
     {
-        return QSize(m_view->viewport()->width(), ui::space(kTile) + ui::space(kTileGap));
+        return QSize(m_view->viewport()->width(), ui::space(ui::box::tile + ui::gap::cluster));
     }
 
     void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &index) const override
@@ -99,7 +101,7 @@ public:
             status = t->text();
 
         p->save();
-        const QRect tile(0, opt.rect.top(), ui::space(kTile), ui::space(kTile));
+        const QRect tile(0, opt.rect.top(), ui::space(ui::box::tile), ui::space(ui::box::tile));
         p->fillRect(tile, selected ? t->selectedFill() : hover ? t->hoverFill() : t->normalFill());
         p->setPen(QPen(selected ? t->accent() : t->normalBorder(), 1));
         p->setBrush(Qt::NoBrush);
@@ -121,7 +123,7 @@ public:
         paintCornerBadge(p, cornerBadge(tile, letter), fill, letter);
 
         QFont number = t->uiFont();
-        number.setPixelSize(ui::space(kNumberText));
+        number.setPixelSize(ui::fontPx(kNumberText));
         p->setFont(number);
         p->setPen(t->mutedText());
         const int numberBox = ui::space(kNumberBox);
@@ -154,14 +156,14 @@ public:
 
     void applyMetrics()
     {
-        setFixedSize(MiniRail::railWidth(), ui::space(kCommitSquare));
+        setFixedSize(MiniRail::railWidth(), ui::space(ui::box::tile));
         update();
     }
 
     // The painted square, in the widget's coordinates.
     QRect square() const
     {
-        const int side = ui::space(kCommitSquare);
+        const int side = ui::space(ui::box::tile);
         return QRect((width() - side) / 2, height() - side, side, side);
     }
 
@@ -208,7 +210,7 @@ protected:
         p.drawRect(sq.adjusted(0, 0, -1, -1));
 
         QFont glyph = t->uiFont();
-        glyph.setPixelSize(ui::space(kCommitGlyph));
+        glyph.setPixelSize(ui::fontPx(kCommitGlyph));
         p.setFont(glyph);
         p.setPen(t->accent());
         p.drawText(sq, Qt::AlignCenter, ui::icon(ui::kCommit, QStringLiteral("C")).trimmed());
@@ -378,7 +380,7 @@ QToolButton *MiniRail::addButton(uint glyph, const QString &fallback, const QStr
 
 int MiniRail::railWidth()
 {
-    return ui::space(kWidth);
+    return ui::space(ui::box::tile);
 }
 
 MiniRail::MiniRail(QWidget *parent)
@@ -388,7 +390,7 @@ MiniRail::MiniRail(QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     m_layout = layout;
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(4);
+    layout->setSpacing(ui::space(ui::gap::cluster)); // applyTheme() keeps it on the text size
 
     // The hash of the commit whose files these are, with a rule under it; both
     // only while there is one (history mode).
@@ -409,7 +411,10 @@ MiniRail::MiniRail(QWidget *parent)
 
     m_refreshButton = addButton(ui::kRefresh, QStringLiteral("R"), tr("Re-read the repository (F5)"));
     connect(m_refreshButton, &QToolButton::clicked, this, &MiniRail::refreshRequested);
-    layout->addSpacing(4);
+    // Refresh an item gap under the list's separator: the layout's spacing
+    // and this spacer together.
+    m_refreshGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    layout->addItem(m_refreshGap);
     layout->addWidget(m_refreshButton);
 
     // The commit tile under a separator, the design's 8 px from Refresh above
@@ -454,14 +459,17 @@ void MiniRail::setCommitTileActive(bool on)
     static_cast<CommitTile *>(m_commitTile)->setActive(on);
 }
 
-// The gaps around the separator in scaled pixels. The one above it gives
-// back the rail's own spacing, which the layout puts between Refresh and the
-// section, so both measure to what is drawn.
+// The gaps around the separators in scaled pixels. Those above them give back
+// the rail's own spacing, which the layout puts between two widgets, so they
+// measure to what is drawn.
 void MiniRail::applyCommitMetrics()
 {
-    m_ruleGap->changeSize(0, qMax(0, ui::space(kCommitGap) - m_layout->spacing()), QSizePolicy::Minimum,
-                          QSizePolicy::Fixed);
-    m_tileGap->changeSize(0, ui::space(kCommitGap), QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_layout->setSpacing(ui::space(ui::gap::cluster));
+    const int item = ui::space(ui::gap::item);
+    m_refreshGap->changeSize(0, qMax(0, item - m_layout->spacing()), QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_ruleGap->changeSize(0, qMax(0, item - m_layout->spacing()), QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_tileGap->changeSize(0, item, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_layout->invalidate();
     static_cast<CommitTile *>(m_commitTile)->applyMetrics();
     m_commitSection->layout()->invalidate();
 }

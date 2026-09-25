@@ -120,7 +120,10 @@ private:
     void updateMetrics();
     void updateScrollBars();
     int headerHeight() const;
+    int linesTop() const;
     int marginWidth() const;
+    int edgeOffset(int pane) const;
+    int paneMargin(int pane) const;
     int paneCount() const { return m_panes.size(); }
     int rowCount() const { return m_panes.isEmpty() ? 0 : m_panes[0].size(); }
     PaneSplit paneSplitMetrics() const;

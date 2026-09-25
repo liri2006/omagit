@@ -38,8 +38,8 @@ public:
     // Whether there is a badge to paint: a count, a mark or the busy dots.
     bool hasBadge() const;
     // The badge's box for this button drawn at `button`: its right edge
-    // space(4) past the button's, its top space(5) above the button's, a
-    // square of space(14) at the least and wider for a longer text.
+    // space(4) past the button's, its top space(4) above the button's, a
+    // square of space(12) at the least and wider for a longer text.
     QRect badgeRect(const QRect &button) const;
     // Paints the badge for this button drawn at `button`, pop and all.
     void paintBadge(QPainter *p, const QRect &button) const;

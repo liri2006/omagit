@@ -23,6 +23,16 @@ using ui::space;
 
 namespace {
 
+// The design's panel (screens.js keybindingsPanel()), on the grid of Grid.h:
+// a dialog's 16 of padding, the search on a 24 px row, a group gap to the
+// rows. Sizes the design gives the panel alone: 800 by 500 at the most, the
+// window's margins clear of its edges; 40 px rows a cluster (4) apart, the
+// keys 16 into a row, the chevron's 16 px box 152 after the keys' start
+// (further where the keys in the theme's font need it) and the action 4
+// after the box.
+constexpr int kWidth = 800, kHeight = 500;
+constexpr int kRowHeight = 40, kKeysInset = 16, kChevronX = 152;
+
 struct Binding {
     QString keys;
     QString action;
@@ -97,8 +107,9 @@ private:
 
 namespace {
 
-// One row: the keys in a fixed column, "→ action", the context dim at the
-// right. The cursor row gets the menu's highlight: a faint fill, accent text.
+// One row: the keys in a fixed column, the chevron, the action, the context
+// dim at the right. The cursor row gets the menu's highlight: a faint fill,
+// accent text.
 class BindingDelegate : public QStyledItemDelegate
 {
 public:
@@ -135,6 +146,18 @@ public:
         const int keyWidth = qMin(m_keyColumn, right - x);
         p->drawText(QRect(x, r.top(), keyWidth, r.height()), textFlags, fm.elidedText(keys, Qt::ElideRight, keyWidth));
         x += m_keyColumn;
+        // The chevron, dim, centred by its ink in its box; the action 4 after it.
+        {
+            const QFont glyphFont = theme->uiFont();
+            const QString chevron = ui::icon(ui::kChevronRight, QStringLiteral("›")).trimmed();
+            const int box = space(ui::box::icon);
+            p->setFont(glyphFont);
+            p->setPen(theme->mutedText());
+            p->drawText(QRectF(x, r.top(), box, r.height()).center() - ui::inkRect(glyphFont, chevron).center(), chevron);
+            p->setFont(m_font);
+            p->setPen(fg);
+            x += box + space(ui::gap::icon);
+        }
         // Context, dim, at the right end; the action gets what is left.
         const QString context = index.data(BindingModel::ContextRole).toString();
         int actionRight = right;
@@ -148,7 +171,7 @@ public:
                 p->setPen(fg);
             }
         }
-        const QString action = QStringLiteral("→ ") + index.data(BindingModel::ActionRole).toString();
+        const QString action = index.data(BindingModel::ActionRole).toString();
         if (actionRight > x)
             p->drawText(QRect(x, r.top(), actionRight - x, r.height()), textFlags,
                         fm.elidedText(action, Qt::ElideRight, actionRight - x));
@@ -209,15 +232,13 @@ KeybindingsPanel::KeybindingsPanel(QWidget *parent)
     setWindowTitle(tr("Omagit keybindings"));
     setAttribute(Qt::WA_DeleteOnClose);
 
-    // The shell's menu metrics: 18 px padding, a 34 px header, 50 px rows
-    // 3 px apart, all at the 12 px base and scaled with it.
+    // The design's metrics (see the top of the file), scaled with the text size.
     const QFont heading = theme->headingFont();
-    const int headingPx = heading.pixelSize();
-    m_padding = space(18);
-    m_headerHeight = qMax(space(34), headingPx + space(6) * 2);
-    m_spacing = space(6);
-    m_rowHeight = qMax(space(50), headingPx + space(12) * 2);
-    m_rowGap = space(3);
+    m_padding = space(ui::pad::dialog);
+    m_headerHeight = space(ui::box::row);
+    m_spacing = space(ui::gap::group);
+    m_rowHeight = space(kRowHeight);
+    m_rowGap = space(ui::gap::cluster);
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(m_padding, m_padding, m_padding, m_padding);
@@ -273,16 +294,16 @@ void KeybindingsPanel::add(const QString &keys, const QString &action, const QSt
 void KeybindingsPanel::popup()
 {
     QWidget *host = parentWidget();
-    const int width = qMin(space(800), host ? host->width() - space(40) : space(800));
-    // The keys column is 35 characters, as the shell pads them, but no wider
-    // than the longest keys need and never most of the row.
+    const int width = qMin(space(kWidth), host ? host->width() - 2 * ui::windowMargin(host) : space(kWidth));
+    // The keys column: the design's 152, or as wide as the longest keys need
+    // and an item gap, but never most of the row.
     const QFontMetrics fm(OmarchyTheme::instance()->headingFont());
     int longest = 0;
     for (const Binding &b : m_model->all())
         longest = qMax(longest, fm.horizontalAdvance(b.keys));
-    const int ch = fm.horizontalAdvance(QLatin1Char('0'));
-    const int inset = space(18);
-    const int keyColumn = qMin(qMin(ch * 35, longest + ch * 3), (width - 2 * m_padding - 2 * inset) * 3 / 5);
+    const int inset = space(kKeysInset);
+    const int keyColumn = qMin(qMax(space(kChevronX), longest + space(ui::gap::item)),
+                               (width - 2 * m_padding - 2 * inset) * 3 / 5);
     m_list->setItemDelegate(new BindingDelegate(m_list, m_rowHeight, m_rowGap, inset, keyColumn));
 
     resize(width, height());
@@ -301,9 +322,9 @@ void KeybindingsPanel::fitHeight()
     QWidget *host = parentWidget();
     const int rows = m_model->rowCount();
     const int pitch = m_rowHeight + m_rowGap; // each row's size hint includes its gap
-    int cap = space(500);
+    int cap = space(kHeight);
     if (host)
-        cap = qMin(cap, host->height() - space(40));
+        cap = qMin(cap, host->height() - 2 * ui::windowMargin(host));
     const int chrome = 2 * m_padding + m_headerHeight;
     int rowsHeight = rows * pitch;
     const int available = cap - chrome - m_spacing;

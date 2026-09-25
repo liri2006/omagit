@@ -12,12 +12,11 @@
 #include <QWidgetAction>
 
 namespace {
-// The design's menu rows (screens.js menuCard()), in 12 px-base pixels: the
-// 14 px glyph 10 px into the row, the name 22 px after it (the stylesheet's
-// BranchMenu::item padding), and the menu 300 px wide, 12 px clear of the
-// window's edges where the window is narrower.
-constexpr int kGlyphX = 10, kGlyphBox = 14;
-constexpr int kWidth = 300, kWindowClearance = 12;
+// The design's menu (screens.js screen(), the branch overlay): 300 px wide,
+// the window's margin clear of its edges where the window is narrower. Its
+// rows are a menu's (menuCard()): the glyph's 16 px box 8 into the row, the
+// name 4 after it (the stylesheet's BranchMenu::item padding).
+constexpr int kWidth = 300;
 const char *const kGlyphProperty = "branchGlyph";
 } // namespace
 
@@ -195,7 +194,7 @@ void BranchMenu::popupAt(QWidget *anchor, bool above, QWidget *bar)
     // The design's width where the window has the room, at least as wide as
     // the button it hangs from (so the two line up) and never wider than the
     // window, less its margins.
-    const int room = anchor->window()->width() - 2 * ui::space(kWindowClearance);
+    const int room = anchor->window()->width() - 2 * ui::windowMargin(anchor);
     setMinimumWidth(qMax(anchor->width(), qMin(ui::space(kWidth), room)));
     setMaximumWidth(qMax(anchor->width(), room));
     const int y = above ? -sizeHint().height() : anchor->height();
@@ -228,9 +227,9 @@ void BranchMenu::paintEvent(QPaintEvent *event)
         p.setPen(!a->isEnabled()                              ? theme->fill(0.45)
                  : a == activeAction() || a->isChecked()      ? theme->accent()
                                                               : theme->text());
-        // Centred by its ink in the design's 14 px box (TextDontClip's
+        // Centred by its ink in the design's 16 px box (TextDontClip's
         // concern: the ink overhangs the advance).
-        const QRectF box(r.left() + ui::space(kGlyphX), r.top(), ui::space(kGlyphBox), r.height());
+        const QRectF box(r.left() + ui::space(ui::pad::control), r.top(), ui::space(ui::box::icon), r.height());
         p.drawText(box.center() - ui::inkRect(p.font(), glyph).center(), glyph);
     }
 }

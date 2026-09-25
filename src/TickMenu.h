@@ -12,8 +12,9 @@ class TickMenu : public QMenu
 public:
     explicit TickMenu(QWidget *parent = nullptr);
 
-    // The room an item keeps free on the right for the tick (menus without
-    // any checkable entry keep it too, so the widths match).
+    // The room an item keeps free on the right for the tick, past the row's
+    // own 8 px padding: its 16 px box and 4 before it (menus without any
+    // checkable entry keep it too, so the widths match).
     static int tickReserve();
 
 protected:

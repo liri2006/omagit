@@ -15,6 +15,12 @@ constexpr int kPaneLayoutCount = 2;
 // window decides it; the commit page and the history size their parts by it.
 enum class WidthClass { Wide, Large, Medium, Stacked };
 
+// The window's height class (screens.js density(): SHALLOW, TALL), in design
+// pixels: lower than 560 it is shallow (no footer, the one-line message box),
+// from 1000 up tall; between the two, normal. It steps the block gap between
+// the parts stacked in a pane.
+enum class HeightClass { Shallow, Normal, Tall };
+
 inline QString paneLayoutName(PaneLayout l)
 {
     switch (l) {

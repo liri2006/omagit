@@ -9,22 +9,19 @@
 #include <QPainter>
 #include <QWidgetAction>
 
-namespace {
-constexpr int kEdge = 14; // matches the item's left padding
-} // namespace
-
 TickMenu::TickMenu(QWidget *parent)
     : QMenu(parent)
 {
 }
 
+// The tick's 16 px box and the 4 px before it (screens.js menuCard(): a
+// checked row's hint ends 4 short of the box).
 int TickMenu::tickReserve()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
-    const QString g = theme->glyph(ui::kCheck);
-    if (g.isEmpty())
+    if (theme->glyph(ui::kCheck).isEmpty())
         return 0;
-    return QFontMetrics(theme->uiFont()).horizontalAdvance(g) + 10;
+    return ui::space(ui::box::icon) + ui::space(ui::gap::icon);
 }
 
 void TickMenu::paintEvent(QPaintEvent *event)
@@ -35,10 +32,11 @@ void TickMenu::paintEvent(QPaintEvent *event)
     if (tick.isEmpty())
         return;
     QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
     p.setFont(theme->uiFont());
     p.setPen(theme->accent());
-    const QFontMetrics fm(p.font());
-    const int w = fm.horizontalAdvance(tick);
+    const QRectF ink = ui::inkRect(p.font(), tick);
+    const int side = ui::space(ui::box::icon);
     const QList<QAction *> all = actions();
     for (QAction *a : all) {
         if (!a->isCheckable() || !a->isChecked() || !a->isVisible() || qobject_cast<QWidgetAction *>(a))
@@ -46,6 +44,8 @@ void TickMenu::paintEvent(QPaintEvent *event)
         const QRect r = actionGeometry(a);
         if (r.isNull() || !event->rect().intersects(r))
             continue;
-        p.drawText(QRect(r.right() - kEdge - w + 1, r.top(), w, r.height()), Qt::AlignVCenter | Qt::AlignLeft, tick);
+        // In its 16 px box 8 from the row's right edge, centred by its ink.
+        const QRectF box(r.right() + 1 - ui::space(ui::pad::control) - side, r.top(), side, r.height());
+        p.drawText(box.center() - ink.center(), tick);
     }
 }

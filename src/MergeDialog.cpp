@@ -25,6 +25,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <memory>
 
 namespace {
@@ -38,15 +39,19 @@ constexpr uint kGood = 0xF05E0, kBad = 0xF0028, kWarn = 0xF0026;
 constexpr int kPreviewDebounceMs = 120;
 constexpr int kSpinnerIntervalMs = 80;
 constexpr int kPopupPollMs = 50;      // how often a verdict held back by an open menu asks again
-// The window is as wide as the two pickers side by side want to be, or the
-// window it opens over less a margin, whichever is narrower
-// (design/figma-gen/screens.js screen(): min(640, W − 24)).
+// The design's dialog (design/figma-gen/screens.js mergeDialog()), on the grid
+// of Grid.h: a dialog's 16 of padding and its parts a group gap (16) apart;
+// the captions 16 px lines 4 over the pickers; the pickers side by side with
+// the swap between them an item gap (8) either side — or, narrow, stacked,
+// the swap a 28 px ghost button between them 8 from either, INTO 8 after it;
+// Cancel, 8, Merge. Sizes the design gives the dialog alone: 640 wide, or the
+// window it opens over less its margins (screens.js screen(): min(640,
+// W − 2m)); stacked under 520; the branch pickers 36 high with a big
+// control's 12 of padding, and the swap as tall; the verdict card at least
+// 80, its icon's 16 px box and the text 8 after it.
 constexpr int kDialogWidth = 640;
-constexpr int kWindowMargin = 24;
-// Narrower than this, the pickers stack (screens.js mergeDialog()).
 constexpr int kStackBelow = 520;
-// Between the stacked form's swap button and the INTO caption beside it.
-constexpr int kSwapGap = 10;
+constexpr int kPicker = 36, kVerdict = 80;
 // The conflict list scrolls beyond this many rows instead of growing on.
 constexpr int kFileRows = 6;
 // Blocked paths named in the warning before it says "and N more".
@@ -206,13 +211,8 @@ public:
     }
     QString branch() const { return m_name; }
 
-    QSize sizeHint() const override
-    {
-        const OmarchyTheme *t = OmarchyTheme::instance();
-        const int h = QFontMetrics(t->titleFont()).height() + 2 * kPad + 2;
-        return QSize(260, h);
-    }
-    QSize minimumSizeHint() const override { return QSize(120, sizeHint().height()); }
+    QSize sizeHint() const override { return QSize(ui::space(260), ui::space(kPicker)); }
+    QSize minimumSizeHint() const override { return QSize(ui::space(120), ui::space(kPicker)); }
 
 protected:
     // Like a combo box: Enter goes to the dialog's Merge button, the list
@@ -242,6 +242,8 @@ protected:
         QToolButton::keyReleaseEvent(e);
     }
 
+    // A big control's kit layout (kit.js button({px: PAD.big})): [12][glyph
+    // box 16][4][name][4][chevron box 12][12], the glyphs centred by their ink.
     void paintEvent(QPaintEvent *) override
     {
         const OmarchyTheme *t = OmarchyTheme::instance();
@@ -253,21 +255,24 @@ protected:
         p.drawComplexControl(QStyle::CC_ToolButton, opt); // the stylesheet's box and states
         const bool on = isEnabled();
         const QColor dim = on ? t->mutedText() : t->fill(0.45);
-        const QRect r = rect().adjusted(kPad + 4, 0, -(kPad + 4), 0);
-        p.setFont(t->uiFont());
-        const QString mark = glyph(ui::kBranch, QString());
-        int x = r.left();
-        if (!mark.isEmpty()) {
-            p.setPen(dim);
-            p.drawText(QRect(x, r.top(), p.fontMetrics().horizontalAdvance(mark), r.height()), Qt::AlignVCenter, mark);
-            x += p.fontMetrics().horizontalAdvance(mark) + 10;
-        }
-        const QString chevron = glyph(ui::kChevron, QStringLiteral("▾"));
-        const int chevronW = p.fontMetrics().horizontalAdvance(chevron);
+        const int pad = ui::space(ui::pad::big), h = height();
+        const auto centred = [&p](const QFont &font, const QString &glyph, const QRectF &box) {
+            p.setFont(font);
+            p.drawText(box.center() - ui::inkRect(font, glyph).center(), glyph);
+        };
         p.setPen(dim);
-        p.drawText(QRect(r.right() - chevronW, r.top(), chevronW, r.height()), Qt::AlignVCenter, chevron);
+        const QString mark = glyph(ui::kBranch, QString());
+        int x = pad;
+        if (!mark.isEmpty()) {
+            centred(t->uiFont(), mark, QRectF(x, 0, ui::space(ui::box::icon), h));
+            x += ui::space(ui::box::icon) + ui::space(ui::gap::icon);
+        }
+        QFont small = t->uiFont();
+        small.setPixelSize(qMax(1, qRound(small.pixelSize() * ui::box::chevron / double(ui::box::icon))));
+        const int chevronLeft = width() - pad - ui::space(ui::box::chevron);
+        centred(small, glyph(ui::kChevron, QStringLiteral("▾")), QRectF(chevronLeft, 0, ui::space(ui::box::chevron), h));
         p.setFont(t->titleFont());
-        const QRect nameRect(x, r.top(), r.right() - chevronW - 10 - x, r.height());
+        const QRect nameRect(x, 0, chevronLeft - ui::space(ui::gap::icon) - x, h);
         if (m_name.isEmpty()) {
             p.setPen(dim);
             p.drawText(nameRect, Qt::AlignVCenter, tr("No branch"));
@@ -278,7 +283,6 @@ protected:
     }
 
 private:
-    static constexpr int kPad = 8;
     QString m_name;
 };
 
@@ -305,6 +309,7 @@ private:
     int m_spinnerFrame = 0;
     QLabel *m_icon, *m_headline, *m_detail, *m_warningIcon, *m_warning;
     QWidget *m_warningRow;
+    QHBoxLayout *m_warningLayout;
     QListWidget *m_files;
     QString m_iconColor, m_headlineColor, m_warningIconColor; // the stylesheets in force
 };
@@ -313,10 +318,9 @@ VerdictCard::VerdictCard(QWidget *parent)
     : QFrame(parent)
 {
     setObjectName(QStringLiteral("mergeVerdict"));
+    // A card's 12 of padding; the icon's 16 px box, the text 8 after it; the
+    // parts under the headline 8 apart. applyTheme() scales them.
     auto *card = new QGridLayout(this);
-    card->setContentsMargins(14, 12, 14, 12);
-    card->setHorizontalSpacing(12);
-    card->setVerticalSpacing(6);
     m_icon = new QLabel;
     m_icon->setObjectName(QStringLiteral("bigLabel"));
     m_icon->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
@@ -337,9 +341,8 @@ VerdictCard::VerdictCard(QWidget *parent)
     m_files->setUniformItemSizes(true);
     m_files->hide();
     m_warningRow = new QWidget;
-    auto *warningLayout = new QHBoxLayout(m_warningRow);
-    warningLayout->setContentsMargins(0, 2, 0, 0);
-    warningLayout->setSpacing(8);
+    auto *warningLayout = m_warningLayout = new QHBoxLayout(m_warningRow);
+    warningLayout->setContentsMargins(0, 0, 0, 0);
     m_warningIcon = new QLabel;
     m_warningIcon->setAlignment(Qt::AlignTop);
     m_warning = new QLabel;
@@ -371,6 +374,12 @@ VerdictCard::VerdictCard(QWidget *parent)
 void VerdictCard::applyTheme()
 {
     const OmarchyTheme *t = OmarchyTheme::instance();
+    auto *card = static_cast<QGridLayout *>(layout());
+    const int pad = ui::space(ui::pad::popover);
+    card->setContentsMargins(pad, pad, pad, pad);
+    card->setHorizontalSpacing(ui::space(ui::gap::item));
+    card->setVerticalSpacing(ui::space(ui::gap::item));
+    m_warningLayout->setSpacing(ui::space(ui::gap::item));
     m_detail->setFont(t->captionFont());
     QFont bold = t->uiFont();
     bold.setBold(true);
@@ -378,7 +387,7 @@ void VerdictCard::applyTheme()
     QFont big = t->uiFont();
     big.setPixelSize(qRound(t->fontBase() * 1.5));
     m_icon->setFont(big);
-    m_icon->setFixedWidth(QFontMetrics(big).horizontalAdvance(glyph(kGood, QStringLiteral("✓"))) + 4);
+    m_icon->setFixedWidth(ui::space(ui::box::icon));
     m_warningIcon->setFont(t->uiFont());
     m_warningIcon->setText(glyph(kWarn, QStringLiteral("!")));
     setTextColor(m_warningIcon, &m_warningIconColor, t->color(QStringLiteral("yellow")));
@@ -415,8 +424,8 @@ void VerdictCard::setVerdict(const MergeVerdict &verdict)
         item->setToolTip(path);
     }
     if (!verdict.files.isEmpty()) {
-        const int rowH = m_files->sizeHintForRow(0) > 0 ? m_files->sizeHintForRow(0) : m_files->fontMetrics().height() + 4;
-        m_files->setFixedHeight(rowH * qMin(verdict.files.size(), kFileRows) + 4);
+        const int rowH = m_files->sizeHintForRow(0) > 0 ? m_files->sizeHintForRow(0) : ui::space(ui::box::line);
+        m_files->setFixedHeight(rowH * qMin(verdict.files.size(), kFileRows));
     }
     m_files->setVisible(!verdict.files.isEmpty());
     m_warning->setText(verdict.warning);
@@ -478,15 +487,13 @@ MergeDialog::MergeDialog(GitRepo *repo, QWidget *parent)
 
 void MergeDialog::buildUi()
 {
+    // The pickers, the verdict card, the option and the buttons, a group gap
+    // apart inside a dialog's padding (applyTheme() scales them).
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 18, 20, 16);
-    layout->setSpacing(10);
     layout->addLayout(buildBranchRow());
-    layout->addSpacing(2);
     m_card = new VerdictCard;
     layout->addWidget(m_card);
     layout->addWidget(buildNoFastForwardBox());
-    layout->addSpacing(4);
     // All spare height belongs between the preview controls and the footer.
     // Otherwise QBoxLayout distributes it among the header and verdict rows.
     layout->addStretch(1);
@@ -494,7 +501,7 @@ void MergeDialog::buildUi()
 
     // The width is fixed, to the window the dialog opens over once it is shown
     // (fitWidth()); the height follows the content (fitToContent()).
-    setFixedWidth(kDialogWidth);
+    setFixedWidth(ui::space(kDialogWidth));
     setTabOrder(m_sourcePicker, m_swapButton);
     setTabOrder(m_swapButton, m_destinationPicker);
     setTabOrder(m_destinationPicker, m_noFastForward);
@@ -508,8 +515,9 @@ QGridLayout *MergeDialog::buildBranchRow()
 {
     auto *grid = new QGridLayout;
     m_branchGrid = grid;
-    grid->setHorizontalSpacing(12);
-    grid->setVerticalSpacing(6);
+    // The gaps are rows and columns of their own (arrangePickers()).
+    grid->setHorizontalSpacing(0);
+    grid->setVerticalSpacing(0);
     m_sourceCaption = ui::sectionLabel(tr("Merge"));
     m_destinationCaption = ui::sectionLabel(tr("Into"));
     m_sourcePicker = new BranchPicker;
@@ -541,6 +549,8 @@ QGridLayout *MergeDialog::buildBranchRow()
 //   [source] ⇄ [dest]        [source          ]
 //                            ⇄  INTO
 //                            [dest            ]
+// The grid's gaps are rows and columns of their own: 4 under a caption, 8
+// between the pickers and the swap row, 8 either side of the swap.
 void MergeDialog::arrangePickers(bool stacked)
 {
     if (m_pickersStacked == int(stacked))
@@ -557,28 +567,58 @@ void MergeDialog::arrangePickers(bool stacked)
     m_swapRow = nullptr;
 
     if (stacked) {
-        grid->addWidget(m_sourceCaption, 0, 0, 1, 3);
-        grid->addWidget(m_sourcePicker, 1, 0, 1, 3);
+        grid->addWidget(m_sourceCaption, 0, 0, 1, 5);
+        grid->addWidget(m_sourcePicker, 2, 0, 1, 5);
         m_swapRow = new QHBoxLayout;
-        m_swapRow->setSpacing(kSwapGap);
         m_swapRow->addWidget(m_swapButton, 0, Qt::AlignVCenter);
         m_swapRow->addWidget(m_destinationCaption, 0, Qt::AlignVCenter);
         m_swapRow->addStretch(1);
-        grid->addLayout(m_swapRow, 2, 0, 1, 3);
-        grid->addWidget(m_destinationPicker, 3, 0, 1, 3);
+        grid->addLayout(m_swapRow, 4, 0, 1, 5);
+        grid->addWidget(m_destinationPicker, 6, 0, 1, 5);
         // The pickers are Expanding and span the grid: no column needs a say.
-        for (int column = 0; column < 3; ++column)
+        for (int column = 0; column < 5; ++column)
             grid->setColumnStretch(column, 0);
     } else {
         grid->addWidget(m_sourceCaption, 0, 0);
-        grid->addWidget(m_destinationCaption, 0, 2);
-        grid->addWidget(m_sourcePicker, 1, 0);
-        grid->addWidget(m_swapButton, 1, 1, Qt::AlignCenter);
-        grid->addWidget(m_destinationPicker, 1, 2);
+        grid->addWidget(m_destinationCaption, 0, 4);
+        grid->addWidget(m_sourcePicker, 2, 0);
+        grid->addWidget(m_swapButton, 2, 2, Qt::AlignCenter);
+        grid->addWidget(m_destinationPicker, 2, 4);
         grid->setColumnStretch(0, 1);
-        grid->setColumnStretch(1, 0);
-        grid->setColumnStretch(2, 1);
+        grid->setColumnStretch(2, 0);
+        grid->setColumnStretch(4, 1);
     }
+    applyPickerMetrics();
+}
+
+// The grid's gaps and the swap button for the arrangement and the text size
+// of the moment: side by side, the swap is the pickers' 36 px square; stacked,
+// a 28 px ghost button with INTO 8 after it.
+void MergeDialog::applyPickerMetrics()
+{
+    QGridLayout *grid = m_branchGrid;
+    const bool stacked = m_pickersStacked == 1;
+    const int item = ui::space(ui::gap::item);
+    for (int row = 0; row < 7; ++row)
+        grid->setRowMinimumHeight(row, 0);
+    for (int column = 0; column < 5; ++column)
+        grid->setColumnMinimumWidth(column, 0);
+    grid->setRowMinimumHeight(1, ui::space(ui::gap::caption));
+    if (stacked) {
+        grid->setRowMinimumHeight(3, item);
+        grid->setRowMinimumHeight(5, item);
+    } else {
+        grid->setColumnMinimumWidth(1, item);
+        grid->setColumnMinimumWidth(3, item);
+    }
+    if (m_swapRow)
+        m_swapRow->setSpacing(item);
+    const int swap = ui::space(stacked ? ui::box::control : kPicker);
+    m_swapButton->setFixedSize(swap, swap);
+    m_swapButton->setProperty("ghost", stacked);
+    m_swapButton->style()->unpolish(m_swapButton);
+    m_swapButton->style()->polish(m_swapButton);
+    grid->invalidate();
 }
 
 QCheckBox *MergeDialog::buildNoFastForwardBox()
@@ -596,8 +636,7 @@ QCheckBox *MergeDialog::buildNoFastForwardBox()
 
 QHBoxLayout *MergeDialog::buildButtonRow()
 {
-    auto *buttons = new QHBoxLayout;
-    buttons->setSpacing(10);
+    auto *buttons = m_buttonRow = new QHBoxLayout;
     m_abortButton = new QPushButton(tr("Abort merge"));
     m_abortButton->setCursor(Qt::PointingHandCursor);
     m_abortButton->setToolTip(tr("git merge --abort: the branch and the working tree go back to how they were"));
@@ -607,9 +646,10 @@ QHBoxLayout *MergeDialog::buildButtonRow()
     m_cancelButton->setCursor(Qt::PointingHandCursor);
     m_cancelButton->setAutoDefault(false);
     connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
-    m_mergeButton = new QPushButton;
+    m_mergeButton = new ui::KitPushButton;
     m_mergeButton->setCursor(Qt::PointingHandCursor);
     m_mergeButton->setDefault(true);
+    ui::setPrimary(m_mergeButton); // 16 in, the dialog's primary action
     m_mergeButton->setEnabled(false);
     connect(m_mergeButton, &QPushButton::clicked, this, &MergeDialog::startMerge);
     buttons->addWidget(m_abortButton);
@@ -622,11 +662,17 @@ QHBoxLayout *MergeDialog::buildButtonRow()
 void MergeDialog::applyTheme()
 {
     const OmarchyTheme *t = OmarchyTheme::instance();
-    for (QLabel *l : {m_sourceCaption, m_destinationCaption})
+    const int pad = ui::space(ui::pad::dialog);
+    layout()->setContentsMargins(pad, pad, pad, pad);
+    layout()->setSpacing(ui::space(ui::gap::group));
+    m_buttonRow->setSpacing(ui::space(ui::gap::item));
+    for (QLabel *l : {m_sourceCaption, m_destinationCaption}) {
         l->setFont(t->captionFont());
+        ui::placeOnLine(l, t->captionFont(), ui::box::line);
+    }
     m_card->applyTheme();
     m_swapButton->setText(glyph(kSwap, QStringLiteral("⇄")));
-    m_swapButton->setFixedSize(m_sourcePicker->sizeHint().height(), m_sourcePicker->sizeHint().height());
+    applyPickerMetrics();
     m_mergeButton->setText(ui::icon(ui::kMerge) + tr("Merge"));
     m_abortButton->setText(tr("Abort merge"));
     updatePickers();
@@ -818,9 +864,9 @@ void MergeDialog::setVerdict(const MergeVerdict &verdict)
 void MergeDialog::fitToContent()
 {
     if (m_card->checking())
-        m_card->setMinimumHeight(qMax(m_verdictHeight, m_card->typicalHeight()));
+        m_card->setMinimumHeight(std::max({ui::space(kVerdict), m_verdictHeight, m_card->typicalHeight()}));
     else
-        m_card->setMinimumHeight(0);
+        m_card->setMinimumHeight(ui::space(kVerdict)); // the design's card, taller as its text asks
     QLayout *l = layout();
     l->invalidate();
     l->activate();
@@ -841,8 +887,9 @@ void MergeDialog::fitToContent()
 void MergeDialog::fitWidth()
 {
     const QWidget *host = parentWidget() ? parentWidget()->window() : nullptr;
-    int width = host ? qMin(kDialogWidth, host->width() - kWindowMargin) : kDialogWidth;
-    arrangePickers(width < kStackBelow);
+    int width = host ? qMin(ui::space(kDialogWidth), host->width() - 2 * ui::windowMargin(host))
+                     : ui::space(kDialogWidth);
+    arrangePickers(width < ui::space(kStackBelow));
     QLayout *l = layout();
     l->invalidate();
     width = qMax(width, l->totalMinimumSize().width());

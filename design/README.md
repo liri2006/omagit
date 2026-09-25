@@ -10,6 +10,38 @@ All design pixels are meant for a 12 px base font. The app follows the Omarchy
 text size, so every one of them goes through `ui::space(px)` and is re-applied
 on `OmarchyTheme::changed`.
 
+## The grid
+
+Since 2026-09-24 every size and gap in the design is a multiple of 4
+(`kit.js`: `GRID`, `SP`, `BOX`, `PAD`, `GAP`, `DENSITY`, `BAR`; drawn on the
+Foundations page). In short:
+
+- Sizes: controls 28, every clickable row 24 (files, commits, menus, models,
+  table and section headers), text lines 16, icon boxes 16 with the glyph at
+  14, chevrons 12, pills and chips 16, hanging badges 12, checkboxes 16, Mini
+  tiles 40, footer 28. The top bar and the action row are 8 + 28 + 8.
+- Padding inside a thing follows its size and never changes with the window:
+  4 on 16 px things, 8 on 24–28 px things, 12 on popovers and cards, 16 on
+  dialogs and the primary action of a surface.
+- Gaps inside a group are fixed too: 4 after an icon box and between bordered
+  controls acting as one, 8 between separate controls, 16 between groups (a
+  divider in the middle). A 24 header row stands 8 over its content, a 28
+  control row 4, so every pane's first box starts 32 under the body's top.
+- Spacing between things steps with the window, one step per class: side
+  margins and pane gaps 8 / 12 / 16 by width (S·XS / L·M / XL), the block gap
+  between the parts stacked in a pane — sections included, a header row
+  carries its own air — 4 / 8 / 12 by height (< 560 / 560–999 / ≥ 1000). The
+  body stands 8 from the top bar's and the footer's hairlines.
+- Borders and hairlines are drawn inside their box; icon-button glyphs sit on
+  the text padding of what they belong to; one flexible part per axis (a
+  table, the diff) takes whatever the window leaves.
+
+In the app: `src/Grid.h` holds the tokens one to one, `ui::space()` scales
+the unit once (`round(4 × base / 12)`) so sums stay on the grid at every text
+size, `ui::fontPx()` is for text sizes, and `MainWindow` hands the window's
+`Density` (`densityFor(WidthClass, HeightClass)`) to the top bar, footer and
+pages; `ui::windowMargin(widget)` reads it for the menu and popover clamps.
+
 ## Bringing it into the app
 
 The redesign is a set of separate decisions that touch different parts of the
@@ -28,6 +60,7 @@ tile widths (Wide, Half, Third, Eighth).
 | 6 | Agent settings popover | done |
 | 7 | Stacked layouts | done |
 | 8 | Diff pane toolbar | done |
+| 10 | The 4 px grid (sizes, padding, density) | done (brief `docs/briefs/2026-09-24-design-grid.md`) |
 
 ### 1. Kit primitives
 
@@ -56,6 +89,10 @@ All inside `CommitPage`; mostly moving and relabelling what exists.
   right of the CHANGES row, Refresh after it behind a 1 px divider.
 - Generate leaves the action bar; the sparkle in the message box is the only
   trigger.
+- CHANGES comes first and MESSAGE last, right over the action bar, so the
+  message is written next to Commit (changed 2026-09-24). The CHANGES row
+  stands on the diff toolbar's line; the agent settings card opens over its
+  cog wherever the window has no room under it.
 - Hidden files are never checked: turning the eye off unticks the unversioned
   files, and the check-all box, the title and the button all count the rows
   the list shows.
@@ -309,10 +346,20 @@ record `docs/reviews/2026-09-24-history-view-design.md`): `historyPage()`,
   typing, the placeholder says as much as the field's width holds, then
   All branches 8 px on and Refresh 6 px on.
 - The commit list's columns follow the window's width class (Graph 40 /
-  Message / Author 90 / Date 130, then 100, then Graph 36 / Date 90, then
-  Graph 30 / Message alone), no SHA column, no sideways scrolling; author
-  and date small and dim, the date without its time where the column
-  cannot hold it.
+  Message / Author 88 / Date 128, then Date 120, then Graph 36 / Author 88 /
+  Date 88, then Graph 32 / Author 72), no SHA column, no sideways
+  scrolling; author and date small and dim, the date without its time where
+  the column cannot hold it. **Author in every class is the user's rule
+  (2026-09-25)** and a difference from the Figma frames, whose medium and
+  stacked tables drop it.
+- The filter searches the whole history, not the commits loaded so far:
+  `git log` walks the list's scope and the app keeps every commit whose
+  message, author, e-mail or SHA start matches, the matches showing batch
+  by batch while the count row says "Searching… N matches". They load 500
+  at a time as you scroll, like the commits: a page that stops full says
+  "N matches loaded", the last one "N matches". Loading a second page of
+  either list writes git's commit-graph file if the repository has none
+  (as `git gc` does), which keeps the later pages fast.
 - The graph: lanes 12 px apart, the first 14 / 12 / 9 px in, accent then
   magenta, 2 px lines, every node the same 4 px disc with a background
   ring. **The one deliberate difference from Figma, the user's:** the
@@ -331,7 +378,9 @@ record `docs/reviews/2026-09-24-history-view-design.md`): `historyPage()`,
   Path / Status / `+ −` / Size by class (the `St` pill at m).
 - Heights 150 / 110 (card 132 stacked) in a splitter whose handles are
   the 10 px gaps, re-applied until the user drags one; shallow windows
-  show the commit list alone; the count row is the page's last 22 px.
+  show the commit list alone; the count row is the page's last 22 px, the
+  count alone (no Load more: unfiltered, the list loads 500 more as it is
+  scrolled to its end).
 
 ## How a phase is done
 

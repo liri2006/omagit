@@ -32,31 +32,27 @@ namespace {
 // text size. The design measures its padding from the card's outer edge, so
 // the layout's margins are that padding less the frame.
 constexpr int kFrame = 2;
-// The design's pixels (design/figma-gen/screens.js agentPopover()): the card
-// at most 360 wide and 6 under its cog, padded 10 all round; a section's
-// header row 22 tall, a picker, a model row and the other-model row 28, the
-// level track 44; 16 between sections, 6 above the other-model row, 12 on
-// either side of the rule above Generate now.
-constexpr int kMaxWidth = 360, kCogGap = 6, kPad = 10;
-constexpr int kHeaderRow = 22, kRowHeight = 28, kTrackHeight = 44;
-constexpr int kSectionGap = 16, kOtherGap = 6, kRuleGap = 12;
-// Inside a model row: the name 10 in, the id ending 30 from the right edge,
-// the 14 px tick ending 10 from it.
-constexpr int kRowPad = 10, kDetailEnd = 30, kTick = 14;
-// The level track: its line 28 in from either side, 12 down; the labels 22
-// under the line; the stops' radii.
-constexpr int kTrackInset = 28, kTrackLine = 12, kTrackLabel = 22;
+// The design's card (design/figma-gen/screens.js agentPopover()), on the grid
+// of Grid.h: a popover's 12 of padding; captions on 16 px lines 4 over their
+// content, sections a group gap (16) apart; the agent picker a 28 px control,
+// the model rows 24 (the name 8 in, the tick's 16 px box 8 from the right
+// edge, the CLI id 4 before that box); 4 under them, Other model… (its text
+// 8 in) or its 28 px field; the level track; 12, a hairline, 12, and Generate
+// now, the card's primary action. It hangs 4 under its cog (or 4 over it),
+// its right edge on the column's, 4 past the cog's. Sizes the design gives
+// the card alone:
+constexpr int kMaxWidth = 360;
+constexpr int kRuleGap = 12; // screens.js SEP: on either side of a card's hairline
+// The level track: 40 tall, its line 24 in from either side and 12 down; the
+// labels 20 under the line; the stops' radii.
+constexpr int kTrackHeight = 40, kTrackInset = 24, kTrackLine = 12, kTrackLabel = 20;
 constexpr qreal kStopRadius = 4, kSelectedRadius = 4.5, kHaloRadius = 7;
-// Nothing installed: the robot's 20 px glyph 2 px in a 32 px column, the
-// headline row 24 tall and the line under it 12, 16 down to INSTALL ONE,
-// whose row is 20; command rows 30 tall and 6 apart, their copy button 3 in;
-// the closing note's row 20.
-constexpr int kRobotSize = 20, kRobotInset = 2, kRobotColumn = 32, kHeadline = 24, kSubline = 12;
-constexpr int kInstallHeader = 20, kCommandRow = 30, kCommandGap = 6, kCommandPad = 10, kCopyInset = 3;
-constexpr int kClosingNote = 20;
+// Nothing installed: the robot in a 24 px box 4 down (its glyph at the 20 px
+// text size), the two lines 8 after it.
+constexpr int kRobotBox = 24, kRobotGlyph = 20;
 // Opened from the Mini commit card's cog: 8 right of that card, and only
 // while that leaves the card 240 or more; narrower, it hangs under the cog.
-constexpr int kBesideGap = 8, kBesideMinWidth = 240;
+constexpr int kBesideMinWidth = 240;
 
 // Fractional design pixels on the scale of ui::space(), for the radii the
 // painter draws antialiased.
@@ -111,7 +107,7 @@ public:
         update();
     }
 
-    QSize sizeHint() const override { return QSize(space(120), space(kRowHeight)); }
+    QSize sizeHint() const override { return QSize(space(120), space(box::row)); }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -122,7 +118,7 @@ protected:
         if (lit)
             p.fillRect(rect(), t->hoverFill());
 
-        const int nameX = space(kRowPad);
+        const int nameX = space(pad::control);
         p.setFont(font());
         p.setPen(!isEnabled() ? t->mutedText() : (isChecked() || lit) ? t->accent() : t->text());
         const int nameWidth = QFontMetrics(font()).horizontalAdvance(text());
@@ -131,9 +127,9 @@ protected:
         const QString detail = accessibleDescription();
         if (!detail.isEmpty()) {
             const QFont small = smallFont();
-            const int right = width() - space(kDetailEnd);
+            const int right = width() - space(pad::control) - space(box::icon) - space(gap::icon);
             // The id gives way to the name at a narrow card, never the other way.
-            const int room = right - (nameX + nameWidth + space(kRowPad));
+            const int room = right - (nameX + nameWidth + space(gap::item));
             const QString shown = QFontMetrics(small).elidedText(detail, Qt::ElideRight, qMax(0, room));
             p.setFont(small);
             p.setPen(t->mutedText());
@@ -146,8 +142,10 @@ protected:
             glyph.setBold(false);
             p.setFont(glyph);
             p.setPen(t->accent());
-            const int box = space(kTick);
-            p.drawText(QRect(width() - space(kRowPad) - box, 0, box, height()), Qt::AlignCenter | Qt::TextDontClip, tick);
+            // Centred by its ink in its 16 px box, 8 from the row's right edge.
+            const int side = space(box::icon);
+            const QRectF tickBox(width() - space(pad::control) - side, 0, side, height());
+            p.drawText(tickBox.center() - inkRect(glyph, tick).center(), tick);
         }
     }
 
@@ -160,8 +158,9 @@ protected:
     }
 };
 
-// A Nerd Font glyph at a size of its own. The stylesheet's font-size for every
-// widget would win over a label's font, so this one paints its glyph itself.
+// A Nerd Font glyph at a size of its own, centred by its ink in its box 4
+// under the widget's top. The stylesheet's font-size for every widget would
+// win over a label's font, so this one paints its glyph itself.
 class GlyphLabel : public QWidget
 {
 public:
@@ -172,13 +171,14 @@ protected:
     {
         const OmarchyTheme *t = OmarchyTheme::instance();
         QFont f = t->uiFont();
-        f.setPixelSize(space(kRobotSize));
+        f.setPixelSize(fontPx(kRobotGlyph));
         QPainter p(this);
         p.setRenderHint(QPainter::TextAntialiasing);
         p.setFont(f);
         p.setPen(t->mutedText());
-        const int side = space(kRobotSize), inset = space(kRobotInset);
-        p.drawText(QRect(inset, inset, side, side), Qt::AlignCenter | Qt::TextDontClip, ui::icon(m_glyph).trimmed());
+        const QString glyph = ui::icon(m_glyph).trimmed();
+        const QRectF box(0, space(gap::caption), space(kRobotBox), space(kRobotBox));
+        p.drawText(box.center() - inkRect(f, glyph).center(), glyph);
     }
 
 private:
@@ -356,10 +356,10 @@ QAbstractButton *AgentPopover::otherModelButton() const
 void AgentPopover::applyTheme()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
-    const int pad = space(kPad) - kFrame;
+    const int pad = space(pad::popover) - kFrame;
     m_layout->setContentsMargins(pad, pad, pad, pad);
-    for (const auto &gap : std::as_const(m_gaps))
-        gap.first->changeSize(0, space(gap.second), QSizePolicy::Fixed, QSizePolicy::Fixed);
+    for (const Gap &gap : std::as_const(m_gaps))
+        gap.spacer->changeSize(0, space(gap.px) - gap.less, QSizePolicy::Fixed, QSizePolicy::Fixed);
     for (const auto &fixed : std::as_const(m_heights))
         fixed.first->setFixedHeight(space(fixed.second));
     // The family is the theme's; the size and the weight are the stylesheet's
@@ -376,7 +376,7 @@ void AgentPopover::applyTheme()
         label->setFont(f);
     }
     for (QWidget *glyph : std::as_const(m_glyphs)) {
-        glyph->setFixedSize(space(kRobotColumn), space(kHeadline));
+        glyph->setFixedSize(space(kRobotBox + gap::item), space(gap::caption + kRobotBox));
         glyph->update();
     }
     for (QAbstractButton *row : std::as_const(m_rows))
@@ -386,15 +386,22 @@ void AgentPopover::applyTheme()
             s->refreshGlyph();
         m_picker->update();
     }
-    for (QWidget *row : std::as_const(m_commandRows)) {
-        row->layout()->setContentsMargins(space(kCommandPad) - 1, 0, space(kCopyInset) - 1, 0);
+    // A command row's text 8 in, its copy button 4 in, both inside the
+    // row's 1 px border.
+    for (QWidget *row : std::as_const(m_commandRows))
+        row->layout()->setContentsMargins(space(pad::control) - 1, 0, space(gap::icon) - 1, 0);
+    // The captions and their notes on their 16 px lines, where kit.js text()
+    // puts a line's baseline (its middle plus 0.36 of the size).
+    for (QLabel *label : std::as_const(m_captions)) {
+        label->ensurePolished();
+        placeOnLine(label, label->font(), box::line);
     }
     if (m_otherButton) {
-        // The design's text button: its label 10 in from either side. The
+        // The design's text button: its label 8 in from either side. The
         // stylesheet leaves it no padding, so the width is all there is.
         m_otherButton->ensurePolished();
         m_otherButton->setFixedWidth(m_otherButton->fontMetrics().horizontalAdvance(m_otherButton->text())
-                                     + 2 * space(kRowPad));
+                                     + 2 * space(pad::control));
     }
     if (m_generate)
         m_generate->setText(icon(kSparkle, QStringLiteral("✨")) + tr("Generate now  Ctrl+G"));
@@ -429,6 +436,7 @@ void AgentPopover::rebuild()
     m_gaps.clear();
     m_heights.clear();
     m_notes.clear();
+    m_captions.clear();
     m_glyphs.clear();
     m_bold.clear();
     m_commandRows.clear();
@@ -450,10 +458,10 @@ void AgentPopover::rebuild()
     applyTheme();
 }
 
-void AgentPopover::addGap(int px)
+void AgentPopover::addGap(int px, int less)
 {
-    auto *gap = new QSpacerItem(0, space(px), QSizePolicy::Fixed, QSizePolicy::Fixed);
-    m_gaps.append({gap, px});
+    auto *gap = new QSpacerItem(0, space(px) - less, QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_gaps.append({gap, px, less});
     m_layout->addItem(gap);
 }
 
@@ -468,13 +476,16 @@ void AgentPopover::addHeader(const QString &caption, const QString &note)
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(0);
-    // A strut of no width holds the row at the design's height; the caption
-    // and the note sit at its top, on the line the design centres them on.
-    auto *strut = new QSpacerItem(0, space(kHeaderRow), QSizePolicy::Fixed, QSizePolicy::Fixed);
-    m_gaps.append({strut, kHeaderRow});
+    // A strut of no width holds the row at a 16 px line; the caption and the
+    // note sit at its top, their baselines where the design centres them
+    // (applyTheme()); the content stands 4 under the line.
+    auto *strut = new QSpacerItem(0, space(box::line), QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_gaps.append({strut, box::line, 0});
     row->addItem(strut);
     QLabel *label = sectionLabel(caption);
     label->setParent(this);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_captions << label;
     row->addWidget(label, 0, Qt::AlignTop);
     row->addStretch();
     if (!note.isEmpty()) {
@@ -482,10 +493,13 @@ void AgentPopover::addHeader(const QString &caption, const QString &note)
         // Not dimLabel, whose captions are bold: the note is the regular
         // caption-sized text of its own stylesheet rule.
         n->setObjectName(QStringLiteral("agentPopoverNote"));
+        n->setAlignment(Qt::AlignRight | Qt::AlignTop);
         m_notes << n;
+        m_captions << n;
         row->addWidget(n, 0, Qt::AlignTop);
     }
     m_layout->addLayout(row);
+    addGap(gap::caption);
 }
 
 void AgentPopover::buildInstalled(const QList<AgentSpec> &installed)
@@ -512,9 +526,9 @@ void AgentPopover::buildInstalled(const QList<AgentSpec> &installed)
     m_picker = new SegmentStrip(segments, this);
     m_picker->setStretch(true);
     m_picker->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    fixHeight(m_picker, kRowHeight);
+    fixHeight(m_picker, box::control);
     m_layout->addWidget(m_picker);
-    addGap(kSectionGap);
+    addGap(gap::group);
 
     // MODEL: Default, the CLI's own list, and a name typed earlier that the
     // list does not know, ahead of it.
@@ -545,10 +559,10 @@ void AgentPopover::buildInstalled(const QList<AgentSpec> &installed)
     }
     for (QAbstractButton *row : std::as_const(m_rows)) {
         row->setParent(this);
-        fixHeight(row, kRowHeight);
+        fixHeight(row, box::row);
         m_layout->addWidget(row);
     }
-    addGap(kOtherGap);
+    addGap(gap::cluster);
 
     // A name of one's own: a text button, and the field only once asked for.
     m_otherButton = toolButton(tr("Other model…"), tr("A model by name, as %1 %2 takes it").arg(agent.binary, modelFlag(agent.id)));
@@ -556,13 +570,13 @@ void AgentPopover::buildInstalled(const QList<AgentSpec> &installed)
     m_otherButton->setObjectName(QStringLiteral("ghostButton"));
     m_otherButton->setProperty("ghost", true);
     m_otherButton->setFocusPolicy(Qt::TabFocus);
-    fixHeight(m_otherButton, kRowHeight);
+    fixHeight(m_otherButton, box::control);
     connect(m_otherButton, &QToolButton::clicked, this, &AgentPopover::openOtherField);
     m_layout->addWidget(m_otherButton, 0, Qt::AlignLeft);
     m_otherField = new QLineEdit(this);
     m_otherField->setPlaceholderText(tr("Model name, as %1 %2 takes it").arg(agent.binary, modelFlag(agent.id)));
     m_otherField->installEventFilter(this);
-    fixHeight(m_otherField, kRowHeight);
+    fixHeight(m_otherField, box::control);
     m_otherField->hide();
     connect(m_otherField, &QLineEdit::returnPressed, this, &AgentPopover::acceptOtherField);
     m_layout->addWidget(m_otherField);
@@ -571,7 +585,7 @@ void AgentPopover::buildInstalled(const QList<AgentSpec> &installed)
     // track of stops rather than a list.
     const QStringList efforts = catalog.effortsFor(m_choice.model);
     if (!efforts.isEmpty()) {
-        addGap(kSectionGap);
+        addGap(gap::group);
         addHeader(tr("Reasoning"), tr("more thinking, slower answer"));
         m_levels = QStringList{QString()} + efforts;
         QStringList labels{tr("Default")};
@@ -585,16 +599,18 @@ void AgentPopover::buildInstalled(const QList<AgentSpec> &installed)
         m_layout->addWidget(m_track);
     }
 
+    // 12, a hairline, 12: the hairline is the first row of the second 12.
     addGap(kRuleGap);
     QWidget *rule = hairline();
     rule->setParent(this);
     m_layout->addWidget(rule);
-    addGap(kRuleGap);
+    addGap(kRuleGap, 1);
 
     // The window's Ctrl+G does the same; the label only names it.
-    m_generate = new QPushButton(this);
+    m_generate = new KitPushButton(this);
     m_generate->setObjectName(QStringLiteral("agentGenerate"));
     m_generate->setDefault(true);
+    setPrimary(m_generate); // 16 in, the card's primary action
     m_generate->setCursor(Qt::PointingHandCursor);
     connect(m_generate, &QPushButton::clicked, this, &AgentPopover::generate);
     m_layout->addWidget(m_generate);
@@ -613,29 +629,34 @@ void AgentPopover::buildNoneInstalled()
     robot->setParent(this);
     m_glyphs << robot;
     top->addWidget(robot, 0, Qt::AlignTop);
+    // Two 16 px lines 4 apart, 8 after the robot's box (its widget's width).
     auto *lines = new QVBoxLayout;
     lines->setContentsMargins(0, 0, 0, 0);
     lines->setSpacing(0);
     auto *headline = new QLabel(tr("No coding agent installed"), this);
     headline->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    fixHeight(headline, kHeadline);
+    fixHeight(headline, box::line);
     m_bold << headline;
     lines->addWidget(headline);
+    auto *lineGap = new QSpacerItem(0, space(gap::caption), QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_gaps.append({lineGap, gap::caption, 0});
+    lines->addItem(lineGap);
     auto *subline = new QLabel(tr("Claude Code or Codex writes it for you."), this);
     subline->setObjectName(QStringLiteral("agentPopoverSmall"));
     subline->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    fixHeight(subline, kSubline);
+    fixHeight(subline, box::line);
     m_notes << subline;
     lines->addWidget(subline);
     top->addLayout(lines, 1);
     m_layout->addLayout(top);
-    addGap(kSectionGap);
+    addGap(gap::group);
 
-    // How to get one: the commands, each copyable.
+    // How to get one: the commands, each copyable, an item gap apart.
     addHeader(tr("Install one"), QString());
-    m_gaps.last().second = kInstallHeader; // the strut of that row: the design's 20, not 22
     const QStringList commands{QStringLiteral("omarchy default agent claude"), QStringLiteral("omarchy default agent codex")};
     for (const QString &command : commands) {
+        if (command != commands.first())
+            addGap(gap::item);
         auto *row = new QFrame(this);
         row->setObjectName(QStringLiteral("commandRow"));
         row->setFrameShape(QFrame::StyledPanel);
@@ -653,14 +674,14 @@ void AgentPopover::buildNoneInstalled()
         layout->addWidget(copy, 0, Qt::AlignVCenter);
         m_copyButtons << copy;
         m_commandRows << row;
-        fixHeight(row, kCommandRow);
+        fixHeight(row, box::control);
         m_layout->addWidget(row);
-        addGap(kCommandGap);
     }
+    addGap(gap::item);
     auto *closing = new QLabel(tr("Reopen this menu once one is installed."), this);
     closing->setObjectName(QStringLiteral("agentPopoverSmall"));
     closing->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    fixHeight(closing, kClosingNote);
+    fixHeight(closing, box::line);
     m_notes << closing;
     m_layout->addWidget(closing);
 }
@@ -843,29 +864,29 @@ void AgentPopover::scheduleLayout()
 
 // At most 360 wide and never wider than the window's margins allow. From a
 // cog on the overlay it is beside: 8 right of that overlay, level with its
-// top, as long as that leaves it 240. Otherwise its right edge on the cog's
-// right edge, as far left as the left margin lets it go, 6 under the cog —
-// or 6 over it, where the window has no room under it (the commit page's cog
-// stands low, over the message box). Either way moved up when the window is
-// too short for it.
+// top, as long as that leaves it 240. Otherwise its right edge on the edge of
+// the column the cog stands in (4 past the cog's), as far left as the left
+// margin lets it go, 4 under the cog — or 4 over it, where the window has no
+// room under it (the commit page's cog stands low, over the message box).
+// Either way moved up when the window is too short for it.
 void AgentPopover::place()
 {
     QWidget *host = parentWidget();
     if (!m_anchor || !host || m_placing)
         return;
     m_placing = true;
-    const int margin = windowMargin();
+    const int margin = windowMargin(host);
     const QMargins margins(margin, margin, margin, margin);
     const QRect cog(m_anchor->mapTo(host, QPoint(0, 0)), m_anchor->size());
     int width = qMax(1, qMin(space(kMaxWidth), host->width() - margins.left() - margins.right()));
-    int left = qMax(margins.left(), cog.x() + cog.width() - width);
-    int top = cog.y() + cog.height() + space(kCogGap);
+    int left = qMax(margins.left(), qMin(cog.x() + cog.width() + space(gap::icon), host->width() - margins.right()) - width);
+    int top = cog.y() + cog.height() + space(gap::cluster);
     bool underCog = true;
     // The overlay is a child of the host too, so its geometry is in the
     // host's coordinates already.
     if (m_beside && m_beside->isVisible() && m_beside->isAncestorOf(m_anchor)) {
         const QRect beside = m_beside->geometry();
-        const int besideLeft = beside.x() + beside.width() + space(kBesideGap);
+        const int besideLeft = beside.x() + beside.width() + space(gap::item);
         const int besideWidth = qMin(space(kMaxWidth), host->width() - margins.right() - besideLeft);
         if (besideWidth >= space(kBesideMinWidth)) {
             left = besideLeft;
@@ -879,8 +900,8 @@ void AgentPopover::place()
     m_layout->activate();
     const int height = sizeHint().height();
     const int bottom = host->height() - margins.bottom();
-    if (underCog && top + height > bottom && cog.y() - space(kCogGap) - height >= margins.top())
-        top = cog.y() - space(kCogGap) - height;
+    if (underCog && top + height > bottom && cog.y() - space(gap::cluster) - height >= margins.top())
+        top = cog.y() - space(gap::cluster) - height;
     if (top + height > bottom)
         top = qMax(margins.top(), bottom - height);
     setGeometry(left, top, width, height);

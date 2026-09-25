@@ -65,6 +65,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/HistoryView.h \
     $$PWD/src/MiniRail.h \
     $$PWD/src/PaneLayout.h \
+    $$PWD/src/Grid.h \
     $$PWD/src/BadgeButton.h \
     $$PWD/src/Segmented.h \
     $$PWD/src/TopBar.h \

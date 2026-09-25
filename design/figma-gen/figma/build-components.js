@@ -15,7 +15,7 @@
   om.say('old components', old.length);
 
   const mkFrame = (name, w, h) => { const f = figma.createFrame(); f.name = name; f.resizeWithoutConstraints(w, h); f.fills = []; f.strokes = []; f.clipsContent = false; f.cornerRadius = 0; return f; };
-  const hbox = (name, { h = 28, px = 10, gap = 6 } = {}) => {
+  const hbox = (name, { h = 28, px = 8, gap = 4 } = {}) => {
     const f = mkFrame(name, 10, h); f.layoutMode = 'HORIZONTAL'; f.primaryAxisSizingMode = 'AUTO'; f.counterAxisSizingMode = 'FIXED';
     f.paddingLeft = f.paddingRight = px; f.paddingTop = f.paddingBottom = 0; f.itemSpacing = gap; f.counterAxisAlignItems = 'CENTER'; f.primaryAxisAlignItems = 'CENTER'; return f;
   };
@@ -24,20 +24,20 @@
   const glyph = ic => om.child(ic, 'glyph');
   const done = f => { om.fitChrome(f); return figma.createComponentFromNode(f); };
 
-  // ---- Icon set
+  // ---- Icon set: 16 px boxes, the glyph drawn at 14 in the middle (kit.js icon(): 7/8 of the box)
   const iconComps = {}; const iconNodes = [];
   for (const [name, d] of Object.entries(ICONS)) {
-    const f = figma.createNodeFromSvg(`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"><path d="${d}" fill="#000000"/></svg>`);
+    const f = figma.createNodeFromSvg(om.iconSvg(d));
     f.name = 'name=' + name; f.fills = []; f.clipsContent = false;
     f.findAll(n => n.type === 'VECTOR' || n.type === 'BOOLEAN_OPERATION').forEach(v => { v.name = 'glyph'; om.fill(v, 'Foreground'); v.constraints = { horizontal: 'SCALE', vertical: 'SCALE' }; });
     const c = figma.createComponentFromNode(f); iconComps[name] = c; iconNodes.push(c);
   }
   const iconSet = figma.combineAsVariants(iconNodes, cframe); iconSet.name = 'Icon'; setLayout(iconSet, { wrap: 420 });
-  const icon = (name, size = 14, nodeName = 'Icon') => { const i = iconComps[name].createInstance(); i.name = nodeName; if (size !== 14) i.resize(size, size); return i; };
+  const icon = (name, size = 16, nodeName = 'Icon') => { const i = iconComps[name].createInstance(); i.name = nodeName; if (size !== 16) i.resize(size, size); return i; };
   om.say('icons', iconNodes.length);
 
-  // ---- Badge
-  const badge = hbox('Badge', { h: 14, px: 4, gap: 0 }); try { badge.minWidth = 14; } catch (e) {} om.fill(badge, 'Accent');
+  // ---- Badge: 12 high, hanging 4 over a button's top-right corner
+  const badge = hbox('Badge', { h: 12, px: 2, gap: 0 }); try { badge.minWidth = 12; } catch (e) {} om.fill(badge, 'Accent');
   badge.appendChild(om.textNode('2', 'Caption 10/Bold', 'Background', 1, 'Count'));
   const badgeComp = figma.createComponentFromNode(badge); cframe.appendChild(badgeComp);
   om.child(badgeComp, 'Count').componentPropertyReferences = { characters: badgeComp.addComponentProperty('Count', 'TEXT', '2') };
@@ -56,12 +56,12 @@
   };
   const mkButton = (name, variant, state, o = {}) => {
     const ch = chrome(variant, state);
-    const f = hbox(name, { h: 28, px: o.px || 10, gap: 6 });
+    const f = hbox(name, { h: 28, px: o.px || 8, gap: 4 });
     om.chrome(f, { fo: ch.fo, strokeRole: ch.strokeRole, so: ch.so });
     const ic = icon(o.icon || 'pull'); f.appendChild(ic); om.fill(glyph(ic), o.iconRole || ch.textRole); ic.opacity = ch.textOp;
     const t = om.textNode(o.label || 'Label', 'Body 12/' + (ch.bold || o.bold ? 'Bold' : 'Regular'), o.labelRole || ch.textRole); t.opacity = ch.textOp; f.appendChild(t);
     const cv = icon('chevron', 12, 'Chevron'); f.appendChild(cv); om.fill(glyph(cv), ch.textRole); cv.opacity = 0.7 * ch.textOp; cv.visible = !!o.chevron;
-    const b = badgeComp.createInstance(); b.name = 'Badge'; f.appendChild(b); absolute(b, 'MAX', 'MIN'); b.x = f.width + 4 - b.width; b.y = -5; b.visible = false;
+    const b = badgeComp.createInstance(); b.name = 'Badge'; f.appendChild(b); absolute(b, 'MAX', 'MIN'); b.x = f.width + 4 - b.width; b.y = -4; b.visible = false;
     const m = figma.createEllipse(); m.name = 'Mark'; m.resize(7, 7); om.fill(m, 'Red'); f.appendChild(m); absolute(m, 'MAX', 'MIN'); m.x = f.width - 5.5; m.y = -1.5; m.visible = false;
     return f;
   };
@@ -81,7 +81,7 @@
   const VARIANTS = ['default', 'primary', 'ghost', 'danger'], STATES = ['normal', 'hover', 'pressed', 'selected', 'disabled'];
   const sample = { default: ['pull', 'Pull'], primary: ['commit', 'Commit'], ghost: ['sparkle', 'Generate'], danger: ['close', 'Abort merge'] };
   const bnodes = [];
-  for (const v of VARIANTS) for (const s of STATES) bnodes.push(done(mkButton(`variant=${v}, state=${s}`, v, s, { icon: sample[v][0], label: sample[v][1] })));
+  for (const v of VARIANTS) for (const s of STATES) bnodes.push(done(mkButton(`variant=${v}, state=${s}`, v, s, { icon: sample[v][0], label: sample[v][1], px: v === 'primary' ? 16 : 8 })));
   const buttonSet = figma.combineAsVariants(bnodes, cframe); buttonSet.name = 'Button';
   const bp = buttonProps(buttonSet, true); buttonSet.children.forEach(c => wireButton(c, bp));
   const colW = STATES.map((s, si) => Math.max(...buttonSet.children.filter((c, i) => i % STATES.length === si).map(c => c.width)));
@@ -114,12 +114,12 @@
 
   // ---- Segment / Segmented
   const mkSegment = (name, selected) => {
-    const f = hbox(name, { h: 28, px: 12, gap: 6 }); om.chrome(f, { fo: selected ? .18 : 0, so: 0 });
+    const f = hbox(name, { h: 28, px: 8, gap: 4 }); om.chrome(f, { fo: selected ? .18 : 0, so: 0 });
     const role = selected ? 'Accent' : 'Foreground';
     const dv = figma.createRectangle(); dv.name = 'Divider'; dv.resize(1, 28); om.fill(dv, 'Foreground'); dv.opacity = .4; f.appendChild(dv); absolute(dv, 'MIN', 'STRETCH'); dv.x = 0; dv.y = 0;
     const ic = icon('commit'); f.appendChild(ic); om.fill(glyph(ic), role);
     f.appendChild(om.textNode('Changes', 'Body 12/' + (selected ? 'Bold' : 'Regular'), role));
-    const cnt = hbox('Count', { h: 14, px: 4, gap: 0 }); try { cnt.minWidth = 14; } catch (e) {}
+    const cnt = hbox('Count', { h: 16, px: 4, gap: 0 }); try { cnt.minWidth = 16; } catch (e) {}
     if (selected) om.fill(cnt, 'Accent'); else om.chrome(cnt, { fo: .14, so: 0 });
     cnt.appendChild(om.textNode('7', 'Caption 10/Bold', selected ? 'Background' : 'Foreground', 1, 'CountText')); om.fitChrome(cnt); f.appendChild(cnt);
     return f;
@@ -146,15 +146,14 @@
 
   // ---- Field
   const mkField = (name, state) => {
-    const f = hbox(name, { h: 28, px: 8, gap: state === 'prompt' ? 8 : 6 }); f.primaryAxisSizingMode = 'FIXED'; f.primaryAxisAlignItems = 'MIN'; f.resize(110, 28); // narrow so the three variants fit the 1500 px sheet; instances are resized anyway
-    // prompt: the popup search prompt — no chrome, content on the menu-row grid
-    if (state === 'prompt') f.paddingLeft = 10;
-    else om.chrome(f, state === 'focus' ? { fo: .08, strokeRole: 'Accent', so: .6 } : { fo: .04, so: .4 });
+    const f = hbox(name, { h: 28, px: 8, gap: 4 }); f.primaryAxisSizingMode = 'FIXED'; f.primaryAxisAlignItems = 'MIN'; f.resize(110, 28); // narrow so the three variants fit the 1500 px sheet; instances are resized anyway
+    // prompt: the popup search prompt — no chrome, content on the menu rows' grid ([8][icon 16][4][text])
+    if (state !== 'prompt') om.chrome(f, state === 'focus' ? { fo: .08, strokeRole: 'Accent', so: .6 } : { fo: .04, so: .4 });
     const ic = icon('search'); f.appendChild(ic); om.fill(glyph(ic), 'Muted'); ic.visible = false;
     const v = om.textNode('Value', 'Body 12/Regular', 'Foreground', 1, 'Value'); f.appendChild(v); v.visible = false;
     f.appendChild(om.textNode('Placeholder', 'Body 12/Regular', 'Muted', 1, 'Placeholder'));
-    const caret = figma.createRectangle(); caret.name = 'Caret'; caret.resize(1, 14); om.fill(caret, 'Foreground'); f.appendChild(caret); caret.visible = state === 'focus';
-    const tr = icon('chevron', 14, 'Trailing icon'); f.appendChild(tr); absolute(tr, 'MAX', 'CENTER'); tr.x = 110 - 22; tr.y = 7; om.fill(glyph(tr), 'Muted'); tr.visible = false;
+    const caret = figma.createRectangle(); caret.name = 'Caret'; caret.resize(1, 16); om.fill(caret, 'Foreground'); f.appendChild(caret); caret.visible = state === 'focus';
+    const tr = icon('chevron', 16, 'Trailing icon'); f.appendChild(tr); absolute(tr, 'MAX', 'CENTER'); tr.x = 110 - 8 - 16; tr.y = 6; om.fill(glyph(tr), 'Muted'); tr.visible = false;
     return f;
   };
   const fieldSet = figma.combineAsVariants([done(mkField('state=normal', 'normal')), done(mkField('state=focus', 'focus')), done(mkField('state=prompt', 'prompt'))], cframe);
@@ -166,10 +165,10 @@
 
   // ---- Checkbox
   const mkCheckbox = (name, state) => {
-    const f = hbox(name, { h: 14, px: 0, gap: 8 }); f.primaryAxisAlignItems = 'MIN';
-    const box = mkFrame('Box', 14, 14); box.layoutMode = 'HORIZONTAL'; box.primaryAxisSizingMode = 'FIXED'; box.counterAxisSizingMode = 'FIXED'; box.resize(14, 14); f.appendChild(box);
-    if (state === 'checked') { om.fill(box, 'Accent'); const ic = icon('check', 12); box.appendChild(ic); absolute(ic, 'MIN', 'MIN'); ic.x = 1; ic.y = 1; om.fill(glyph(ic), 'Background'); }
-    else if (state === 'partial') { om.chrome(box, { fo: .18, strokeRole: 'Accent', so: 1 }); const ic = icon('minus', 12); box.appendChild(ic); absolute(ic, 'MIN', 'MIN'); ic.x = 1; ic.y = 1; om.fill(glyph(ic), 'Accent'); }
+    const f = hbox(name, { h: 16, px: 0, gap: 8 }); f.primaryAxisAlignItems = 'MIN';
+    const box = mkFrame('Box', 16, 16); box.layoutMode = 'HORIZONTAL'; box.primaryAxisSizingMode = 'FIXED'; box.counterAxisSizingMode = 'FIXED'; box.resize(16, 16); f.appendChild(box);
+    if (state === 'checked') { om.fill(box, 'Accent'); const ic = icon('check'); box.appendChild(ic); absolute(ic, 'MIN', 'MIN'); ic.x = 0; ic.y = 0; om.fill(glyph(ic), 'Background'); }
+    else if (state === 'partial') { om.chrome(box, { fo: .18, strokeRole: 'Accent', so: 1 }); const ic = icon('minus'); box.appendChild(ic); absolute(ic, 'MIN', 'MIN'); ic.x = 0; ic.y = 0; om.fill(glyph(ic), 'Accent'); }
     else om.chrome(box, { fo: .04, so: state === 'disabled' ? .12 : .4 });
     om.fitChrome(box);
     const t = om.textNode('Label', 'Body 12/Regular', 'Foreground'); t.opacity = state === 'disabled' ? .45 : 1; f.appendChild(t);
@@ -183,7 +182,7 @@
   // ---- RefChip
   const mkRefChip = (kind) => {
     const role = kind === 'tag' ? 'Yellow' : kind === 'remote' ? 'Magenta' : 'Accent';
-    const f = hbox('kind=' + kind, { h: 16, px: 5, gap: 0 });
+    const f = hbox('kind=' + kind, { h: 16, px: 4, gap: 0 });
     if (kind === 'head') om.fill(f, role); else om.chrome(f, { fillRole: role, fo: .14, strokeRole: role, so: .8 });
     f.appendChild(om.textNode({ head: 'main', local: 'feature/askpass', remote: 'origin/main', tag: 'v0.4' }[kind], 'Caption 10/Bold', kind === 'head' ? 'Background' : role));
     return f;
@@ -196,20 +195,20 @@
   const pillSet = figma.combineAsVariants(Object.keys(PILL).map(s => { const f = hbox('status=' + s, { h: 16, px: 0, gap: 0 }); f.primaryAxisSizingMode = 'FIXED'; f.resize(16, 16); om.chrome(f, { fillRole: PILL[s], fo: .18, so: 0 }); f.appendChild(om.textNode(s, 'Caption 10/Bold', PILL[s])); return done(f); }), cframe);
   pillSet.name = 'StatusPill'; setLayout(pillSet);
 
-  // ---- SyncDropdown
-  const sd = mkFrame('SyncDropdown', 92, 28); sd.layoutMode = 'HORIZONTAL'; sd.primaryAxisSizingMode = 'FIXED'; sd.counterAxisSizingMode = 'FIXED'; sd.resize(92, 28); om.chrome(sd, { fo: .04, so: .4 });
+  // ---- SyncDropdown: [8][↓ 16][4][2][8][↑ 16][4][1][4][chevron 12][8] (screens.js syncDropdown)
+  const sd = mkFrame('SyncDropdown', 96, 28); sd.layoutMode = 'HORIZONTAL'; sd.primaryAxisSizingMode = 'FIXED'; sd.counterAxisSizingMode = 'FIXED'; sd.resize(96, 28); om.chrome(sd, { fo: .04, so: .4 });
   const put = (n, x, y) => { sd.appendChild(n); absolute(n, 'MIN', 'MIN'); n.x = x; n.y = y; };
-  put(icon('down', 14, 'Icon down'), 8, 7);
-  const behind = om.textNode('2', 'Body 12/Bold', 'Accent', 1, 'Behind'); put(behind, 24, 14 - behind.height / 2);
-  put(icon('up', 14, 'Icon up'), 38, 7);
-  const ahead = om.textNode('1', 'Body 12/Bold', 'Accent', 1, 'Ahead'); put(ahead, 54, 14 - ahead.height / 2);
-  const sdc = icon('chevron', 12, 'Chevron'); put(sdc, 68, 8); sdc.opacity = 0.7;
+  put(icon('down', 16, 'Icon down'), 8, 6);
+  const behind = om.textNode('2', 'Body 12/Bold', 'Accent', 1, 'Behind'); put(behind, 28, 14 - behind.height / 2);
+  put(icon('up', 16, 'Icon up'), 44, 6);
+  const ahead = om.textNode('1', 'Body 12/Bold', 'Accent', 1, 'Ahead'); put(ahead, 64, 14 - ahead.height / 2);
+  const sdc = icon('chevron', 12, 'Chevron'); put(sdc, 76, 8); sdc.opacity = 0.7;
   const syncComp = done(sd); cframe.appendChild(syncComp);
   om.child(syncComp, 'Behind').componentPropertyReferences = { characters: syncComp.addComponentProperty('Behind', 'TEXT', '2') };
   om.child(syncComp, 'Ahead').componentPropertyReferences = { characters: syncComp.addComponentProperty('Ahead', 'TEXT', '1') };
 
   // ---- SectionLabel
-  const sl = hbox('SectionLabel', { h: 12, px: 0, gap: 0 }); sl.counterAxisSizingMode = 'AUTO';
+  const sl = hbox('SectionLabel', { h: 16, px: 0, gap: 0 }); // a 16 px text line, the caption centred
   const slt = om.textNode('MESSAGE', 'Caption 10/Bold', 'Muted'); slt.letterSpacing = { value: 0.8, unit: 'PIXELS' }; sl.appendChild(slt);
   const sectionComp = figma.createComponentFromNode(sl); cframe.appendChild(sectionComp);
   om.child(sectionComp, 'Label').componentPropertyReferences = { characters: sectionComp.addComponentProperty('Label', 'TEXT', 'MESSAGE') };
@@ -221,7 +220,7 @@
   const dimText = cframe.findOne(n => n.name === 'DimText' && n.type === 'COMPONENT');
   const rows = [
     ['Button · variant × state · props: Label, Icon, Show icon / label / chevron / badge / mark · Chip/branch · Chip/repo · Badge · SyncDropdown · IconButton (variant ghost / default, state, size 24 / 28, Icon)', [buttonSet, chipBranch, chipRepo, badgeComp, syncComp, iconButtonSet]],
-    ['Icon · Material Design Icons, 14 px, glyph scales with the instance', [iconSet]],
+    ['Icon · Material Design Icons, 16 px box with the glyph at 14 (7/8), glyph scales with the instance', [iconSet]],
     ['Segment (state) · Segmented (mode hug / stretch, Show segment 3) · Field (state, Value, Placeholder, Icon, Caret, Trailing icon)', [segmentSet, segmentedSet, fieldSet]],
     ['Checkbox (state, Label) · RefChip (kind, Label) · StatusPill (status) · SectionLabel (Label) · DimText', [checkboxSet, refSet, pillSet, sectionComp, dimText].filter(Boolean)],
   ];
@@ -235,7 +234,7 @@
   // pattern rows (tables, diff, cards) at fixed offsets below the new rows, as in sheets.js
   const capOf = re => captions.children.find(n => re.test(n.name));
   const PATTERN = [[/^caption Tables/, 0, { ChangesTable: 14, CommitsTable: 14 }], [/^caption Diff/, 200, { DiffPane: 14 }],
-    [/^caption Mini/, 500, { MiniRail: 14, MenuCard: 14, MergeDialog: 14, Tooltip: 14, 'StatusLine/busy': 54, 'StatusLine/error': 80, Scrollbar: 14, SplitterHandle: 54, Keycap: 14 }]];
+    [/^caption Mini/, 500, { MiniRail: 14, MenuCard: 14, MergeDialog: 14, Tooltip: 14, 'StatusLine/busy': 54, 'StatusLine/error': 78, Scrollbar: 14, SplitterHandle: 54, Keycap: 14 }]];
   const tablesCap = y + 20;
   for (const [re, off, members] of PATTERN) {
     const cap = capOf(re); if (cap) cap.y = tablesCap + off;
@@ -246,7 +245,7 @@
   for (let pass = 0; pass < 4 && pending.length; pass++) { const next = []; for (const n of pending) { const used = n.type === 'COMPONENT' ? n.instances.length : n.children.some(c => c.instances.length); if (used) next.push(n); else n.remove(); } pending = next; }
   pending.forEach(n => om.say('kept (has instances)', n.name));
   oldCaptions.forEach(n => n.remove());
-  const H = tablesCap + 500 + 14 + 300 + 40;
+  const H = tablesCap + 500 + 14 + 330 + 40;
   cframe.resizeWithoutConstraints(cframe.width, H); const bg = cframe.findOne(n => n.name === 'bg' && n.parent === cframe); if (bg) bg.resizeWithoutConstraints(cframe.width, H);
   figma.viewport.scrollAndZoomIntoView([buttonSet, checkboxSet]);
   om.say('done; rows end at', y, 'frame height', H, 'removed', old.length - pending.length);

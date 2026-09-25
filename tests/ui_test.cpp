@@ -41,16 +41,19 @@
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QFontMetrics>
 #include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHostAddress>
+#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
 #include <QMouseEvent>
 #include <QListWidget>
+#include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
 #include <QJsonArray>
@@ -61,6 +64,7 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSignalSpy>
@@ -78,6 +82,7 @@
 #include <QTest>
 #include <QTextDocument>
 #include <QTextDocumentFragment>
+#include <QTimeZone>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeView>
@@ -147,6 +152,46 @@ bool commit(const QString &dir, const QString &message, int hour)
 {
     return git(dir, {QStringLiteral("commit"), QStringLiteral("--allow-empty"), QStringLiteral("-q"),
                      QStringLiteral("-m"), message}, hour);
+}
+
+struct ImportedCommit {
+    QString message;
+    QString author = QStringLiteral("Test");
+    QString email = QStringLiteral("test@example.com");
+    QStringList files = {}; // written by the commit, the message their content
+};
+
+// A new repository whose main branch is `commits`, the oldest first, every
+// one an hour after the one before and empty but for its `files`; one `git
+// fast-import` makes them all, where hundreds of `git commit`s would take
+// seconds. Under a hundred objects, git leaves each loose.
+bool importHistory(const QString &dir, const QList<ImportedCommit> &commits)
+{
+    if (!git(dir, {QStringLiteral("init"), QStringLiteral("-q"), QStringLiteral("-b"), QStringLiteral("main")}))
+        return false;
+    constexpr qint64 kNewYear2024 = 1704067200; // 2024-01-01 00:00 UTC, stamp()'s day
+    QByteArray stream;
+    for (int i = 0; i < commits.size(); ++i) {
+        const ImportedCommit &c = commits.at(i);
+        const QByteArray who =
+            QStringLiteral("%1 <%2> %3 +0000").arg(c.author, c.email).arg(kNewYear2024 + 3600 * (i + 1)).toUtf8();
+        const QByteArray message = c.message.toUtf8();
+        stream += "commit refs/heads/main\nauthor " + who + "\ncommitter " + who + "\ndata "
+            + QByteArray::number(message.size()) + '\n' + message + '\n';
+        for (const QString &file : c.files)
+            stream += "M 644 inline " + file.toUtf8() + "\ndata " + QByteArray::number(message.size() + 1) + '\n'
+                + message + "\n\n";
+    }
+    QProcess p;
+    p.setWorkingDirectory(dir);
+    p.start(QStringLiteral("git"), {QStringLiteral("fast-import"), QStringLiteral("--quiet")});
+    p.write(stream);
+    p.closeWriteChannel();
+    if (!p.waitForFinished(30000) || p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0) {
+        qWarning("git fast-import failed: %s", p.readAllStandardError().constData());
+        return false;
+    }
+    return true;
 }
 
 FileChange change(const QString &path, FileChange::Kind kind)
@@ -758,9 +803,11 @@ const QStringList kBarNames{QStringLiteral("omagit-workspace"),
 
 // A sync button wearing its glyph alone, and the more button: the design's
 // 28 px square; the badge hangs over its corner, outside it.
+// A sync button's icon form: the bare kit button measured without a width,
+// 8 + 16 + 8 (screens.js topBar()); More keeps the 28 px square.
 int iconFormWidth()
 {
-    return ui::space(28);
+    return ui::space(ui::pad::control + ui::box::icon + ui::pad::control);
 }
 
 // What a top bar measures at the text size of the moment, spelled out so a
@@ -1254,7 +1301,8 @@ DiffPane::Summary paneSummary()
     summary.removed = 2;
     return summary;
 }
-const QString kPaneSummary = QStringLiteral("Modified  +2 −2");
+// The runs are painted on the design's gaps; the text keeps one space between them.
+const QString kPaneSummary = QStringLiteral("Modified +2 −2");
 
 PaneFixture diffPane()
 {
@@ -1711,6 +1759,418 @@ esac
         QCOMPARE(merge.edges.last().to, 1);
     }
 
+    // The filter's rule: the subject, the body, the author's name or e-mail
+    // contain the text, or the SHA starts with it — case aside, a non-ASCII
+    // letter's too.
+    void commitMatchesTheFiltersRule()
+    {
+        Commit c;
+        c.hash = QStringLiteral("0123abcdef0123abcdef0123abcdef0123abcdef");
+        c.shortHash = c.hash.left(7);
+        c.subject = QStringLiteral("Fix the parser");
+        c.body = QStringLiteral("A longer story\nover two lines, with Ünïcode.");
+        c.author = QStringLiteral("Ádám Kovács");
+        c.email = QStringLiteral("adam@example.org");
+        QVERIFY(commitMatches(c, QStringLiteral("fix")));
+        QVERIFY(commitMatches(c, QStringLiteral("THE PARSER")));
+        QVERIFY(commitMatches(c, QStringLiteral("two lines")));
+        QVERIFY(commitMatches(c, QStringLiteral("ünï")));
+        QVERIFY(commitMatches(c, QStringLiteral("ádám")));
+        QVERIFY(commitMatches(c, QStringLiteral("KOVÁCS")));
+        QVERIFY(commitMatches(c, QStringLiteral("@EXAMPLE.org")));
+        QVERIFY(commitMatches(c, QStringLiteral("0123ab")));
+        QVERIFY(commitMatches(c, QStringLiteral("0123ABCDEF")));
+        QVERIFY(!commitMatches(c, QStringLiteral("123abc"))); // in the SHA, but not its start
+        QVERIFY(!commitMatches(c, QStringLiteral("merge")));
+        QVERIFY(!commitMatches(c, QStringLiteral("Adam Kovacs"))); // accents count
+    }
+
+    // A filter matches a commit by its message or by its author, whichever:
+    // one of each shows, and one known by its e-mail alone, and one by the
+    // start of its SHA — what git log --grep with --author, which ANDs the
+    // two, could not give.
+    void theHistoryFilterMatchesMessageOrAuthor()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(importHistory(dir.path(), {{QStringLiteral("Fix the parser"), QStringLiteral("Alice"), QStringLiteral("alice@example.com")},
+                                           {QStringLiteral("Update the docs"), QStringLiteral("Bob Fixer"), QStringLiteral("bob@example.com")},
+                                           {QStringLiteral("Tidy up"), QStringLiteral("Carol"), QStringLiteral("carol@fix.example")},
+                                           {QStringLiteral("Unrelated"), QStringLiteral("Dave"), QStringLiteral("dave@example.com")}}));
+        GitRepo repo(dir.path());
+        HistoryModel model(&repo);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        model.reload();
+        QCOMPARE(model.rowCount(), 4);
+        const auto subjects = [&model] {
+            QStringList out;
+            for (int row = 0; row < model.rowCount(); ++row)
+                out << model.commit(row).subject;
+            return out;
+        };
+        const QString dave = model.commit(0).hash;
+
+        QSignalSpy changes(&model, &HistoryModel::searchChanged);
+        model.setFilter(QStringLiteral("fix"));
+        QVERIFY(model.filtering());
+        QVERIFY(model.searching());
+        QCOMPARE(model.rowCount(), 0);
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(changes.count() >= 2); // the start, and the end at least
+        // Newest first, as the list has them: the e-mail, the author, the message.
+        QCOMPARE(subjects(), QStringList({"Tidy up", "Update the docs", "Fix the parser"}));
+        // Out of sight, the loaded commits stay as they were.
+        QVERIFY(model.exhausted());
+        QCOMPARE(model.laneCount(), 1);
+
+        model.setFilter(dave.left(8).toUpper());
+        QTRY_VERIFY(!model.searching());
+        QCOMPARE(subjects(), QStringList({"Unrelated"}));
+        QCOMPARE(model.rowOf(dave), 0);
+        QVERIFY(model.isHead(0));
+        QCOMPARE(model.labels(0).size(), 1); // the chips of a match: main
+        QCOMPARE(model.labels(0).first().name, QStringLiteral("main"));
+        // Nothing more to load: the one page had room for every match.
+        QVERIFY(!model.moreMatches());
+        QVERIFY(!model.loadMore());
+
+        // The same text again starts nothing; none brings the loaded commits back.
+        changes.clear();
+        model.setFilter(dave.left(8).toUpper());
+        QCOMPARE(changes.count(), 0);
+        model.setFilter(QString());
+        QVERIFY(!model.filtering() && !model.searching());
+        QCOMPARE(subjects(), QStringList({"Unrelated", "Tidy up", "Update the docs", "Fix the parser"}));
+        QCOMPARE(model.graph(3).lane, 0);
+    }
+
+    // A search takes its matches a page at a time, a batch of them (500 in
+    // the app, seven here), and lets git go; loadMore() takes the next page
+    // from where the last one stopped, one page at a time, the rows and the
+    // current one staying put, until the walk reaches the end. The pages
+    // together are one walk's matches: the same commits in the same order,
+    // none twice, none missing. Matches that fit in one page are the whole
+    // history's, with nothing more to load; a new filter starts at page one.
+    void theHistorySearchLoadsItsMatchesInPages()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 400; ++i)
+            imported.append({(i % 3 ? QStringLiteral("miss %1") : QStringLiteral("hit %1")).arg(i)});
+        imported[0].message = QStringLiteral("rare, the oldest");
+        imported[199].message = QStringLiteral("rare, in the middle");
+        QVERIFY(importHistory(dir.path(), imported));
+        GitRepo repo(dir.path());
+        HistoryModel model(&repo);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QCOMPARE(model.batchSize(), 500);
+        model.setBatchSize(7);
+        QCOMPARE(model.batchSize(), 7);
+        model.reload();
+        QCOMPARE(model.rowCount(), 7); // the log's batch is the same number
+        const auto subjects = [&model] {
+            QStringList out;
+            for (int row = 0; row < model.rowCount(); ++row)
+                out << model.commit(row).subject;
+            return out;
+        };
+        const auto hashes = [&model] {
+            QStringList out;
+            for (int row = 0; row < model.rowCount(); ++row)
+                out << model.commit(row).hash;
+            return out;
+        };
+        // The matches of one search without pages, in git's order.
+        const auto unpaged = [&repo](const QString &text) {
+            QStringList out;
+            for (const Commit &c : repo.log(0, 100000, false))
+                if (commitMatches(c, text))
+                    out << c.hash;
+            return out;
+        };
+        const QStringList hits = unpaged(QStringLiteral("hit"));
+        QCOMPARE(hits.size(), 133); // nineteen pages of seven
+        const auto gitRunning = [&repo] { return !repo.findChildren<QProcess *>().isEmpty(); };
+
+        // The first page: exactly the first seven, git gone, more to load.
+        QSignalSpy changes(&model, &HistoryModel::searchChanged);
+        model.setFilter(QStringLiteral("hit"));
+        QVERIFY(model.searching() && !model.moreMatches());
+        QVERIFY(!model.loadMore()); // a page at a time
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(model.moreMatches());
+        QCOMPARE(hashes(), hits.first(7));
+        QTRY_VERIFY(!gitRunning());
+        const int ended = changes.count();
+        QTest::qWait(100);
+        QCOMPARE(changes.count(), ended);
+        QCOMPARE(model.rowCount(), 7);
+
+        // Page after page: appended below the rows there, the current one
+        // staying where it is, never more than seven at a time. The
+        // twentieth page finds no match left and ends the walk.
+        QItemSelectionModel selection(&model);
+        selection.setCurrentIndex(model.index(3, HistoryModel::Message),
+                                  QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        const QString selected = model.commit(3).hash;
+        QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+        int pages = 1;
+        while (model.moreMatches() && pages < 50) {
+            const QStringList before = hashes();
+            changes.clear();
+            QVERIFY(model.loadMore());
+            QCOMPARE(changes.count(), 1); // the page started
+            QVERIFY(model.searching() && !model.moreMatches());
+            QVERIFY(!model.loadMore());
+            QTRY_VERIFY(!model.searching());
+            QCOMPARE(hashes().first(before.size()), before);
+            QVERIFY(model.rowCount() - before.size() <= 7);
+            QCOMPARE(selection.currentIndex().row(), 3);
+            ++pages;
+        }
+        QCOMPARE(pages, 20);
+        QCOMPARE(hashes(), hits);
+        QCOMPARE(model.commit(3).hash, selected);
+        QCOMPARE(resets.count(), 0);
+        QVERIFY(!model.moreMatches());
+        QVERIFY(!model.loadMore());
+        QTRY_VERIFY(!gitRunning());
+
+        // Matches that fit in one page: git walks to the end, the oldest
+        // commit and all, and there is nothing more to load.
+        model.setFilter(QStringLiteral("rare"));
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(!model.moreMatches());
+        QCOMPARE(subjects(), QStringList({"rare, in the middle", "rare, the oldest"}));
+        QCOMPARE(hashes(), unpaged(QStringLiteral("rare")));
+        QVERIFY(!model.loadMore());
+
+        // A new filter starts at the first page, and none brings the loaded
+        // commits back, one batch of them.
+        model.setFilter(QStringLiteral("hit"));
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(model.moreMatches());
+        QCOMPARE(hashes(), hits.first(7));
+        model.setFilter(QString());
+        QVERIFY(!model.filtering() && !model.moreMatches());
+        QCOMPARE(model.rowCount(), 7);
+        QTRY_VERIFY(!gitRunning());
+    }
+
+    // A page ends right after the match that fills it, though git printed
+    // more commits in the same batch: the next page starts at the commit
+    // after that match, so its first row is the match that came next —
+    // neither lost with the rest of the batch nor the page's last one again.
+    void aSearchPageEndsRightAfterItsLastMatch()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QStringList newestFirst = {"hit A", "miss 1", "hit B", "hit C", "hit D",
+                                         "miss 2", "hit E", "miss 3", "hit F", "hit G"};
+        QList<ImportedCommit> imported;
+        for (auto it = newestFirst.crbegin(); it != newestFirst.crend(); ++it)
+            imported.append({*it});
+        QVERIFY(importHistory(dir.path(), imported));
+        // Git flushes after every commit it prints into a pipe; told not
+        // to, it hands over a history this small in one piece, one batch.
+        const ScopedEnv oneBatch("GIT_FLUSH", "0");
+        GitRepo repo(dir.path());
+        HistoryModel model(&repo);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        model.setBatchSize(3);
+        model.reload();
+        const auto subjects = [&model] {
+            QStringList out;
+            for (int row = 0; row < model.rowCount(); ++row)
+                out << model.commit(row).subject;
+            return out;
+        };
+
+        QSignalSpy inserts(&model, &QAbstractItemModel::rowsInserted);
+        model.setFilter(QStringLiteral("hit"));
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(model.moreMatches());
+        QCOMPARE(subjects(), QStringList({"hit A", "hit B", "hit C"}));
+        QCOMPARE(inserts.count(), 1); // the page's three out of the one batch
+        QVERIFY(model.loadMore());
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(model.moreMatches());
+        QCOMPARE(subjects(), QStringList({"hit A", "hit B", "hit C", "hit D", "hit E", "hit F"}));
+        QVERIFY(model.loadMore());
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(!model.moreMatches());
+        QCOMPARE(subjects(), QStringList({"hit A", "hit B", "hit C", "hit D", "hit E", "hit F", "hit G"}));
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    // A second page, of the search or of the log, has git write its
+    // commit-graph where the repository has none, so that the pages after
+    // it walk the commits they skip instead of sorting the whole history
+    // first; a first page never does, a repository is asked once, and a
+    // graph that is there already is left alone.
+    void aSecondPageWritesTheCommitGraph()
+    {
+        const auto graphFile = [](const QString &dir) {
+            for (const char *path : {"/.git/objects/info/commit-graph", "/.git/objects/info/commit-graphs/commit-graph-chain"})
+                if (QFileInfo(dir + QLatin1String(path)).isFile())
+                    return dir + QLatin1String(path);
+            return QString();
+        };
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 30; ++i)
+            imported.append({QStringLiteral("commit %1").arg(i)});
+        QTemporaryDir searched, logged, graphed;
+        QVERIFY(searched.isValid() && logged.isValid() && graphed.isValid());
+        QVERIFY(importHistory(searched.path(), imported));
+        QVERIFY(importHistory(logged.path(), imported));
+        QVERIFY(importHistory(graphed.path(), imported));
+        QVERIFY(graphFile(searched.path()).isEmpty());
+        QVERIFY(graphFile(logged.path()).isEmpty());
+        QVERIFY(git(graphed.path(), {"commit-graph", "write", "--reachable"}));
+        const QString existing = graphFile(graphed.path());
+        QVERIFY(!existing.isEmpty());
+        {
+            // A day long gone, so that a graph written again could not keep it.
+            QFile file(existing);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QVERIFY(file.setFileTime(QDateTime(QDate(2024, 1, 1), QTime(0, 0), QTimeZone::UTC),
+                                     QFileDevice::FileModificationTime));
+        }
+        const QDateTime written = QFileInfo(existing).lastModified();
+
+        GitRepo repo(searched.path());
+        const auto gitRunning = [&repo] { return !repo.findChildren<QProcess *>().isEmpty(); };
+        HistoryModel model(&repo);
+        model.setBatchSize(5);
+        model.reload();
+        QCOMPARE(model.rowCount(), 5);
+        QVERIFY(!gitRunning());
+
+        // The search: its first page leaves the repository as it is, its
+        // second has the graph written while the page runs.
+        model.setFilter(QStringLiteral("commit"));
+        QTRY_VERIFY(!model.searching());
+        QVERIFY(model.moreMatches());
+        QTRY_VERIFY(!gitRunning());
+        QVERIFY(graphFile(searched.path()).isEmpty());
+        QVERIFY(model.loadMore());
+        QTRY_VERIFY(!graphFile(searched.path()).isEmpty());
+        QTRY_VERIFY(!model.searching());
+        QCOMPARE(model.rowCount(), 10);
+        QTRY_VERIFY(!gitRunning());
+
+        // Another repository is asked afresh. The log: its first batch
+        // leaves it as it is, its second has the graph written, and a
+        // third asks no more.
+        repo.setRoot(logged.path());
+        model.setFilter(QString());
+        model.reload();
+        QCOMPARE(model.rowCount(), 5);
+        QVERIFY(!gitRunning());
+        QVERIFY(model.loadMore());
+        QCOMPARE(model.rowCount(), 10);
+        QTRY_VERIFY(!graphFile(logged.path()).isEmpty());
+        QTRY_VERIFY(!gitRunning());
+        QVERIFY(QFile::remove(graphFile(logged.path())));
+        QVERIFY(model.loadMore());
+        QCOMPARE(model.rowCount(), 15);
+        QVERIFY(!gitRunning());
+        QVERIFY(graphFile(logged.path()).isEmpty());
+
+        // A graph there already: asked about, and left alone.
+        repo.setRoot(graphed.path());
+        model.reload();
+        QCOMPARE(model.rowCount(), 15); // as many as were loaded before
+        QVERIFY(!gitRunning());
+        QVERIFY(model.loadMore());
+        QVERIFY(gitRunning()); // the question
+        QTRY_VERIFY(!gitRunning());
+        QCOMPARE(graphFile(graphed.path()), existing);
+        QCOMPARE(QFileInfo(existing).lastModified(), written);
+    }
+
+    // Every page of a search walks the history the search started from: a
+    // commit on HEAD, or with All branches a new branch's, that comes between
+    // two pages before any reload has seen it neither shows up in the later
+    // pages nor shifts them. The pages together are the matches of the start
+    // points the search began with, none twice, none missing. Without a
+    // commit there is nowhere to start, and nothing matches — no HEAD walked
+    // in its place.
+    void everyPageOfASearchWalksTheSameHistory()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 40; ++i)
+            imported.append({(i % 2 ? QStringLiteral("hit %1") : QStringLiteral("miss %1")).arg(i)});
+        QVERIFY(importHistory(dir.path(), imported));
+        GitRepo repo(dir.path());
+        HistoryModel model(&repo);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        model.setBatchSize(4);
+        model.reload();
+        const auto hashes = [&model] {
+            QStringList out;
+            for (int row = 0; row < model.rowCount(); ++row)
+                out << model.commit(row).hash;
+            return out;
+        };
+        const auto unpaged = [&repo](bool allRefs) {
+            QStringList out;
+            for (const Commit &c : repo.log(0, 100000, allRefs))
+                if (commitMatches(c, QStringLiteral("hit")))
+                    out << c.hash;
+            return out;
+        };
+        const auto readToTheEnd = [&model] {
+            for (int pages = 0; model.moreMatches() && pages < 50; ++pages) {
+                QVERIFY(model.loadMore());
+                QTRY_VERIFY(!model.searching());
+            }
+            QVERIFY(!model.moreMatches() && !model.searchFailed());
+        };
+
+        // HEAD moves on by a match, the newest commit of all.
+        const QStringList onHead = unpaged(false);
+        QCOMPARE(onHead.size(), 20);
+        model.setFilter(QStringLiteral("hit"));
+        QTRY_VERIFY(!model.searching());
+        QCOMPARE(hashes(), onHead.first(4));
+        QVERIFY(commit(dir.path(), QStringLiteral("hit on top"), 0));
+        readToTheEnd();
+        QCOMPARE(hashes(), onHead);
+
+        // All branches: a new branch, its tip the newest commit of all.
+        model.setFilter(QString());
+        model.setAllRefs(true);
+        const QStringList everywhere = unpaged(true);
+        QCOMPARE(everywhere.size(), 21);
+        model.setFilter(QStringLiteral("hit"));
+        QTRY_VERIFY(!model.searching());
+        QCOMPARE(hashes(), everywhere.first(4));
+        QVERIFY(git(dir.path(), {"checkout", "-q", "-b", "side", "main~6"}));
+        QVERIFY(commit(dir.path(), QStringLiteral("hit on the side"), 0));
+        QVERIFY(git(dir.path(), {"checkout", "-q", "main"}));
+        readToTheEnd();
+        QCOMPARE(hashes(), everywhere);
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+
+        // No commit yet: no match, and nothing failed.
+        QTemporaryDir empty;
+        QVERIFY(empty.isValid());
+        QVERIFY(git(empty.path(), {"init", "-q", "-b", "main"}));
+        repo.setRoot(empty.path());
+        model.reload();
+        for (const bool all : {true, false}) {
+            model.setAllRefs(all);
+            QVERIFY(!model.searching());
+            QVERIFY(!model.searchFailed() && !model.moreMatches());
+            QCOMPARE(model.rowCount(), 0);
+        }
+        QVERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
     // --- ChangesModel -------------------------------------------------------
 
     void checkMarksSurviveARefresh()
@@ -1813,7 +2273,7 @@ esac
         }
         QVERIFY(repoWidths.at(2) > repoWidths.at(3)); // the repository label goes at level 3
         for (int level = 3; level <= 6; ++level)
-            QCOMPARE(repoWidths.at(level), ui::space(34)); // and the bare folder is 10 + 14 + 10 px wide
+            QCOMPARE(repoWidths.at(level), iconFormWidth()); // and the bare folder is 8 + 16 + 8 px wide
         QVERIFY(tabWidths.at(3) > tabWidths.at(4));   // the tab labels go at level 4
         QCOMPARE(tabWidths.at(5), tabWidths.at(4));
         QCOMPARE(tabWidths.at(6), tabWidths.at(4));
@@ -1834,8 +2294,9 @@ esac
                  ui::icon(ui::kBranch) + QStringLiteral("feature/askpass-login-dialog") + ui::chevron());
     }
 
-    // The tabs follow the middle of the whole bar and stop 16 px clear of
-    // either group; the groups themselves stand against their own edges.
+    // The tabs follow the middle of the whole bar and stop a group gap (16)
+    // clear of either group; the groups themselves stand against their own
+    // edges, with the design's gaps inside them.
     void theTopBarCentresTheTabsBetweenItsGroups()
     {
         BarFixture f = topBar();
@@ -1849,23 +2310,35 @@ esac
         QVERIFY2(qAbs(tabs.x() + tabs.width() / 2.0 - wide / 2.0) <= 1.0, "the tabs are not in the middle of the bar");
 
         // The left group against the left edge, the right group against the
-        // right one, both inside the window's 12 px margin, with the design's
-        // gaps inside them.
+        // right one, both inside the window's margin (the regular 12 of a bar
+        // no window has given its density), with the design's gaps inside
+        // them: the chips and the toggles a cluster apart, the sync buttons an
+        // item apart, a group gap with the divider at its middle before the
+        // toggles.
         const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
         QCOMPARE(repo.x(), ui::space(12));
-        QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(4));
+        QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(ui::gap::cluster));
         QCOMPARE(f.rectOf(bar->diffToggle()).x() + bar->diffToggle()->width(), wide - ui::space(12));
         QCOMPARE(f.rectOf(bar->diffToggle()).x() - (f.rectOf(bar->layoutButton()).x() + bar->layoutButton()->width()),
-                 ui::space(4));
+                 ui::space(ui::gap::cluster));
         QCOMPARE(f.rectOf(bar->pushButton()).x() - (f.rectOf(bar->pullButton()).x() + bar->pullButton()->width()),
-                 ui::space(6));
+                 ui::space(ui::gap::item));
+        const QRect merge = f.rectOf(bar->mergeButton());
+        QCOMPARE(f.rectOf(bar->layoutButton()).x() - (merge.x() + merge.width()), ui::space(ui::gap::group));
+        // The divider: a 16 px line at the start of the group gap's right half.
+        QWidget *divider = nullptr;
+        for (QWidget *w : bar->findChildren<QWidget *>())
+            if (w->isVisible() && w->width() == 1 && w->height() == ui::space(ui::box::divider))
+                divider = w;
+        QVERIFY(divider);
+        QCOMPARE(f.rectOf(divider).x(), merge.x() + merge.width() + ui::space(ui::gap::group / 2));
 
         // At the narrowest width the middle is taken, so the clamp decides:
-        // the tabs sit 16 px off both groups at once.
+        // the tabs sit a group gap off both groups at once.
         QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
         const QRect tight = f.rectOf(f.tabs());
-        QCOMPARE(tight.x(), f.rectOf(bar->branchButton()).x() + bar->branchButton()->width() + ui::space(16));
-        QCOMPARE(tight.x() + tight.width() + ui::space(16), f.rectOf(bar->moreButton()).x());
+        QCOMPARE(tight.x(), f.rectOf(bar->branchButton()).x() + bar->branchButton()->width() + ui::space(ui::gap::group));
+        QCOMPARE(tight.x() + tight.width() + ui::space(ui::gap::group), f.rectOf(bar->moreButton()).x());
     }
 
     // A short branch name is never elided, and the widths of the two chips do
@@ -2050,33 +2523,36 @@ esac
         const QFontMetrics bold(boldFont);
         QFont pillFont = theme->captionFont();
         pillFont.setBold(true);
-        // The count pill: never narrower than it is tall.
-        const int pill = qMax(ui::space(14),
-                              QFontMetrics(pillFont).horizontalAdvance(QStringLiteral("7")) + 2 * ui::space(4));
+        pillFont.setLetterSpacing(QFont::AbsoluteSpacing, 0);
+        // The count pill: 16 high, never narrower than it is tall, 4 either
+        // side of the digits.
+        const int pill = qMax(ui::space(ui::box::pill),
+                              QFontMetrics(pillFont).horizontalAdvance(QStringLiteral("7")) + 2 * ui::space(ui::pad::pill));
         const auto box = [&plain](uint glyph, const QString &fallback) {
-            return qMax(plain.horizontalAdvance(ui::icon(glyph, fallback).trimmed()), ui::space(14));
+            return qMax(plain.horizontalAdvance(ui::icon(glyph, fallback).trimmed()), ui::space(ui::box::icon));
         };
         const int changesBox = box(ui::kCommit, QStringLiteral("C"));
         const int historyBox = box(ui::kHistory, QStringLiteral("H"));
-        const int pad = 2 * ui::space(12);
+        const int pad = 2 * ui::space(ui::pad::control);
+        const int gap = ui::space(ui::gap::icon);
 
         // Spelled out: padding, the glyph's box, the label and the pill, with
         // the design's gap between them. The label is measured bold, the
         // weight it wears while selected.
         QCOMPARE(f.levelAt(bar->sizeHint().width()), 0);
         QCOMPARE(bar->changesTab()->sizeHint().width(),
-                 pad + changesBox + ui::space(6) + bold.horizontalAdvance(QStringLiteral("Changes")) + ui::space(6)
-                     + pill);
+                 pad + changesBox + gap + bold.horizontalAdvance(QStringLiteral("Changes")) + gap + pill);
         QCOMPARE(bar->historyTab()->sizeHint().width(),
-                 pad + historyBox + ui::space(6) + bold.horizontalAdvance(QStringLiteral("History")));
+                 pad + historyBox + gap + bold.horizontalAdvance(QStringLiteral("History")));
+        QCOMPARE(bar->changesTab()->sizeHint().height(), ui::space(ui::box::control));
 
         // Folded: the labels go, the box stays exactly as wide.
         QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
-        QCOMPARE(bar->changesTab()->sizeHint().width(), pad + changesBox + ui::space(6) + pill);
+        QCOMPARE(bar->changesTab()->sizeHint().width(), pad + changesBox + gap + pill);
         QCOMPARE(bar->historyTab()->sizeHint().width(), pad + historyBox);
         // And the box is the design's width, not what the glyph happens to
         // advance by — otherwise the clock would be drawn half outside it.
-        QCOMPARE(historyBox, ui::space(14));
+        QCOMPARE(historyBox, ui::space(ui::box::icon));
     }
 
     // The icon form of a sync button is the design's square, not the size
@@ -2111,20 +2587,20 @@ esac
 
         // The thresholds are those widths and nothing else: level 1 stops
         // fitting exactly where the four labels' extra width runs out, and
-        // level 2 trades Fetch and Merge for the more button, which is the
-        // same square again.
+        // level 2 trades Fetch and Merge for the more button, the 28 px
+        // square.
         QCOMPARE(f.levelAt(wide - saved), 1);
         QCOMPARE(f.levelAt(wide - saved - 1), 2);
-        QCOMPARE(f.rectOf(bar->moreButton()).width(), iconFormWidth());
-        const int levelTwo = wide - saved - iconFormWidth() - ui::space(6);
+        QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(ui::box::control));
+        const int levelTwo = wide - saved - 2 * iconFormWidth() + ui::space(ui::box::control) - ui::space(ui::gap::item);
         QCOMPARE(f.levelAt(levelTwo), 2);
         QCOMPARE(f.levelAt(levelTwo - 1), 3);
     }
 
     // A badge is the design's square hanging over its button's top-right
-    // corner (kit.js badge()): its right edge space(4) past the button's, its
-    // top space(5) above it. The bar's badge layer paints it there, in the
-    // icon form and the labelled one alike.
+    // corner (kit.js badge()): 12 high, its right edge space(4) past the
+    // button's, its top space(4) above it. The bar's badge layer paints it
+    // there, in the icon form and the labelled one alike.
     void theBadgeHangsOverTheButtonsCorner()
     {
         BarFixture f = topBar();
@@ -2140,10 +2616,10 @@ esac
             QTest::qWait(500); // the pop is over: the badge is at its full size
             const QRect button = f.rectOf(pull);
             const QRect badge = pull->badgeRect(button);
-            QCOMPARE(badge.top(), button.top() - ui::space(5));
+            QCOMPARE(badge.top(), button.top() - ui::space(4));
             QCOMPARE(badge.right(), button.right() + ui::space(4));
-            QCOMPARE(badge.height(), ui::space(14));
-            QVERIFY(badge.width() >= ui::space(14));
+            QCOMPARE(badge.height(), ui::space(ui::box::badge));
+            QVERIFY(badge.width() >= ui::space(ui::box::badge));
             QVERIFY(bar->rect().contains(badge)); // the bar keeps the room it rises into
 
             const QImage shot = bar->grab().toImage();
@@ -2171,7 +2647,7 @@ esac
         pull->setCount(2);
         QCOMPARE(f.levelAt(bar->sizeHint().width() - 1), 1);
         QVERIFY(pull->property("iconForm").toBool());
-        QCOMPARE(pull->width(), ui::space(28));
+        QCOMPARE(pull->width(), iconFormWidth());
 
         // The glyph's box: whatever differs from the fill, the border ring left out.
         const QImage shot = pull->grab().toImage();
@@ -2360,21 +2836,22 @@ esac
             QVERIFY(bar->syncDropdown()->isVisible());
             QVERIFY(bar->moreButton()->isVisible());
             QCOMPARE(bar->diffTab()->isVisible(), true);
-            // The dropdown is the design's 92 px whatever its hint, the row's
+            // The dropdown is the design's 96 px whatever its hint, the row's
             // height; More is the design's bare 28 px square, in the icon form.
-            QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(92));
+            QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(96));
             QCOMPARE(f.rectOf(bar->syncDropdown()).height(), bar->syncDropdown()->parentWidget()->height());
-            QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(28));
+            QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(ui::box::control));
             QVERIFY(bar->moreButton()->property("iconForm").toBool());
-            // The gaps: the bare folder, 4 to the branch, 6 between the two
-            // controls on the right, More against the right edge.
+            // The gaps: the bare folder, a cluster to the branch, an item
+            // between the two controls on the right, More against the right
+            // edge.
             const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
             const QRect sync = f.rectOf(bar->syncDropdown()), more = f.rectOf(bar->moreButton());
             QCOMPARE(repo.x(), ui::space(12));
-            QCOMPARE(repo.width(), ui::space(34));
+            QCOMPARE(repo.width(), iconFormWidth());
             QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen, QStringLiteral("…")).trimmed());
-            QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(4));
-            QCOMPARE(more.x() - (sync.x() + sync.width()), ui::space(6));
+            QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(ui::gap::cluster));
+            QCOMPARE(more.x() - (sync.x() + sync.width()), ui::space(ui::gap::item));
             QCOMPARE(more.x() + more.width(), bar->width() - ui::space(12));
             QCOMPARE(static_cast<SegmentButton *>(bar->changesTab())->isLabelled(), level == 0);
             QCOMPARE(static_cast<SegmentButton *>(bar->diffTab())->isLabelled(), level == 0);
@@ -2382,15 +2859,15 @@ esac
         }
 
         // Wide, the tabs sit in the middle; at the narrowest the clamp keeps
-        // them 16 px clear of both groups.
+        // them a group gap clear of both groups.
         QCOMPARE(f.levelAt(wide + 400), 0);
         const QRect middle = f.rectOf(f.tabs());
         QVERIFY(qAbs(middle.x() + middle.width() / 2.0 - (wide + 400) / 2.0) <= 1.0);
         QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 2);
         const QRect tight = f.rectOf(f.tabs());
         const QRect branch = f.rectOf(bar->branchButton());
-        QCOMPARE(tight.x(), branch.x() + branch.width() + ui::space(16));
-        QCOMPARE(tight.x() + tight.width() + ui::space(16), f.rectOf(bar->syncDropdown()).x());
+        QCOMPARE(tight.x(), branch.x() + branch.width() + ui::space(ui::gap::group));
+        QCOMPARE(tight.x() + tight.width() + ui::space(ui::gap::group), f.rectOf(bar->syncDropdown()).x());
         // The branch floor: a lone ellipsis between the glyph and the
         // chevron, in the chip's font, and the chip no wider than that.
         // The name's advance rounded up, as the bar and the chip measure it.
@@ -2428,10 +2905,10 @@ esac
         QVERIFY(bar->diffToggle()->isVisible());
         QVERIFY(!bar->diffTab()->isVisible());
         QCOMPARE(barNames(bar), kBarNames);
-        // More is the same icon form on the ordinary row, wherever it shows.
+        // More is the same 28 px square on the ordinary row, wherever it shows.
         QCOMPARE(f.levelAt(ordinaryMin), 6);
         QVERIFY(bar->moreButton()->isVisible());
-        QCOMPARE(f.rectOf(bar->moreButton()).width(), iconFormWidth());
+        QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(ui::box::control));
         QVERIFY(bar->moreButton()->property("iconForm").toBool());
     }
 
@@ -2521,7 +2998,9 @@ esac
         strip->setSegmentVisible(segments.at(1), false);
         QCOMPARE(strip->geometry(), frame);
         QVERIFY(segments.at(1)->isHidden());
-        QCOMPARE(strip->sizeHint(), QSize(all.width() - middle - 1, all.height()));
+        // The boxes side by side, the lines inside them: the hidden one's box
+        // and nothing more goes.
+        QCOMPARE(strip->sizeHint(), QSize(all.width() - middle, all.height()));
         QCOMPARE(segments.at(0)->x(), 1);
         QCOMPARE(segments.at(2)->x(), segments.at(0)->x() + segments.at(0)->width() + 1);
         QCOMPARE(segments.at(2)->x() + segments.at(2)->width(), frame.width() - 1); // the last takes the rest
@@ -2613,8 +3092,10 @@ esac
             const QImage all = shot();
             return all.copy(ui::space(from), 0, ui::space(to) - ui::space(from), all.height());
         };
-        const auto pullField = [&field] { return field(24, 38); };
-        const auto pushField = [&field] { return field(54, 68); };
+        // screens.js syncDropdown(): Pull's count 28 in, Push's 64 in, each
+        // field its 8 px slot or the dots' 16 px box.
+        const auto pullField = [&field] { return field(28, 44); };
+        const auto pushField = [&field] { return field(64, 80); };
         const QImage pullCounted = pullField(), pushCounted = pushField();
 
         bar->pullButton()->setBusy(true);
@@ -2661,9 +3142,9 @@ esac
     }
 
     // The design's positions are the least each field gets: a count wider
-    // than two digits pushes the rest along and widens the dropdown, and
-    // Merge's corner mark gets room of its own, so neither lands on the
-    // chevron. At the design's text size and a larger one.
+    // than two digits pushes the rest along and widens the dropdown, so it
+    // never lands on the chevron; Merge's corner mark hangs over the corner
+    // clear of the chevron's box. At the design's text size and a larger one.
     void theSyncDropdownMakesRoomForItsContent()
     {
         for (const int base : {12, 16}) {
@@ -2687,41 +3168,39 @@ esac
                 BadgeButton *sync = bar->syncDropdown();
                 const QColor accent = theme.accent();
                 const QColor red = theme.color(QStringLiteral("red"));
-                // The chevron's box, the dropdown's last field, space(10) from
+                // The chevron's 12 px box, the dropdown's last field, 8 from
                 // its right edge once the content decides the width; the glyph
                 // is centred in it.
-                const int chevronAdvance = QFontMetrics(theme.uiFont()).horizontalAdvance(ui::chevron().trimmed());
-                const int chevronBox = qMax(chevronAdvance, ui::space(14));
+                const int chevronBox = ui::space(ui::box::chevron), pad = ui::space(ui::pad::control);
                 const auto width = [&f, sync] { return f.rectOf(sync).width(); };
 
                 bar->pullButton()->setCount(2);
                 bar->pushButton()->setCount(1);
-                QCOMPARE(width(), ui::space(92));
+                QCOMPARE(width(), ui::space(96));
 
                 // 99+ in accent, the chevron (foreground) clear of it.
                 bar->pullButton()->setCount(120);
                 const int wide = width();
-                QVERIFY2(wide > ui::space(92), qPrintable(QString::number(wide)));
+                QVERIFY2(wide > ui::space(96), qPrintable(QString::number(wide)));
                 QImage grab = sync->grab().toImage();
                 QVERIFY(imagePaints(grab, accent));
-                QVERIFY(!imagePaints(grab, accent, wide - ui::space(10) - chevronBox, wide - ui::space(10)));
+                QVERIFY(!imagePaints(grab, accent, wide - pad - chevronBox, wide - pad));
 
-                // The mark widens it by its own room and stays off the chevron
-                // glyph. The bar's badge layer paints it over the dropdown's
-                // corner, so it is read off the bar: the dropdown's columns
-                // and the badge's overhang past them.
+                // The mark hangs over the corner like a badge and stays off
+                // the chevron's box. The bar's badge layer paints it over the
+                // dropdown's corner, so it is read off the bar: the dropdown's
+                // columns and the badge's overhang past them.
                 bar->mergeButton()->setMark(QStringLiteral("!"), red);
-                QCOMPARE(width(), wide + ui::space(6));
+                QCOMPARE(width(), wide);
                 const QRect dropdown = f.rectOf(sync);
                 grab = bar->grab().toImage().copy(dropdown.x(), 0, dropdown.width() + ui::space(4), bar->height());
                 QVERIFY(imagePaints(grab, red));
-                const int glyphLeft = wide - ui::space(10) - chevronBox + (chevronBox - chevronAdvance) / 2;
-                QVERIFY(!imagePaints(grab, red, glyphLeft, glyphLeft + chevronAdvance));
+                QVERIFY(!imagePaints(grab, red, wide - pad - chevronBox, wide - pad));
 
                 // Back to the design's width.
                 bar->mergeButton()->setMark(QString(), red);
                 bar->pullButton()->setCount(2);
-                QCOMPARE(width(), ui::space(92));
+                QCOMPARE(width(), ui::space(96));
 
                 f.host.reset();
             }
@@ -3303,7 +3782,7 @@ esac
         const bool split = f.pane->view()->mode() == DiffView::TwoPane;
         const uint viewGlyph = split ? ui::kSplit : ui::kUnified;
         const QString viewName = split ? QStringLiteral("Split") : QStringLiteral("Unified");
-        const QString longCounter = QStringLiteral("Change 1 of 2   ·   ") + kPaneSummary;
+        const QString longCounter = QStringLiteral("Change 1 of 2 · ") + kPaneSummary;
         const auto expectForm = [&](bool labelledView, bool compact) {
             // Prev and Next: labelled, or squares in the compact form.
             const QList<QPair<QToolButton *, QString>> nav{{f.prev(), QStringLiteral("Prev")},
@@ -3344,20 +3823,23 @@ esac
 
         f.resizeTo(ui::space(900));
         expectForm(true, false);
-        // The design's dropdown: 10, the 14 px glyph, 6, the name, 6 and the
-        // 12 px chevron, 10.
-        QCOMPARE(f.view()->width(), ui::space(10 + 14 + 6) + qCeil(QFontMetricsF(f.view()->font()).horizontalAdvance(viewName))
-                                        + ui::space(6 + 12 + 10));
+        // The design's dropdown: 8, the 16 px glyph box, 4, the name, 4 and
+        // the 12 px chevron box, 8.
+        QCOMPARE(f.view()->width(), ui::space(8 + 16 + 4) + qCeil(QFontMetricsF(f.view()->font()).horizontalAdvance(viewName))
+                                        + ui::space(4 + 12 + 8));
         QList<int> widths;
         for (QToolButton *b : {f.prev(), f.next(), f.view(), f.whitespace(), f.syntax()})
             widths << b->width();
         f.resizeTo(ui::space(899));
         expectForm(false, false);
-        QCOMPARE(f.view()->width(), ui::space(10 + 14 + 6 + 12 + 10));
-        // The design's gaps: 4 between Prev and Next and between the options.
+        QCOMPARE(f.view()->width(), ui::space(8 + 16 + 4 + 12 + 8));
+        // The design's gaps: 4 between Prev and Next and between the options,
+        // 8 from Next to the counter.
         QCOMPARE(f.next()->x() - (f.prev()->x() + f.prev()->width()), ui::space(4));
         QCOMPARE(f.whitespace()->x() - (f.view()->x() + f.view()->width()), ui::space(4));
         QCOMPARE(f.syntax()->x() - (f.whitespace()->x() + f.whitespace()->width()), ui::space(4));
+        QCOMPARE(f.counter()->x() + f.counter()->contentsMargins().left() - (f.next()->x() + f.next()->width()),
+                 ui::space(ui::gap::item));
         f.resizeTo(ui::space(560));
         expectForm(false, false);
         f.resizeTo(ui::space(559));
@@ -3513,9 +3995,9 @@ esac
         f.pane->nextChange();
         QCOMPARE(f.counterText(), QStringLiteral("2/2"));
         f.resizeTo(ui::space(900));
-        QCOMPARE(f.counterText(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
+        QCOMPARE(f.counterText(), QStringLiteral("Change 2 of 2 · ") + kPaneSummary);
         f.resizeTo(ui::space(700));
-        QCOMPARE(f.counterText(), QStringLiteral("Change 2 of 2   ·   ") + kPaneSummary);
+        QCOMPARE(f.counterText(), QStringLiteral("Change 2 of 2 · ") + kPaneSummary);
         const OmarchyTheme *theme = OmarchyTheme::instance();
         const QString html = f.counter()->text();
         for (const QColor &colour : {ChangesModel::statusColor(FileChange::Modified), theme->diffAddedIcon(),
@@ -3613,12 +4095,15 @@ esac
 
     // --- The window's grid and classes ---------------------------------------
 
-    // The design's window grid (screens.js screen(), topBar(), footer()): the
-    // top bar 40 px with its hairline, its row 6 down and 28 tall, 12 in from
-    // either side; the body 10 under the bar, 12 in from either side and 10
-    // over the footer; the footer 28 px with its hairline, the keybindings a
-    // 24 px ghost square 12 from the right edge, 2 under the rule. The two
-    // rules run from edge to edge in the fainter chrome tone.
+    // The design's window grid (screens.js screen(), topBar(), footer()) at a
+    // Wide, Normal window (density: margin 16, block 8): the top bar 8 + 28 + 8
+    // = 44 with its hairline the last row, its row 8 down and the window's
+    // margin in from either side; the body 8 under the bar's rule, the margin
+    // in from either side and 8 over the footer's; the footer 28 with its
+    // hairline the first row, the keybindings a 24 px ghost square flush with
+    // the margin, centred. The two rules run from edge to edge in the fainter
+    // chrome tone. Every pane's first box starts 32 under the body's top: a
+    // 24 px header row and its 8, a 28 px control row and its 4.
     void theWindowFollowsTheDesignsGrid()
     {
         WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(1400), ui::space(800)); });
@@ -3627,21 +4112,28 @@ esac
         settle();
         QWidget *host = f.host();
         const int width = host->width(), height = host->height();
+        const ui::Density density = ui::densityFor(WidthClass::Wide, HeightClass::Normal);
+        const int margin = ui::space(density.margin), block = ui::space(density.block);
+        QCOMPARE(ui::windowMargin(f.window.get()), margin);
+        const int barHeight = ui::space(ui::kBar + ui::box::control + ui::kBar);
+        QCOMPARE(barHeight, ui::space(44));
         TopBar *bar = f.bar();
-        QCOMPARE(rectIn(bar, host), QRect(0, 0, width, ui::space(40)));
+        QCOMPARE(rectIn(bar, host), QRect(0, 0, width, barHeight));
         for (QToolButton *b : {bar->repoButton(), bar->branchButton(), static_cast<QToolButton *>(bar->pullButton()),
                                bar->layoutButton(), bar->diffToggle()}) {
-            QCOMPARE(rectIn(b, host).y(), ui::space(6));
-            QCOMPARE(b->height(), ui::space(28));
+            QCOMPARE(rectIn(b, host).y(), ui::space(ui::kBar));
+            QCOMPARE(b->height(), ui::space(ui::box::control));
         }
-        QCOMPARE(rectIn(bar->repoButton(), host).x(), ui::space(12));
-        QCOMPARE(rectIn(bar->diffToggle(), host).right() + 1, width - ui::space(12));
+        QCOMPARE(rectIn(bar->repoButton(), host).x(), margin);
+        QCOMPARE(rectIn(bar->diffToggle(), host).right() + 1, width - margin);
 
         auto *footer = f.window->findChild<Footer *>();
         QVERIFY(footer);
-        QCOMPARE(rectIn(footer, host), QRect(0, height - ui::space(28), width, ui::space(28)));
+        const int footerHeight = ui::space(ui::box::footer);
+        QCOMPARE(rectIn(footer, host), QRect(0, height - footerHeight, width, footerHeight));
+        const int keys = ui::space(ui::box::row);
         QCOMPARE(rectIn(footer->keybindingsButton(), host),
-                 QRect(width - ui::space(36), height - ui::space(28) + ui::space(2), ui::space(24), ui::space(24)));
+                 QRect(width - margin - keys, height - footerHeight + (footerHeight - keys) / 2, keys, keys));
         QCOMPARE(footer->keybindingsButton()->text(), ui::icon(ui::kKeyboard, QStringLiteral("K")).trimmed());
 
         // The rules: one row of pixels, the window's whole width, at the bar's
@@ -3655,24 +4147,22 @@ esac
         };
         QWidget *barRule = rule(bar), *footerRule = rule(footer);
         QVERIFY(barRule && footerRule);
-        QCOMPARE(rectIn(barRule, host).y(), ui::space(40) - 1);
-        QCOMPARE(rectIn(footerRule, host).y(), height - ui::space(28));
+        QCOMPARE(rectIn(barRule, host).y(), barHeight - 1);
+        QCOMPARE(rectIn(footerRule, host).y(), height - footerHeight);
         for (QWidget *r : {barRule, footerRule})
             QCOMPARE(r->palette().color(QPalette::Window).rgba(), chrome.rgba());
 
         // The body, and the page in it.
-        // The body starts as far under the bar's rule as the bar's row
-        // stands over it.
         const QRect page = rectIn(f.page(), host);
-        QCOMPARE(page.x(), ui::space(12));
-        QCOMPARE(page.y(), ui::space(40) + ui::barGap());
-        QCOMPARE(page.bottom() + 1, height - ui::space(28) - ui::space(10));
+        QCOMPARE(page.x(), margin);
+        QCOMPARE(page.y(), barHeight + ui::space(ui::kBar));
+        QCOMPARE(page.bottom() + 1, height - footerHeight - ui::space(ui::kBar));
         const QRect diff = rectIn(f.window->findChild<DiffPane *>(), host);
-        QCOMPARE(diff.right() + 1, width - ui::space(12));
+        QCOMPARE(diff.right() + 1, width - margin);
         QCOMPARE(diff.y(), page.y());
-        // The diff toolbar keeps that gap above and below it, and the
-        // changes list starts on the diff's line, CHANGES centred on the
-        // toolbar's row.
+        // The diff toolbar is a control row, 4 over the diff; the CHANGES row a
+        // 24 px header row, 8 over the list: both boxes start 32 under the
+        // body's top.
         QToolButton *prev = nullptr;
         for (QToolButton *b : f.window->findChild<DiffPane *>()->findChildren<QToolButton *>())
             if (b->toolTip().startsWith(QLatin1String("Previous change")))
@@ -3681,45 +4171,105 @@ esac
         const QRect prevRect = rectIn(prev, host);
         const QRect diffView = rectIn(f.window->findChild<DiffPane *>()->view(), host);
         QCOMPARE(prevRect.y(), diff.y());
-        QCOMPARE(diffView.y(), prevRect.bottom() + 1 + ui::barGap());
-        QCOMPARE(rectIn(f.page()->table(), host).y(), diffView.y());
-        QVERIFY(qAbs(rectIn(f.page()->tableButton(), host).center().y() - prevRect.center().y()) <= 1);
-        // The splitter's gap is the design's 12.
-        QCOMPARE(diff.x(), page.right() + 1 + ui::space(12));
-        // The message box sits on the action bar, which ends with the page,
-        // on the diff pane's last line; the header rows' buttons stand 2
-        // inside its right edge.
+        QCOMPARE(diffView.y(), prevRect.bottom() + 1 + ui::space(ui::gap::controlRow));
+        QCOMPARE(diffView.y() - page.y(), ui::space(32));
+        QCOMPARE(rectIn(f.page()->table(), host).y() - page.y(), ui::space(32));
+        QCOMPARE(rectIn(f.page()->tableButton(), host).y(), page.y());
+        QCOMPARE(f.page()->tableButton()->height(), ui::space(ui::box::row));
+        // The splitter's gap is the window's margin.
+        QCOMPARE(diff.x(), page.right() + 1 + margin);
+        // The message box a block gap over the action bar, which ends with the
+        // page, on the diff pane's last line; the header rows' buttons stand
+        // 4 inside its right edge.
         auto *commit = f.page()->findChild<QPushButton *>();
         QVERIFY(commit);
         auto *message = f.page()->findChild<MessageEdit *>();
         QVERIFY(message);
-        QCOMPARE(rectIn(message, host).bottom() + 1 + ui::space(8), rectIn(commit, host).y());
+        QCOMPARE(rectIn(message, host).bottom() + 1 + block, rectIn(commit, host).y());
+        QCOMPARE(commit->height(), ui::space(ui::box::control));
         // Under the list, it still has the keyboard when the window comes up.
         QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(message));
         QCOMPARE(rectIn(commit, host).bottom(), page.bottom());
         QCOMPARE(rectIn(commit, host).bottom(), diff.bottom());
-        QCOMPARE(rectIn(f.page()->agentButton(), host).right() + 1, page.right() + 1 - ui::space(2));
+        QCOMPARE(rectIn(f.page()->agentButton(), host).right() + 1, page.right() + 1 - ui::space(ui::gap::icon));
         QCOMPARE(rectIn(f.page()->unversionedButton(), host).y(), rectIn(f.page()->tableButton(), host).y());
 
-        // Mini: the rail is one 40 px tile wide at the margin, the diff pane
-        // 12 after it; stacked, the Diff tab keeps 10.
+        // The history's commit list starts on the same line.
+        f.window->setMode(MainWindow::HistoryMode);
+        settle();
+        auto *history = f.window->findChild<HistoryView *>();
+        QCOMPARE(rectIn(history->commitsTable(), host).y() - rectIn(history, host).y(), ui::space(32));
+        QCOMPARE(rectIn(history->commitsTable(), host).y(), diffView.y());
+        f.window->setMode(MainWindow::CommitMode);
+        settle();
+
+        // Mini: the rail is one 40 px tile wide at the margin, the diff pane a
+        // margin after it; stacked, the Diff tab keeps the stacked margin.
         f.window->setPaneLayout(PaneLayout::Mini, false);
         settle();
         MiniRail *rail = f.rail();
-        QCOMPARE(rectIn(rail, host), QRect(ui::space(12), ui::space(40) + ui::barGap(), ui::space(40), rail->height()));
-        QCOMPARE(rectIn(f.window->findChild<DiffPane *>(), host).x(), ui::space(12 + 40 + 12));
+        QCOMPARE(rectIn(rail, host), QRect(margin, barHeight + ui::space(ui::kBar), ui::space(ui::box::tile), rail->height()));
+        QCOMPARE(rectIn(f.window->findChild<DiffPane *>(), host).x(), 2 * margin + ui::space(ui::box::tile));
         f.window->resize(ui::space(470), ui::space(612));
         settle();
         QVERIFY(f.window->isStacked() && f.window->diffTab());
-        QCOMPARE(rectIn(f.window->findChild<DiffPane *>(), host).x(), ui::space(12 + 40 + 10));
+        const int stacked = ui::space(ui::densityFor(WidthClass::Stacked, HeightClass::Normal).margin);
+        QCOMPARE(ui::windowMargin(f.window.get()), stacked);
+        QCOMPARE(rectIn(f.window->findChild<DiffPane *>(), host).x(), 2 * stacked + ui::space(ui::box::tile));
         f.window->setPaneLayout(PaneLayout::Docked, false);
+    }
+
+    // The block gap follows the window's height: 4 shallow, 8 normal, 12 tall
+    // (screens.js density()), between the changes list and the MESSAGE row as
+    // between the message box and the action bar; the rows of every list are
+    // 24.
+    void theBlockGapFollowsTheWindowsHeight()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(945), ui::space(1234)); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        QWidget *host = f.host();
+        CommitPage *page = f.page();
+        auto *commit = page->findChild<QPushButton *>();
+        auto *message = page->findChild<MessageEdit *>();
+        QLabel *messageLabel = nullptr;
+        for (QLabel *l : page->findChildren<QLabel *>(QStringLiteral("sectionLabel")))
+            if (l->text() == QLatin1String("MESSAGE"))
+                messageLabel = l;
+        QVERIFY(commit && message && messageLabel);
+        const QList<QPair<int, HeightClass>> heights{
+            {1234, HeightClass::Tall}, {612, HeightClass::Normal}, {400, HeightClass::Shallow}};
+        for (const auto &[height, heightClass] : heights) {
+            f.window->resize(ui::space(945), ui::space(height));
+            settle();
+            const QByteArray where = QByteArray::number(height);
+            const int block = ui::space(ui::densityFor(WidthClass::Medium, heightClass).block);
+            // The MESSAGE row is the 24 px header row the label sits in.
+            const int messageRow = rectIn(messageLabel, host).y();
+            const int listBottom = rectIn(page->table(), host).bottom() + 1;
+            QVERIFY2(messageRow - listBottom == block, where.constData());
+            QVERIFY2(rectIn(commit, host).y() - (rectIn(message, host).bottom() + 1) == block, where.constData());
+            QVERIFY2(messageLabel->height() == ui::space(ui::box::row), where.constData());
+        }
+        // Every clickable row is 24: the files, the commits, a menu's.
+        QCOMPARE(page->table()->verticalHeader()->defaultSectionSize(), ui::space(ui::box::row));
+        QCOMPARE(page->table()->rowHeight(0), ui::space(ui::box::row));
+        f.window->setMode(MainWindow::HistoryMode);
+        settle();
+        auto *history = f.window->findChild<HistoryView *>();
+        QCOMPARE(history->commitsTable()->rowHeight(0), ui::space(ui::box::row));
+        TickMenu menu;
+        menu.addAction(QStringLiteral("Refresh"));
+        menu.ensurePolished();
+        QCOMPARE(menu.actionGeometry(menu.actions().first()).height(), ui::space(ui::box::row));
     }
 
     // A shallow window has no footer: the body ends the window's side margin
     // over its bottom edge, and the action bar with it, as does the diff pane
     // or the rail beside it; messages go nowhere
     // and Ctrl+K still opens the keybindings. Back above 560 the footer
-    // returns, the body ends 10 over it, the action bar with it.
+    // returns, the body ends 8 over it, the action bar with it.
     void theShallowWindowDropsTheFooter()
     {
         WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(945), ui::space(612)); });
@@ -3735,21 +4285,22 @@ esac
         const auto bottomOf = [&](QWidget *widget) { return rectIn(widget, host).bottom() + 1; };
         const auto tall = [&] {
             QVERIFY(footer->isVisible());
-            QCOMPARE(bottomOf(f.page()), host->height() - ui::space(28) - ui::space(10));
+            QCOMPARE(bottomOf(f.page()), host->height() - ui::space(ui::box::footer) - ui::space(ui::kBar));
             QCOMPARE(bottomOf(commit), bottomOf(f.page()));
             QCOMPARE(bottomOf(commit), bottomOf(w->findChild<DiffPane *>()));
         };
         tall();
 
-        const int margin = ui::windowMargin();
         for (int width : {945, 470}) {
             w->resize(ui::space(width), ui::space(400));
             settle();
+            const int margin = ui::windowMargin(w);
+            QCOMPARE(margin, ui::space(width == 945 ? 12 : 8));
             QVERIFY(!footer->isVisible());
             QCOMPARE(bottomOf(f.page()), host->height() - margin);
             QCOMPARE(bottomOf(commit), host->height() - margin);
             QCOMPARE(bottomOf(f.page()->optionsButton()), host->height() - margin);
-            QCOMPARE(commit->height(), ui::space(28));
+            QCOMPARE(commit->height(), ui::space(ui::box::control));
             if (width == 945) {
                 QCOMPARE(bottomOf(w->findChild<DiffPane *>()), host->height() - margin);
                 // The history's last row ends there too.
@@ -3811,9 +4362,10 @@ esac
 
     // The window's classes size the commit page, and nothing of it is saved:
     // the left section's default width and the message box's resting height
-    // by the width class (560 / 96 from 1400, 400 / 84 from 1000, 340 / 68
-    // below), "Amend" in the medium class, and a shallow window (under 560)
-    // gets the one-line box and the stacked action bar at any width.
+    // by the width class (560 / 96 from 1400, 400 / 80 from 1000, 340 / 64
+    // below: 5, 4 and 3 lines of 16 inside 8 px of padding), "Amend" in the
+    // medium class, and a shallow window (under 560) gets the one-line box —
+    // a 28 px field — and the stacked action bar at any width.
     void theWindowClassesSizeTheCommitPage()
     {
         WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(1400), ui::space(800)); });
@@ -3840,16 +4392,16 @@ esac
         check(ui::space(1400), ui::space(800), ui::space(560), ui::space(96), false, false);
         if (QTest::currentTestFailed())
             return;
-        check(ui::space(1200), ui::space(800), ui::space(400), ui::space(84), false, false);
+        check(ui::space(1200), ui::space(800), ui::space(400), ui::space(80), false, false);
         if (QTest::currentTestFailed())
             return;
-        check(ui::space(900), ui::space(800), ui::space(340), ui::space(68), true, false);
+        check(ui::space(900), ui::space(800), ui::space(340), ui::space(64), true, false);
         if (QTest::currentTestFailed())
             return;
-        check(ui::space(900), ui::space(500), ui::space(340), ui::space(34), true, true);
+        check(ui::space(900), ui::space(500), ui::space(340), ui::space(ui::box::control), true, true);
         if (QTest::currentTestFailed())
             return;
-        check(ui::space(1400), ui::space(500), ui::space(560), ui::space(34), false, true);
+        check(ui::space(1400), ui::space(500), ui::space(560), ui::space(ui::box::control), false, true);
         if (QTest::currentTestFailed())
             return;
         check(ui::space(1400), ui::space(800), ui::space(560), ui::space(96), false, false);
@@ -3915,7 +4467,7 @@ esac
             int design, firstLane;
         };
         for (const Case c : {Case{WidthClass::Wide, 40, 14}, Case{WidthClass::Large, 40, 14},
-                             Case{WidthClass::Medium, 36, 12}, Case{WidthClass::Stacked, 30, 9}}) {
+                             Case{WidthClass::Medium, 36, 12}, Case{WidthClass::Stacked, 32, 10}}) {
             for (int lanes = 1; lanes <= 3; ++lanes) {
                 const HistoryView::GraphGeometry g = HistoryView::graphGeometry(c.widthClass, lanes);
                 const QByteArray where = QStringLiteral("%1 px, %2 lanes").arg(c.design).arg(lanes).toUtf8();
@@ -3943,8 +4495,8 @@ esac
     // The commit list's columns by the window's width class (screens.js
     // commitsTable()), the SHA never among them and Message taking exactly
     // what is left, so neither table scrolls sideways at any of the design's
-    // frames; the files table under it likewise (changesTable()): the 30 px
-    // row numbers, Path, Status (the St pill where it is 30 px), "+ −" and
+    // frames; the files table under it likewise (changesTable()): the 32 px
+    // row numbers, Path, Status (the St pill where it is 32 px), "+ −" and
     // Size as the class has them, and Name taking the rest.
     void theHistoryTablesFollowTheWidthClass()
     {
@@ -3969,8 +4521,13 @@ esac
                 if (c != stretch)
                     others += shown(table, c);
             return table->columnWidth(stretch) == table->viewport()->width() - others
-                && table->columnWidth(stretch) >= ui::space(100) && table->horizontalScrollBar()->maximum() == 0;
+                && table->columnWidth(stretch) >= ui::space(ui::kMinStretchColumn)
+                && table->horizontalScrollBar()->maximum() == 0;
         };
+        // The design measures the first and the last column from the table's
+        // outer edge, whose frame the cells are inside of.
+        const int edge = commits->frameWidth();
+        QCOMPARE(files->frameWidth(), edge);
 
         // The frame's size, then the commit list's graph, author and date and
         // the files' path, status, "+ −" and size, in design pixels (0: not
@@ -3980,21 +4537,26 @@ esac
             int graph, author, date;
             int path, status, lines, size;
         };
-        const QList<Frame> frames{{1900, 1234, 40, 90, 130, 130, 70, 70, 70},
-                                  {1200, 800, 40, 90, 100, 120, 60, 60, 0},
-                                  {945, 1234, 36, 0, 90, 110, 30, 0, 0},
-                                  {945, 612, 36, 0, 90, 110, 30, 0, 0},
-                                  {627, 612, 30, 0, 0, -1, -1, -1, -1},
-                                  {470, 612, 30, 0, 0, -1, -1, -1, -1}};
+        // Author shows in every class (the user's rule, where the design's
+        // narrower frames have none).
+        const QList<Frame> frames{{1900, 1234, 40, 88, 128, 128, 72, 72, 72},
+                                  {1200, 800, 40, 88, 120, 120, 72, 60, 0},
+                                  {945, 1234, 36, 88, 88, 112, 32, 0, 0},
+                                  {945, 612, 36, 88, 88, 112, 32, 0, 0},
+                                  {627, 612, 32, 72, 0, -1, -1, -1, -1},
+                                  {470, 612, 32, 72, 0, -1, -1, -1, -1}};
         for (const Frame &frame : frames) {
             w->resize(ui::space(frame.width), ui::space(frame.height));
             settle();
             const QByteArray where = QStringLiteral("%1x%2").arg(frame.width).arg(frame.height).toUtf8();
             QVERIFY2(commits->isColumnHidden(HistoryModel::Hash), where.constData());
-            QVERIFY2(shown(commits, HistoryModel::Graph) == ui::space(frame.graph), where.constData());
-            QVERIFY2(shown(commits, HistoryModel::Author) == ui::space(frame.author) * (frame.author > 0),
+            QVERIFY2(shown(commits, HistoryModel::Graph) == ui::space(frame.graph) - edge, where.constData());
+            // The last column shown, Date or else Author, is the frame less.
+            QVERIFY2(shown(commits, HistoryModel::Author)
+                         == (ui::space(frame.author) - (frame.date > 0 ? 0 : edge)) * (frame.author > 0),
                      where.constData());
-            QVERIFY2(shown(commits, HistoryModel::Date) == ui::space(frame.date) * (frame.date > 0), where.constData());
+            QVERIFY2(shown(commits, HistoryModel::Date) == (ui::space(frame.date) - edge) * (frame.date > 0),
+                     where.constData());
             QVERIFY2(fitsExactly(commits, HistoryModel::Message, HistoryModel::ColumnCount), where.constData());
 
             if (frame.path < 0) {
@@ -4002,19 +4564,25 @@ esac
                 continue;
             }
             QVERIFY2(files->isVisible(), where.constData());
-            const auto px = [](int design) { return design > 0 ? ui::space(design) : 0; };
-            QVERIFY2(shown(files, ChangesModel::Check) == ui::space(30), where.constData());
-            QVERIFY2(shown(files, ChangesModel::Path) == px(frame.path), where.constData());
-            QVERIFY2(shown(files, ChangesModel::Status) == px(frame.status), where.constData());
-            QVERIFY2(shown(files, ChangesModel::LinesAdded) == px(frame.lines), where.constData());
-            QVERIFY2(shown(files, ChangesModel::Size) == px(frame.size), where.constData());
+            // The last column shown: Size, "+ −" or the status, whichever the class ends on.
+            const int last = frame.size > 0 ? ChangesModel::Size : frame.lines > 0 ? ChangesModel::LinesAdded
+                                                                                    : ChangesModel::Status;
+            const auto px = [&](int column, int design) {
+                return design > 0 ? ui::space(design) - (column == last ? edge : 0) : 0;
+            };
+            QVERIFY2(shown(files, ChangesModel::Check) == ui::space(32) - edge, where.constData());
+            QVERIFY2(shown(files, ChangesModel::Path) == px(ChangesModel::Path, frame.path), where.constData());
+            QVERIFY2(shown(files, ChangesModel::Status) == px(ChangesModel::Status, frame.status), where.constData());
+            QVERIFY2(shown(files, ChangesModel::LinesAdded) == px(ChangesModel::LinesAdded, frame.lines),
+                     where.constData());
+            QVERIFY2(shown(files, ChangesModel::Size) == px(ChangesModel::Size, frame.size), where.constData());
             QVERIFY2(files->isColumnHidden(ChangesModel::Extension), where.constData());
             QVERIFY2(files->isColumnHidden(ChangesModel::LinesRemoved), where.constData());
             QVERIFY2(fitsExactly(files, ChangesModel::Name, ChangesModel::ColumnCount), where.constData());
             QCOMPARE(filesHeader->sectionText(ChangesModel::Check), QStringLiteral("#"));
             QCOMPARE(filesHeader->sectionText(ChangesModel::LinesAdded), QStringLiteral("+ −"));
             QCOMPARE(filesHeader->sectionText(ChangesModel::Status),
-                     frame.status == 30 ? QStringLiteral("St") : QStringLiteral("Status"));
+                     frame.status == 32 ? QStringLiteral("St") : QStringLiteral("Status"));
             // Size reads last, after the line counts.
             QCOMPARE(filesHeader->visualIndex(ChangesModel::Size), ChangesModel::ColumnCount - 1);
         }
@@ -4108,8 +4676,11 @@ esac
         QCOMPARE(card->metaParts(), QStringList({rootCommit.shortHash, QStringLiteral("Test <test@example.com>")}));
         QVERIFY(card->filesButton()->isVisible());
         QCOMPARE(card->filesButton()->text(), QStringLiteral("1 file ›"));
-        QVERIFY(card->filesButton()->width() >= ui::space(90));
-        QCOMPARE(card->filesButton()->height(), ui::space(24));
+        // A 24 px ghost button, its text 8 in, 8 in from the card's corner
+        // (its text on the card's 12 of padding).
+        QCOMPARE(card->filesButton()->width(), card->filesButton()->fontMetrics().horizontalAdvance(QStringLiteral("1 file ›"))
+                                                   + 2 * ui::space(ui::pad::control));
+        QCOMPARE(card->filesButton()->height(), ui::space(ui::box::row));
         const QRect button = card->filesButton()->geometry();
         QCOMPARE(card->width() - (button.right() + 1), ui::space(8));
         QCOMPARE(card->height() - (button.bottom() + 1), ui::space(8));
@@ -4124,13 +4695,14 @@ esac
         settle();
         QVERIFY(!card->filesButton()->isVisible());
 
-        // No commit at all: the lines empty, the view's message in the body.
+        // No commit at all: the lines empty, the view's message in the body
+        // once the search is done.
         history.filterField()->setText(QStringLiteral("no such commit"));
         QTRY_VERIFY(!commits->currentIndex().isValid());
         QVERIFY(card->title().isEmpty());
         QVERIFY(card->metaParts().isEmpty());
         QVERIFY(card->parentsText().isEmpty());
-        QCOMPARE(card->body()->placeholderText(), QStringLiteral("No commits match the filter."));
+        QTRY_COMPARE(card->body()->placeholderText(), QStringLiteral("No commits match the filter."));
         QCOMPARE(card->body()->placeholderText(), history.emptyMessage());
     }
 
@@ -4186,19 +4758,23 @@ esac
         QTableView *files = history->filesTable();
         CommitDetails *card = history->details();
         QVERIFY(card->isVisible() && files->isVisible());
-        QCOMPARE(card->height(), ui::space(150));
-        QCOMPARE(files->height(), ui::space(110));
+        // The card 152 and the files a header and three rows (screens.js
+        // historyPage()), a block gap apart.
+        QCOMPARE(card->height(), ui::space(152));
+        QCOMPARE(files->height(), 4 * ui::space(ui::box::row));
+        const int block = ui::space(ui::densityFor(WidthClass::Medium, HeightClass::Normal).block);
+        QCOMPARE(files->mapTo(history, QPoint(0, 0)).y() - (card->mapTo(history, QPoint(0, 0)).y() + card->height()), block);
         QCOMPARE(history->activeListView(), static_cast<QAbstractItemView *>(files));
-        // The last section ends 22 px above the page's bottom edge, the count
-        // row taking those 22 px, its text centred 6 px above the edge.
+        // The last section ends 24 px above the page's bottom edge, the count
+        // row taking those 24 px, its text centred on them the design's way.
         auto *count = history->findChild<QLabel *>(QStringLiteral("historyCount"));
         QVERIFY(count);
         const auto bottomIn = [history](QWidget *widget) { return widget->mapTo(history, QPoint(0, widget->height())).y(); };
-        QCOMPARE(history->height() - bottomIn(files), ui::space(22));
+        QCOMPARE(history->height() - bottomIn(files), ui::space(ui::box::row));
         QCOMPARE(count->mapTo(history, QPoint(0, 0)).y(), bottomIn(files));
         QCOMPARE(bottomIn(count), history->height());
         QCOMPARE(count->contentsMargins().top() + QFontMetrics(count->font()).ascent(),
-                 qRound(ui::space(22) - ui::space(6) + 0.36 * count->font().pixelSize()));
+                 qRound(ui::space(ui::box::row) / 2.0 + 0.36 * count->font().pixelSize()));
         QVERIFY(files->currentIndex().isValid());
         const QString current = files->currentIndex().data(ChangesModel::PathRole).toString();
         QCOMPARE(current, QStringLiteral("a.txt"));
@@ -4207,8 +4783,8 @@ esac
         settle();
         QVERIFY(card->isHidden() && files->isHidden());
         QCOMPARE(history->activeListView(), static_cast<QAbstractItemView *>(history->commitsTable()));
-        // The commit list runs down to the count row, 22 px above the edge.
-        QCOMPARE(history->height() - bottomIn(history->commitsTable()), ui::space(22));
+        // The commit list runs down to the count row, 24 px above the edge.
+        QCOMPARE(history->height() - bottomIn(history->commitsTable()), ui::space(ui::box::row));
         QCOMPARE(count->mapTo(history, QPoint(0, 0)).y(), bottomIn(history->commitsTable()));
         Commit c;
         FileChange file;
@@ -4222,13 +4798,13 @@ esac
         settle();
         QVERIFY(card->isVisible() && files->isHidden());
         QCOMPARE(card->height(), ui::space(132));
-        QCOMPARE(history->height() - bottomIn(card), ui::space(22));
+        QCOMPARE(history->height() - bottomIn(card), ui::space(ui::box::row));
         // Back to the ordinary width: both, at the design's heights.
         w->resize(ui::space(945), ui::space(612));
         settle();
         QVERIFY(card->isVisible() && files->isVisible());
-        QCOMPARE(card->height(), ui::space(150));
-        QCOMPARE(files->height(), ui::space(110));
+        QCOMPARE(card->height(), ui::space(152));
+        QCOMPARE(files->height(), 4 * ui::space(ui::box::row));
         QCOMPARE(files->currentIndex().data(ChangesModel::PathRole).toString(), current);
     }
 
@@ -4259,18 +4835,1018 @@ esac
         QCOMPARE(field->width(), ui::space(360));
 
         QVERIFY(magnifier->isVisible());
-        QCOMPARE(magnifier->geometry(), QRect(ui::space(8), (field->height() - ui::space(14)) / 2, ui::space(14), ui::space(14)));
+        const int box = ui::space(ui::box::icon);
+        QCOMPARE(magnifier->geometry(), QRect(ui::space(ui::pad::control), (field->height() - box) / 2, box, box));
+        // The clear glyph is there only while the field holds text, in the
+        // same box at the other end.
+        QWidget *clear = field->findChild<QWidget *>(QStringLiteral("filterClear"));
+        QVERIFY(clear);
+        QVERIFY(!clear->isVisible());
+        field->setFocus();
         QTest::keyClicks(field, QStringLiteral("merge"));
         QCOMPARE(field->text(), QStringLiteral("merge"));
         QVERIFY(magnifier->isVisible());
-        // The text starts right of the magnifier's box.
+        QVERIFY(clear->isVisible());
+        QCOMPARE(clear->geometry(),
+                 QRect(field->width() - ui::space(ui::pad::control) - box, (field->height() - box) / 2, box, box));
+        // The text keeps clear of both glyphs' boxes.
         QVERIFY(field->textMargins().left() > 0);
+        QVERIFY(field->textMargins().right() > 0);
+        // A click on it empties the field and leaves the focus in it.
+        QTest::mouseClick(clear, Qt::LeftButton);
+        QVERIFY(field->text().isEmpty());
+        QVERIFY(!clear->isVisible());
+        QVERIFY(field->hasFocus());
     }
 
-    // The file lists' geometry: a 26 px header whose Name and Path titles
-    // read from the left (the others centred), 26 px rows and 14 px boxes;
-    // the commits keep their 28 px rows under the same header, all titles
-    // from the left. Untracked files say so.
+    // The filter searches the whole history, not the commits loaded so far:
+    // of 600, 500 are loaded and the one match is the oldest. The count row
+    // says how far the search is; the selection follows the commit that was
+    // current where it turns up; a new filter drops the search before it;
+    // clearing the filter brings the 500 back with their graph. There is no
+    // Load more anywhere: scrolling loads.
+    void theHistoryFilterSearchesTheWholeHistory()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 600; ++i)
+            imported.append({QStringLiteral("commit %1").arg(i)});
+        imported.first().message = QStringLiteral("The needle, oldest of all");
+        QVERIFY(importHistory(dir.path(), imported));
+
+        GitRepo repo(dir.path());
+        HistoryView history(&repo);
+        history.resize(ui::space(945), ui::space(800));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        history.reload();
+        settle();
+        QTableView *table = history.commitsTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        auto *count = history.findChild<QLabel *>(QStringLiteral("historyCount"));
+        QVERIFY(count);
+        QCOMPARE(model->rowCount(), 500);
+        QCOMPARE(count->text(), QStringLiteral("500 commits loaded"));
+        QCOMPARE(count->height(), ui::space(ui::box::row));
+        QVERIFY(!table->isColumnHidden(HistoryModel::Graph));
+        for (QAbstractButton *button : history.findChildren<QAbstractButton *>())
+            QVERIFY2(!button->text().contains(QStringLiteral("Load more")) && !button->toolTip().contains(QStringLiteral("500")),
+                     qPrintable(button->text()));
+
+        // Every text the count row wears while filtering is one of these.
+        const QRegularExpression countText(
+            QStringLiteral("^Searching… (1 match|\\d+ matches)$|^(1 match|\\d+ matches)( loaded)?$|^No matches$"));
+        QStringList counts;
+        connect(model, &HistoryModel::searchChanged, &history, [&] {
+            if (model->filtering())
+                counts << count->text();
+        });
+        const auto filter = [&](const QString &text) {
+            history.filterField()->setText(text);
+            // The debounce's slot, now, so what it shows before any match is in can be seen.
+            QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        };
+        const auto current = [&history] {
+            bool ok = false;
+            const Commit c = history.currentCommit(&ok);
+            return ok ? c.subject : QString();
+        };
+        const auto everyRowMatches = [model](const QString &text) {
+            for (int row = 0; row < model->rowCount(); ++row)
+                if (!commitMatches(model->commit(row), text))
+                    return false;
+            return true;
+        };
+        QCOMPARE(current(), QStringLiteral("commit 600"));
+
+        // The one match, beyond the loaded commits; the commit that was
+        // current is not among the matches, so the first one is selected.
+        filter(QStringLiteral("NEEDLE"));
+        QVERIFY(model->searching());
+        QCOMPARE(count->text(), QStringLiteral("Searching… 0 matches"));
+        QCOMPARE(history.emptyMessage(), QStringLiteral("Searching…"));
+        QCOMPARE(history.details()->body()->placeholderText(), QStringLiteral("Searching…"));
+        QVERIFY(table->isColumnHidden(HistoryModel::Graph));
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(count->text(), QStringLiteral("1 match"));
+        QCOMPARE(current(), QStringLiteral("The needle, oldest of all"));
+
+        // None at all.
+        filter(QStringLiteral("no such commit"));
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(count->text(), QStringLiteral("No matches"));
+        QCOMPARE(history.emptyMessage(), QStringLiteral("No commits match the filter."));
+        QCOMPARE(history.details()->body()->placeholderText(), QStringLiteral("No commits match the filter."));
+
+        // Cleared: the 500 loaded commits and their graph; the commit last
+        // current is not among them, so the list starts at the top.
+        filter(QString());
+        QVERIFY(!model->filtering());
+        QCOMPARE(model->rowCount(), 500);
+        QVERIFY(!table->isColumnHidden(HistoryModel::Graph));
+        QVERIFY(table->columnWidth(HistoryModel::Graph) > 0);
+        QCOMPARE(count->text(), QStringLiteral("500 commits loaded"));
+        QCOMPARE(current(), QStringLiteral("commit 600"));
+
+        // A commit the matches have is selected again when it turns up, and
+        // stays selected, in view, once the filter is cleared.
+        table->selectRow(600 - 555);
+        QCOMPARE(current(), QStringLiteral("commit 555"));
+        filter(QStringLiteral("commit 5"));
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 1 + 10 + 100); // 5, 50–59, 500–599
+        QVERIFY(everyRowMatches(QStringLiteral("commit 5")));
+        QCOMPARE(count->text(), QStringLiteral("111 matches"));
+        QCOMPARE(current(), QStringLiteral("commit 555"));
+        filter(QString());
+        QCOMPARE(current(), QStringLiteral("commit 555"));
+        QVERIFY(table->viewport()->rect().intersects(table->visualRect(table->currentIndex())));
+
+        // A new filter while a search runs: only its own matches arrive,
+        // nothing of the search it replaced — started a moment ago, or with
+        // its first commits in already.
+        filter(QStringLiteral("commit"));
+        filter(QStringLiteral("needle"));
+        QTRY_VERIFY(!model->searching());
+        QTest::qWait(100);
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->commit(0).subject, QStringLiteral("The needle, oldest of all"));
+        filter(QStringLiteral("commit"));
+        QTRY_VERIFY(model->rowCount() > 0);
+        filter(QStringLiteral("commit 60"));
+        QTRY_VERIFY(!model->searching());
+        QTest::qWait(100);
+        QCOMPARE(model->rowCount(), 2); // 60 and 600
+        QVERIFY(everyRowMatches(QStringLiteral("commit 60")));
+        QCOMPARE(count->text(), QStringLiteral("2 matches"));
+
+        QVERIFY(!counts.isEmpty());
+        for (const QString &text : counts)
+            QVERIFY2(countText.match(text).hasMatch(), qPrintable(text));
+    }
+
+    // A filter's matches come 500 at a time, like the commits: where a page
+    // stopped full the count row says "N matches loaded", scrolling the list
+    // to its end loads the next page ("Searching… N matches" while it runs)
+    // below the rows there, the one the user picked staying current, and the
+    // last page says "N matches"; the numbers grouped the locale's way. At
+    // the end, scrolling loads nothing more.
+    void scrollingLoadsTheNextPageOfMatches()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 1005; ++i)
+            imported.append({QStringLiteral("commit %1").arg(i)});
+        QVERIFY(importHistory(dir.path(), imported));
+        const QLocale locale;
+        QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
+        const auto restoreLocale = qScopeGuard([locale] { QLocale::setDefault(locale); });
+
+        GitRepo repo(dir.path());
+        HistoryView history(&repo);
+        history.resize(ui::space(945), ui::space(800));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        history.reload();
+        settle();
+        QTableView *table = history.commitsTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        auto *count = history.findChild<QLabel *>(QStringLiteral("historyCount"));
+        QVERIFY(count);
+        QCOMPARE(count->text(), QStringLiteral("500 commits loaded"));
+        QStringList counts;
+        connect(model, &HistoryModel::searchChanged, &history, [&] { counts << count->text(); });
+        const auto current = [&history] {
+            bool ok = false;
+            const Commit c = history.currentCommit(&ok);
+            return ok ? c.subject : QString();
+        };
+
+        history.filterField()->setText(QStringLiteral("commit"));
+        QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(model->moreMatches());
+        QCOMPARE(model->rowCount(), 500);
+        QCOMPARE(count->text(), QStringLiteral("500 matches loaded"));
+        QCOMPARE(current(), QStringLiteral("commit 1005"));
+        table->selectRow(1005 - 990);
+        QCOMPARE(current(), QStringLiteral("commit 990"));
+
+        QScrollBar *bar = table->verticalScrollBar();
+        const auto scrollToTheEnd = [&] {
+            QVERIFY(bar->maximum() > 0);
+            counts.clear();
+            bar->setValue(bar->maximum());
+        };
+        scrollToTheEnd();
+        QTRY_VERIFY(model->rowCount() > 500 && !model->searching());
+        QVERIFY(counts.contains(QStringLiteral("Searching… 500 matches")));
+        QCOMPARE(model->rowCount(), 1000);
+        QCOMPARE(count->text(), QStringLiteral("1,000 matches loaded"));
+        QCOMPARE(current(), QStringLiteral("commit 990"));
+
+        scrollToTheEnd();
+        QTRY_VERIFY(model->rowCount() > 1000 && !model->searching());
+        QVERIFY(counts.contains(QStringLiteral("Searching… 1,000 matches")));
+        QVERIFY(!model->moreMatches());
+        QCOMPARE(model->rowCount(), 1005);
+        QCOMPARE(count->text(), QStringLiteral("1,005 matches"));
+        QCOMPARE(table->currentIndex().row(), 1005 - 990);
+        for (int row = 0; row < model->rowCount(); ++row)
+            QCOMPARE(model->commit(row).subject, QStringLiteral("commit %1").arg(1005 - row));
+
+        scrollToTheEnd();
+        QTest::qWait(100);
+        QVERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 1005);
+        QCOMPARE(count->text(), QStringLiteral("1,005 matches"));
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty()); // the commit-graph the second page asked for
+    }
+
+    // A refresh whose search starts over (a ref moved) brings the list back
+    // as it was: as many matches as the pages had, and past them for the
+    // commit that was current where new matches pushed it down; that commit
+    // current again with its file, and the offsets of the commit list and of
+    // the files table put back. Until it is back, the card and the files go
+    // on showing it. A second refresh before the list is back keeps what the
+    // first one put aside; one where nothing moved leaves nothing behind to
+    // be put back later.
+    void aRefreshBringsTheSearchsListBack()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 40; ++i)
+            imported.append({QStringLiteral("hit %1").arg(i)});
+        for (int i = 1; i <= 30; ++i)
+            imported[29].files << QStringLiteral("file%1.txt").arg(i, 2, 10, QLatin1Char('0'));
+        QVERIFY(importHistory(dir.path(), imported));
+
+        GitRepo repo(dir.path());
+        HistoryView history(&repo);
+        history.resize(ui::space(945), ui::space(560));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        QTableView *table = history.commitsTable();
+        QTableView *files = history.filesTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        model->setBatchSize(5);
+        history.reload();
+        settle();
+        history.filterField()->setText(QStringLiteral("hit"));
+        QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        for (int page = 2; page <= 3; ++page) {
+            QVERIFY(model->loadMore());
+            QTRY_VERIFY(!model->searching());
+        }
+        QCOMPARE(model->rowCount(), 15);
+        const auto current = [&history] {
+            bool ok = false;
+            const Commit c = history.currentCommit(&ok);
+            return ok ? c.subject : QString();
+        };
+        const auto currentFile = [&history] {
+            Commit c;
+            FileChange f;
+            return history.currentFile(&c, &f) ? f.path : QString();
+        };
+
+        // "hit 30" on the third page, its twentieth file, both lists
+        // scrolled off the rows they show.
+        table->selectRow(10);
+        QCOMPARE(current(), QStringLiteral("hit 30"));
+        QCOMPARE(files->model()->rowCount(), 30);
+        files->selectRow(19);
+        QCOMPARE(currentFile(), QStringLiteral("file20.txt"));
+        QScrollBar *commitsBar = table->verticalScrollBar();
+        QScrollBar *filesBar = files->verticalScrollBar();
+        QVERIFY(commitsBar->maximum() >= 4 && filesBar->maximum() >= 7);
+        commitsBar->setValue(4);
+        filesBar->setValue(7);
+        settle();
+        QCOMPARE(commitsBar->value(), 4);
+        QCOMPARE(filesBar->value(), 7);
+
+        // A ref moves: the search starts over, and while it looks for the
+        // commit the card and the files stay. A second ref moves and a second
+        // refresh comes before anything is back.
+        QVERIFY(git(dir.path(), {"branch", "moved", "main~3"}));
+        history.reload();
+        QVERIFY(model->searching());
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(history.details()->title(), QStringLiteral("hit 30"));
+        QCOMPARE(files->model()->rowCount(), 30);
+        QCOMPARE(files->currentIndex().row(), 19);
+        QVERIFY(git(dir.path(), {"tag", "again", "main~7"}));
+        history.reload();
+        QVERIFY(model->searching());
+        QCOMPARE(history.details()->title(), QStringLiteral("hit 30"));
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 15);
+        QVERIFY(model->moreMatches());
+        QCOMPARE(current(), QStringLiteral("hit 30"));
+        QCOMPARE(currentFile(), QStringLiteral("file20.txt"));
+        QCOMPARE(commitsBar->value(), 4);
+        QCOMPARE(filesBar->value(), 7);
+
+        // Six new matches on top push the commit past the fifteen: the page
+        // goes on until it is in, and ends there.
+        for (int i = 1; i <= 6; ++i)
+            QVERIFY(commit(dir.path(), QStringLiteral("hit new %1").arg(i), 0));
+        history.reload();
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 6 + 11);
+        QCOMPARE(model->commit(16).subject, QStringLiteral("hit 30"));
+        QVERIFY(model->moreMatches());
+        QCOMPARE(current(), QStringLiteral("hit 30"));
+        QCOMPARE(currentFile(), QStringLiteral("file20.txt"));
+        QCOMPARE(commitsBar->value(), 4);
+        QCOMPARE(filesBar->value(), 7);
+
+        // Nothing moved: nothing starts over, and nothing is put back when
+        // the next page comes in.
+        QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+        history.reload();
+        QCOMPARE(resets.count(), 0);
+        commitsBar->setValue(2);
+        filesBar->setValue(3);
+        QVERIFY(QMetaObject::invokeMethod(&history, "loadMore"));
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 17 + 5);
+        QCOMPARE(commitsBar->value(), 2);
+        QCOMPARE(filesBar->value(), 3);
+        QCOMPARE(current(), QStringLiteral("hit 30"));
+        QCOMPARE(currentFile(), QStringLiteral("file20.txt"));
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    // A refresh's search goes on past the matches the list had for the
+    // commit that was current a batch of matches at most: one that is gone
+    // (amended away here) ends the page there, full with more to load, and
+    // the first match is current, the card with it. The next page goes on
+    // right after it: the pages are the history's matches, none twice, none
+    // missing.
+    void aRefreshGivesUpOnACommitThatIsGone()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // Every match 4 KB long: git's pipe holds 64 KB, so the refresh's
+        // page comes in pieces, whose matches count together.
+        const QString filler(4000, QLatin1Char('x'));
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 60; ++i)
+            imported.append({QStringLiteral("hit %1\n\n%2").arg(i).arg(filler)});
+        QVERIFY(importHistory(dir.path(), imported));
+
+        GitRepo repo(dir.path());
+        HistoryView history(&repo);
+        history.resize(ui::space(945), ui::space(560));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        QTableView *table = history.commitsTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        model->setBatchSize(5);
+        history.reload();
+        settle();
+        history.filterField()->setText(QStringLiteral("hit"));
+        QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        for (int page = 2; page <= 3; ++page) {
+            QVERIFY(model->loadMore());
+            QTRY_VERIFY(!model->searching());
+        }
+        QCOMPARE(model->rowCount(), 15);
+        const auto current = [&history] {
+            bool ok = false;
+            const Commit c = history.currentCommit(&ok);
+            return ok ? c.subject : QString();
+        };
+        const auto hashes = [model] {
+            QStringList out;
+            for (int row = 0; row < model->rowCount(); ++row)
+                out << model->commit(row).hash;
+            return out;
+        };
+        QCOMPARE(current(), QStringLiteral("hit 60"));
+
+        // The current commit amended: the refresh's search looks for it in
+        // vain through the fifteen and five more, and stops there.
+        QVERIFY(git(dir.path(), {"commit", "--amend", "--allow-empty", "-q", "-m", "hit 60, amended"}));
+        history.reload();
+        QVERIFY(model->searching());
+        QCOMPARE(history.details()->title(), QStringLiteral("hit 60"));
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 15 + 5);
+        QVERIFY(model->moreMatches());
+        QVERIFY(!model->searchFailed());
+        QCOMPARE(table->currentIndex().row(), 0);
+        QCOMPARE(current(), QStringLiteral("hit 60, amended"));
+        QCOMPARE(history.details()->title(), QStringLiteral("hit 60, amended"));
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+
+        // The pages after it.
+        QStringList unpaged;
+        for (const Commit &c : repo.log(0, 1000, false))
+            if (commitMatches(c, QStringLiteral("hit")))
+                unpaged << c.hash;
+        QCOMPARE(unpaged.size(), 60);
+        QVERIFY(model->loadMore());
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(hashes(), unpaged.first(25));
+        for (int pages = 0; model->moreMatches() && pages < 20; ++pages) {
+            QVERIFY(model->loadMore());
+            QTRY_VERIFY(!model->searching());
+        }
+        QVERIFY(!model->moreMatches() && !model->searchFailed());
+        QCOMPARE(hashes(), unpaged);
+        QCOMPARE(current(), QStringLiteral("hit 60, amended"));
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    // The user scrolling the commit list while a refresh brings it back —
+    // the commit back already, the rows still coming in — leaves it where
+    // they scrolled it: the offset the refresh put aside is not put back
+    // once the rows are in.
+    void theUsersScrollingOutlastsARefresh()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // Every match 8 KB long: git's pipe holds 64 KB, so the refresh's
+        // forty come in pieces of eight at most, and the list has more rows
+        // than it shows before the last.
+        const QString filler(8000, QLatin1Char('x'));
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 60; ++i)
+            imported.append({QStringLiteral("hit %1\n\n%2").arg(i).arg(filler)});
+        QVERIFY(importHistory(dir.path(), imported));
+
+        GitRepo repo(dir.path());
+        HistoryView history(&repo);
+        history.resize(ui::space(945), ui::space(560));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        QTableView *table = history.commitsTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        model->setBatchSize(5);
+        history.reload();
+        settle();
+        history.filterField()->setText(QStringLiteral("hit"));
+        QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        while (model->rowCount() < 40) {
+            QVERIFY(model->loadMore());
+            QTRY_VERIFY(!model->searching());
+        }
+        QCOMPARE(model->rowCount(), 40);
+        const auto currentHash = [&history] {
+            bool ok = false;
+            const Commit c = history.currentCommit(&ok);
+            return ok ? c.hash : QString();
+        };
+
+        // The third match current, the list scrolled well past it.
+        table->selectRow(2);
+        const QString kept = currentHash();
+        QCOMPARE(model->commit(2).hash, kept);
+        QScrollBar *bar = table->verticalScrollBar();
+        QVERIFY(bar->maximum() >= 20);
+        bar->setValue(20);
+        settle();
+        QCOMPARE(bar->value(), 20);
+
+        // A ref moves. The commit is back with the first rows, and the user
+        // scrolls by a step while the others are still coming.
+        int scrolledTo = -1;
+        const QMetaObject::Connection scroller = connect(model, &HistoryModel::searchChanged, &history, [&] {
+            if (scrolledTo >= 0 || !model->searching() || currentHash() != kept)
+                return;
+            table->doItemsLayout(); // the range of the rows in so far
+            if (bar->maximum() == 0)
+                return;
+            bar->triggerAction(QAbstractSlider::SliderSingleStepAdd);
+            scrolledTo = bar->value();
+        });
+        QVERIFY(git(dir.path(), {"branch", "moved", "main~3"}));
+        history.reload();
+        QTRY_VERIFY(!model->searching());
+        disconnect(scroller);
+        QVERIFY(scrolledTo > 0);
+        QVERIFY(scrolledTo != 20);
+        QCOMPARE(model->rowCount(), 40);
+        QVERIFY(model->moreMatches());
+        QCOMPARE(currentHash(), kept);
+        settle();
+        QCOMPARE(bar->value(), scrolledTo);
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    // The user scrolling the commit list before a refresh's search has
+    // brought the commit back leaves it where they scrolled it: the commit is
+    // current again, with its file, and the list does not move to it. A
+    // second refresh meanwhile that starts the search over puts the list back
+    // where the user had it, not where the first refresh found it; one where
+    // nothing moved changes nothing of it, and the commit coming back does
+    // not move the list either.
+    void theUsersScrollingOutlastsTheCommitComingBack_data()
+    {
+        QTest::addColumn<bool>("again");
+        QTest::addColumn<bool>("moved");
+        QTest::newRow("one refresh") << false << false;
+        QTest::newRow("a second, a ref moved") << true << true;
+        QTest::newRow("a second, nothing moved") << true << false;
+    }
+
+    void theUsersScrollingOutlastsTheCommitComingBack()
+    {
+        QFETCH(bool, again);
+        QFETCH(bool, moved);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // Every match 8 KB long: git's pipe holds 64 KB, so the refresh's
+        // forty come in pieces of eight at most, and the list has more rows
+        // than it shows pieces before the thirty-first, the commit, is in.
+        const QString filler(8000, QLatin1Char('x'));
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 60; ++i)
+            imported.append({QStringLiteral("hit %1\n\n%2").arg(i).arg(filler)});
+        imported[29].files = {QStringLiteral("a.txt"), QStringLiteral("b.txt")};
+        QVERIFY(importHistory(dir.path(), imported));
+
+        GitRepo repo(dir.path());
+        HistoryView history(&repo);
+        history.resize(ui::space(945), ui::space(560));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        QTableView *table = history.commitsTable();
+        QTableView *files = history.filesTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        model->setBatchSize(5);
+        history.reload();
+        settle();
+        history.filterField()->setText(QStringLiteral("hit"));
+        QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        while (model->rowCount() < 40) {
+            QVERIFY(model->loadMore());
+            QTRY_VERIFY(!model->searching());
+        }
+        QCOMPARE(model->rowCount(), 40);
+        const auto currentHash = [&history] {
+            bool ok = false;
+            const Commit c = history.currentCommit(&ok);
+            return ok ? c.hash : QString();
+        };
+        const auto currentFile = [&history] {
+            Commit c;
+            FileChange f;
+            return history.currentFile(&c, &f) ? f.path : QString();
+        };
+
+        // "hit 30" current with its second file, the list scrolled to it.
+        table->selectRow(30);
+        QCOMPARE(model->commit(30).subject, QStringLiteral("hit 30"));
+        const QString kept = currentHash();
+        QCOMPARE(files->model()->rowCount(), 2);
+        files->selectRow(1);
+        const QString file = currentFile();
+        QVERIFY(!file.isEmpty());
+        QScrollBar *bar = table->verticalScrollBar();
+        QVERIFY(bar->maximum() >= 25);
+        bar->setValue(25);
+        settle();
+        QCOMPARE(bar->value(), 25);
+
+        // A ref moves. Before the commit is back the user scrolls the list by
+        // a step, then refreshes again where the row says so.
+        int scrolledTo = -1, backAt = -1;
+        const QMetaObject::Connection user = connect(model, &HistoryModel::searchChanged, &history, [&] {
+            if (currentHash() == kept) {
+                if (backAt < 0)
+                    backAt = bar->value();
+                return;
+            }
+            if (scrolledTo >= 0 || !model->searching())
+                return;
+            table->doItemsLayout(); // the range of the rows in so far
+            if (bar->maximum() == 0)
+                return;
+            bar->triggerAction(QAbstractSlider::SliderSingleStepAdd);
+            scrolledTo = bar->value();
+            if (!again)
+                return;
+            if (moved)
+                QVERIFY(git(dir.path(), {"tag", "again", "main~7"}));
+            history.reload();
+        });
+        QVERIFY(git(dir.path(), {"branch", "moved", "main~3"}));
+        history.reload();
+        QTRY_VERIFY(!model->searching());
+        disconnect(user);
+        QVERIFY(scrolledTo > 0);
+        QVERIFY(backAt >= 0);
+        QCOMPARE(model->rowCount(), 40);
+        QVERIFY(model->moreMatches());
+        QCOMPARE(currentHash(), kept);
+        QCOMPARE(currentFile(), file);
+        // Back where the user had the list; only a second refresh's reset
+        // moved it meanwhile, and that one's end put it back.
+        if (!(again && moved))
+            QCOMPARE(backAt, scrolledTo);
+        settle();
+        QCOMPARE(bar->value(), scrolledTo);
+        QVERIFY(!table->viewport()->rect().intersects(table->visualRect(table->currentIndex())));
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    // A search git fails says so: "Search failed" with nothing found, "N
+    // matches · search failed" under what it did find, which stays, and
+    // "The search failed." in the card and the diff where no commit is
+    // current. A failure has nothing more to load, and is never "nothing
+    // moved": a refresh starts the search over. Git fails here for want of
+    // an old commit, which a walk in date order reads before it prints
+    // anything.
+    void aFailedSearchSaysSoAndARefreshTriesAgain()
+    {
+        QTemporaryDir dir, aside;
+        QVERIFY(dir.isValid() && aside.isValid());
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 12; ++i)
+            imported.append({QStringLiteral("hit %1").arg(i)});
+        QVERIFY(importHistory(dir.path(), imported));
+        GitRepo repo(dir.path());
+        const QString oldest = repo.log(0, 100, false).last().hash;
+        const QString object = QDir(dir.path()).filePath(QStringLiteral(".git/objects/%1/%2").arg(oldest.left(2), oldest.mid(2)));
+        const QString hidden = QDir(aside.path()).filePath(QStringLiteral("object"));
+        QVERIFY(QFileInfo(object).isFile());
+        const auto hide = [&] { QVERIFY(QFile::rename(object, hidden)); };
+        // Once git is done: the commit-graph a second page asks for fails
+        // for want of the commit too, where one written later would let git
+        // print the newer commits before it came to the missing one.
+        const auto restore = [&] {
+            QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+            QVERIFY(QFile::rename(hidden, object));
+        };
+
+        HistoryView history(&repo);
+        history.resize(ui::space(945), ui::space(800));
+        history.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&history));
+        QTableView *table = history.commitsTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        model->setBatchSize(3);
+        history.reload();
+        settle();
+        auto *count = history.findChild<QLabel *>(QStringLiteral("historyCount"));
+        QVERIFY(count);
+        const auto current = [&history] {
+            bool ok = false;
+            const Commit c = history.currentCommit(&ok);
+            return ok ? c.subject : QString();
+        };
+
+        // Before any match.
+        hide();
+        history.filterField()->setText(QStringLiteral("hit"));
+        QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(model->searchFailed());
+        QVERIFY(!model->moreMatches());
+        QVERIFY(!model->loadMore());
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(count->text(), QStringLiteral("Search failed"));
+        QCOMPARE(history.emptyMessage(), QStringLiteral("The search failed."));
+        QCOMPARE(history.details()->body()->placeholderText(), QStringLiteral("The search failed."));
+        history.reload(); // the repository as it was: git fails again
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(model->searchFailed());
+        QCOMPARE(count->text(), QStringLiteral("Search failed"));
+        restore();
+        history.reload();
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(!model->searchFailed());
+        QCOMPARE(model->rowCount(), 3);
+        QCOMPARE(count->text(), QStringLiteral("3 matches loaded"));
+        QCOMPARE(current(), QStringLiteral("hit 12"));
+
+        // After some: the next page fails, the rows and the one the user
+        // picked stay, and scrolling to the end asks for nothing more.
+        model->setBatchSize(1);
+        history.filterField()->setText(QStringLiteral("hit 1"));
+        QVERIFY(QMetaObject::invokeMethod(&history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(current(), QStringLiteral("hit 12"));
+        hide();
+        QVERIFY(model->loadMore());
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(model->searchFailed());
+        QVERIFY(!model->moreMatches());
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(count->text(), QStringLiteral("1 match · search failed"));
+        QCOMPARE(current(), QStringLiteral("hit 12"));
+        restore();
+        history.reload();
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(!model->searchFailed() && model->moreMatches());
+        QVERIFY(model->loadMore());
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 2);
+        table->selectRow(1);
+        QCOMPARE(current(), QStringLiteral("hit 11"));
+        hide();
+        QVERIFY(model->loadMore());
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(model->searchFailed());
+        QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(count->text(), QStringLiteral("2 matches · search failed"));
+        QCOMPARE(current(), QStringLiteral("hit 11"));
+        QScrollBar *bar = table->verticalScrollBar();
+        bar->setValue(bar->maximum());
+        QTest::qWait(100);
+        QVERIFY(!model->searching());
+        QCOMPARE(model->rowCount(), 2);
+        restore();
+        history.reload();
+        QTRY_VERIFY(!model->searching());
+        QVERIFY(!model->searchFailed());
+        QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(count->text(), QStringLiteral("2 matches loaded"));
+        QCOMPARE(current(), QStringLiteral("hit 11"));
+        QTRY_VERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    // A refresh whose search starts over leaves the history's diff alone:
+    // while the search looks for the commit, and once it is back — on the
+    // first page, or on one further down — the diff is the same file
+    // scrolled to the same place, and the files keep their selection.
+    void aRefreshKeepsTheSearchsDiffWhereItWas_data()
+    {
+        QTest::addColumn<int>("row");
+        QTest::newRow("first page") << 1;
+        QTest::newRow("third page") << 7;
+    }
+
+    void aRefreshKeepsTheSearchsDiffWhereItWas()
+    {
+        QFETCH(int, row);
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        auto *history = w->findChild<HistoryView *>();
+        QTableView *table = history->commitsTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        model->setBatchSize(3);
+        // Twelve matches, each changing every fifth line of a long file: the
+        // diffs have somewhere to scroll to.
+        const QString path = f.dir->path();
+        for (int i = 1; i <= 12; ++i) {
+            QByteArray text;
+            for (int line = 0; line < 400; ++line)
+                text += (line % 5 ? QByteArray("line ") : "v" + QByteArray::number(i) + ' ') + QByteArray::number(line) + '\n';
+            QVERIFY(writeFixture(QDir(path).filePath(QStringLiteral("long.txt")), text));
+            QVERIFY(git(path, {"add", "long.txt"}));
+            QVERIFY(git(path, {"commit", "-q", "-m", QStringLiteral("hit %1").arg(i)}, i + 1));
+        }
+        w->refresh();
+        w->setMode(MainWindow::HistoryMode);
+        settle();
+        history->filterField()->setText(QStringLiteral("hit"));
+        QVERIFY(QMetaObject::invokeMethod(history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        while (model->rowCount() <= row) {
+            QVERIFY(model->loadMore());
+            QTRY_VERIFY(!model->searching());
+        }
+        const QString selected = model->commit(row).hash;
+        table->selectRow(row);
+        settle();
+        const auto currentHash = [history] {
+            bool ok = false;
+            const Commit c = history->currentCommit(&ok);
+            return ok ? c.hash : QString();
+        };
+        const auto files = [history] {
+            const QModelIndex current = history->filesTable()->currentIndex();
+            return QStringLiteral("%1 of %2, %3")
+                .arg(current.row())
+                .arg(history->filesTable()->model()->rowCount())
+                .arg(current.data().toString());
+        };
+        const auto diff = [&f] {
+            const DiffView::ViewState d = f.diff()->viewState();
+            return QStringLiteral("%1,%2,%3 of %4 lines").arg(d.row).arg(d.column).arg(d.block).arg(f.diff()->document().lines.size());
+        };
+        QCOMPARE(currentHash(), selected);
+        DiffView::ViewState at;
+        at.row = 120;
+        at.block = 1;
+        f.diff()->restoreViewState(at);
+        settle();
+        const QString diffBefore = diff(), filesBefore = files();
+        QVERIFY2(diffBefore.startsWith(QLatin1String("120,")), qPrintable(diffBefore));
+        QVERIFY2(filesBefore.startsWith(QLatin1String("0 of 1")), qPrintable(filesBefore));
+
+        QVERIFY(git(path, {"branch", "moved", "HEAD~2"}));
+        w->refresh();
+        QVERIFY(model->searching());
+        QVERIFY(currentHash().isEmpty());
+        QCOMPARE(diff(), diffBefore);
+        QCOMPARE(files(), filesBefore);
+        QTRY_VERIFY(!model->searching() && currentHash() == selected);
+        settle();
+        QCOMPARE(diff(), diffBefore);
+        QCOMPARE(files(), filesBefore);
+
+        // Back from the Changes page while the search looks for the commit:
+        // the diff is at once the file the card and the files still show,
+        // the commit's own, and stays so once it is back.
+        w->setMode(MainWindow::CommitMode);
+        settle();
+        QVERIFY(git(path, {"branch", "moved-again", "HEAD~4"}));
+        w->refresh();
+        w->setMode(MainWindow::HistoryMode);
+        QVERIFY(model->searching());
+        QVERIFY(currentHash().isEmpty());
+        QCOMPARE(files(), filesBefore);
+        const QString diffShown = diff();
+        QVERIFY2(diffShown.endsWith(QLatin1String(" of 480 lines")), qPrintable(diffShown));
+        QTRY_VERIFY(!model->searching() && currentHash() == selected);
+        settle();
+        QCOMPARE(files(), filesBefore);
+        QCOMPARE(diff(), diffShown);
+    }
+
+    // While a refresh's search brings the commit back, the files it keeps
+    // showing are still that commit's: a file the user picks among them
+    // shows its diff at once, the rail naming the commit, and once the
+    // commit is back that file is the one selected, its diff where the user
+    // left it.
+    void aFilePickedWhileTheCommitComesBackIsTheUsers()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        auto *history = w->findChild<HistoryView *>();
+        QTableView *table = history->commitsTable();
+        QTableView *files = history->filesTable();
+        auto *model = qobject_cast<HistoryModel *>(table->model());
+        QVERIFY(model);
+        model->setBatchSize(3);
+        // Twelve matches, each changing every fifth line of two long files,
+        // the lines naming the file and the version.
+        const QString path = f.dir->path();
+        for (int i = 1; i <= 12; ++i) {
+            for (const char *name : {"one", "two"}) {
+                QByteArray text;
+                for (int line = 0; line < 400; ++line)
+                    text += name + (line % 5 ? QByteArray(" line ") : " v" + QByteArray::number(i) + ' ')
+                        + QByteArray::number(line) + '\n';
+                QVERIFY(writeFixture(QDir(path).filePath(QString::fromLatin1(name) + QStringLiteral(".txt")), text));
+            }
+            QVERIFY(git(path, {"add", "one.txt", "two.txt"}));
+            QVERIFY(git(path, {"commit", "-q", "-m", QStringLiteral("hit %1").arg(i)}, i + 1));
+        }
+        w->refresh();
+        w->setMode(MainWindow::HistoryMode);
+        settle();
+        history->filterField()->setText(QStringLiteral("hit"));
+        QVERIFY(QMetaObject::invokeMethod(history, "onFilterChanged"));
+        QTRY_VERIFY(!model->searching());
+        while (model->rowCount() <= 7) {
+            QVERIFY(model->loadMore());
+            QTRY_VERIFY(!model->searching());
+        }
+        // "hit 5", on the third page.
+        const Commit selected = model->commit(7);
+        QCOMPARE(selected.subject, QStringLiteral("hit 5"));
+        table->selectRow(7);
+        settle();
+        const auto currentHash = [history] {
+            bool ok = false;
+            const Commit c = history->currentCommit(&ok);
+            return ok ? c.hash : QString();
+        };
+        const auto fileAt = [files](int row) {
+            return files->model()->index(row, ChangesModel::Name).data().toString();
+        };
+        // The first line the diff adds, and where the diff is.
+        const auto diff = [&f] {
+            const DiffView::ViewState d = f.diff()->viewState();
+            QString added;
+            for (const DiffLine &line : f.diff()->document().lines)
+                if (line.state == DiffLine::Added) {
+                    added = line.text;
+                    break;
+                }
+            return QStringLiteral("%1 at %2,%3,%4").arg(added).arg(d.row).arg(d.column).arg(d.block);
+        };
+        const auto railCommit = [&f] {
+            for (QLabel *label : f.rail()->findChildren<QLabel *>(QStringLiteral("dimLabel")))
+                if (!label->toolTip().isEmpty())
+                    return label->toolTip().section(QLatin1Char('\n'), 0, 0);
+            return QString();
+        };
+        QCOMPARE(currentHash(), selected.hash);
+        QCOMPARE(files->model()->rowCount(), 2);
+        const int picked = 1 - files->currentIndex().row();
+        const QString pickedName = fileAt(picked);
+        QVERIFY(diff().startsWith(fileAt(files->currentIndex().row()).chopped(4) + QLatin1String(" v5 0 at ")));
+        QCOMPARE(railCommit(), selected.shortHash);
+
+        // A ref moves and the search starts over; before the commit is back
+        // the user picks the other file and scrolls its diff.
+        QVERIFY(git(path, {"branch", "moved", "HEAD~2"}));
+        w->refresh();
+        QVERIFY(model->searching());
+        QVERIFY(currentHash().isEmpty());
+        files->selectRow(picked);
+        QCOMPARE(fileAt(files->currentIndex().row()), pickedName);
+        QVERIFY2(diff().startsWith(pickedName.chopped(4) + QLatin1String(" v5 0 at ")), qPrintable(diff()));
+        QCOMPARE(railCommit(), selected.shortHash);
+        DiffView::ViewState at;
+        at.row = 120;
+        at.block = 1;
+        f.diff()->restoreViewState(at);
+        const QString diffPicked = diff();
+        QVERIFY2(diffPicked.contains(QLatin1String(" at 120,")), qPrintable(diffPicked));
+        QVERIFY(model->searching());
+
+        QTRY_VERIFY(!model->searching() && currentHash() == selected.hash);
+        settle();
+        QCOMPARE(fileAt(files->currentIndex().row()), pickedName);
+        QCOMPARE(diff(), diffPicked);
+        Commit c;
+        FileChange file;
+        QVERIFY(history->currentFile(&c, &file));
+        QCOMPARE(c.hash, selected.hash);
+        QCOMPARE(file.path, pickedName);
+        QCOMPARE(railCommit(), selected.shortHash);
+    }
+
+    // Two commits whose files compare equal — the same file, the same
+    // status, as many lines in and out, the same size — are still two
+    // diffs: selecting one after the other shows the other's.
+    void anotherCommitWithEqualFilesShowsItsOwnDiff()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        auto *history = w->findChild<HistoryView *>();
+        const QString path = f.dir->path();
+        int hour = 2;
+        for (const QString &version : {QStringLiteral("1.0.0"), QStringLiteral("1.0.1"), QStringLiteral("1.0.2")}) {
+            QVERIFY(writeFixture(QDir(path).filePath(QStringLiteral("version.txt")), version.toUtf8() + '\n'));
+            QVERIFY(git(path, {"add", "version.txt"}));
+            QVERIFY(git(path, {"commit", "-q", "-m", QStringLiteral("Version %1").arg(version)}, hour++));
+        }
+        w->refresh();
+        w->setMode(MainWindow::HistoryMode);
+        settle();
+        const auto current = [history] {
+            bool ok = false;
+            const Commit c = history->currentCommit(&ok);
+            return ok ? c.subject : QString();
+        };
+        const auto added = [&f] {
+            QStringList out;
+            for (const DiffLine &line : f.diff()->document().lines)
+                if (line.state == DiffLine::Added)
+                    out << line.text;
+            return out;
+        };
+        QCOMPARE(current(), QStringLiteral("Version 1.0.2"));
+        QCOMPARE(added(), QStringList({"1.0.2"}));
+        history->commitsTable()->selectRow(1);
+        QCOMPARE(current(), QStringLiteral("Version 1.0.1"));
+        QCOMPARE(added(), QStringList({"1.0.1"}));
+        history->commitsTable()->selectRow(0);
+        QCOMPARE(added(), QStringList({"1.0.2"}));
+    }
+
+    // The file lists' geometry (screens.js changesTable()): a 24 px header,
+    // its hairline its last row and the table's top border its first, so it
+    // is 23 inside the frame; 24 px rows; Name and Path titles read from the
+    // left (the others centred); the checkbox a 16 px box centred in the
+    // design's 32 px column, the header's too. Untracked files say so.
     void theTablesFollowTheDesignsGeometry()
     {
         CommitFixture f = commitFixture();
@@ -4278,9 +5854,10 @@ esac
         QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
         settle();
         QTableView *table = f.page->table();
-        QCOMPARE(table->horizontalHeader()->height(), ui::space(26));
-        QCOMPARE(table->verticalHeader()->defaultSectionSize(), ui::space(26));
-        QCOMPARE(f.page->tree()->header()->height(), ui::space(26));
+        const int frame = table->frameWidth();
+        QCOMPARE(table->horizontalHeader()->height(), ui::space(ui::box::row) - frame);
+        QCOMPARE(table->verticalHeader()->defaultSectionSize(), ui::space(ui::box::row));
+        QCOMPARE(f.page->tree()->header()->height(), ui::space(ui::box::row) - frame);
         const auto alignment = [](const QAbstractItemModel *model, int section) {
             return Qt::Alignment(model->headerData(section, Qt::Horizontal, Qt::TextAlignmentRole).toInt());
         };
@@ -4289,13 +5866,18 @@ esac
         QCOMPARE(alignment(table->model(), ChangesModel::Status) & Qt::AlignHorizontal_Mask, Qt::AlignHCenter);
         QCOMPARE(alignment(f.page->tree()->model(), ChangesTreeModel::Name) & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
         QCOMPARE(change(QStringLiteral("u.txt"), FileChange::Untracked).statusText(), QStringLiteral("Untracked"));
-        // The box of a row: 14 px, border included.
+        // The box of a row: 16 px, border included, centred in the design's
+        // 32 px column, which starts with the frame's pixel.
+        const int box = ui::space(ui::box::check);
+        QCOMPARE(table->columnWidth(ChangesModel::Check), ui::space(32) - frame);
+        const QRect cell(0, 0, table->columnWidth(ChangesModel::Check), ui::space(ui::box::row));
+        QCOMPARE(checkBoxRect(cell, frame), QRect((ui::space(32) - box) / 2 - frame, (cell.height() - box) / 2, box, box));
         QStyleOptionViewItem item;
         item.initFrom(table);
-        item.rect = QRect(0, 0, ui::space(30), ui::space(26));
+        item.rect = QRect(0, 0, box, box);
         item.features |= QStyleOptionViewItem::HasCheckIndicator;
         QCOMPARE(table->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &item, table).size(),
-                 QSize(14, 14));
+                 QSize(box, box));
 
         HistoryModel history(nullptr);
         for (int section : {int(HistoryModel::Message), int(HistoryModel::Author), int(HistoryModel::Date)})
@@ -4348,8 +5930,8 @@ esac
 
     // --- The stacked commit page ------------------------------------------------
 
-    // Options at the left, 6 px, and Commit through the rest; Amend goes into
-    // the menu. The ordinary row comes back exactly.
+    // Options at the left, an item gap (8), and Commit through the rest;
+    // Amend goes into the menu. The ordinary row comes back exactly.
     void theStackedActionBarFoldsAmendIntoOptions()
     {
         CommitFixture f = commitFixture();
@@ -4383,8 +5965,8 @@ esac
         QVERIFY(!amend->isVisible());
         const QRect o = rectIn(options, page), c = rectIn(commit, page);
         QCOMPARE(o.x(), 0);
-        QCOMPARE(o.width(), ui::space(28));
-        QCOMPARE(c.x() - (o.x() + o.width()), ui::space(6));
+        QCOMPARE(o.width(), ui::space(ui::box::control));
+        QCOMPARE(c.x() - (o.x() + o.width()), ui::space(ui::gap::item));
         QCOMPARE(c.x() + c.width(), page->width());
         QVERIFY(c.width() > commitBefore.width());
         wording(QStringLiteral("Commit 2 files"), true);
@@ -4741,7 +6323,7 @@ esac
                                         fresh.bar->minimumSizeHint().width()}) {
                     QCOMPARE(live.levelAt(width), fresh.levelAt(width));
                     QCOMPARE(stackedRow(live), stackedRow(fresh));
-                    QCOMPARE(live.rectOf(live.bar->syncDropdown()).width(), ui::space(92));
+                    QCOMPARE(live.rectOf(live.bar->syncDropdown()).width(), ui::space(96));
                 }
                 live.levelAt(live.bar->sizeHint().width());
             };
@@ -4991,7 +6573,7 @@ esac
         MiniRail *rail = f.rail();
         QToolButton *tile = f.tile();
         QCOMPARE(rail->width(), MiniRail::railWidth());
-        QCOMPARE(MiniRail::railWidth(), ui::space(MiniRail::kWidth));
+        QCOMPARE(MiniRail::railWidth(), ui::space(ui::box::tile));
         QCOMPARE(MiniRail::railWidth(), ui::space(40)); // one tile wide
         QCOMPARE(tile->size(), QSize(MiniRail::railWidth(), ui::space(40)));
         QCOMPARE(rectIn(tile, rail).x(), 0);
@@ -5327,20 +6909,26 @@ esac
         CommitPopover *card = f.popover();
         QWidget *host = f.host();
         // The window's margin, which the card keeps on its right.
-        const QMargins hostMargins(ui::windowMargin(), ui::windowMargin(), ui::windowMargin(), ui::windowMargin());
+        const auto hostMargins = [&] {
+            const int m = ui::windowMargin(f.window.get());
+            return QMargins(m, m, m, m);
+        };
         const auto anchored = [&] {
             const QRect cardRect = card->geometry();
             const QRect tileRect = rectIn(f.tile(), host);
             const QRect rail = f.rail()->geometry();
             const int left = rail.x() + rail.width() + ui::space(8);
             return cardRect.x() == left && cardRect.y() + cardRect.height() == tileRect.y() + tileRect.height()
-                && cardRect.width() == qMin(ui::space(360), host->width() - hostMargins.right() - left);
+                && cardRect.width() == qMin(ui::space(360), host->width() - hostMargins().right() - left);
         };
         QVERIFY(anchored());
         QCOMPARE(card->width(), ui::space(360));
-        // The frame's coordinates: the message box's top and left edges.
-        QCOMPARE(rectIn(card->editor(), card).topLeft(), QPoint(ui::space(10), ui::space(32)));
-        QCOMPARE(card->editor()->height(), ui::space(84));
+        // The frame's coordinates (screens.js commitPopover()): the message
+        // box 12 in and under the 12 of padding, the 24 px MESSAGE row and
+        // its 8; 80 tall at rest.
+        QCOMPARE(rectIn(card->editor(), card).topLeft(),
+                 QPoint(ui::space(ui::pad::popover), ui::space(ui::pad::popover + ui::box::row + ui::gap::header)));
+        QCOMPARE(card->editor()->height(), ui::space(80));
 
         // A narrow window clamps the width; the hint is elided rather than
         // making the card wider. The stacked top bar keeps the window wider
@@ -5375,7 +6963,7 @@ esac
             QTest::keyClick(card->editor(), Qt::Key_Return);
         }
         settle();
-        QTRY_VERIFY(card->editor()->height() > ui::space(84));
+        QTRY_VERIFY(card->editor()->height() > ui::space(80));
         QTRY_VERIFY(anchored());
         QVERIFY(card->y() < before.y());
         QCOMPARE(card->geometry().bottom(), before.bottom());
@@ -5383,7 +6971,7 @@ esac
         for (int line = 0; line < 30; ++line)
             QTest::keyClick(card->editor(), Qt::Key_Return);
         settle();
-        QTRY_COMPARE(card->editor()->height(), qMax(ui::space(84), host->height() / 3));
+        QTRY_COMPARE(card->editor()->height(), qMax(ui::space(80), host->height() / 3));
         QTRY_VERIFY(anchored());
     }
 
@@ -6062,11 +7650,16 @@ esac
         auto *strip = new SegmentStrip({first, second}, &host);
         host.show();
         QVERIFY(QTest::qWaitForWindowExposed(&host));
-        QCOMPARE(strip->sizeHint().width(), first->sizeHint().width() + second->sizeHint().width() + 3);
-        QCOMPARE(strip->sizeHint().height(), qMax(first->sizeHint().height(), second->sizeHint().height()) + 2);
+        // The segments' boxes side by side, the frame and the divider drawn
+        // inside them (kit.js segmented()): each widget is its box less the
+        // line it starts with, the last one less the frame's right edge too.
+        QCOMPARE(strip->sizeHint().width(), first->sizeHint().width() + second->sizeHint().width());
+        QCOMPARE(strip->sizeHint().height(), ui::space(ui::box::control));
+        QCOMPARE(first->sizeHint().height(), ui::space(ui::box::control));
         strip->setGeometry(0, 0, strip->sizeHint().width() + 40, 30);
-        QCOMPARE(first->geometry(), QRect(1, 1, first->sizeHint().width(), 28));
-        QCOMPARE(second->geometry(), QRect(2 + first->width(), 1, strip->width() - 3 - first->width(), 28));
+        QCOMPARE(first->geometry(), QRect(1, 1, first->sizeHint().width() - 1, 28));
+        QCOMPARE(second->geometry(), QRect(first->sizeHint().width() + 1, 1,
+                                           strip->width() - first->sizeHint().width() - 2, 28));
 
         strip->setStretch(true);
         QVERIFY(first->isCentred() && second->isCentred());
@@ -6089,7 +7682,8 @@ esac
         };
         const auto margins = inkMargins(second);
         // The glyph's ink is narrower than the box it is laid out in.
-        QVERIFY2(qAbs(margins.first - margins.second) <= ui::space(14) / 2, qPrintable(QStringLiteral("%1 %2").arg(margins.first).arg(margins.second)));
+        QVERIFY2(qAbs(margins.first - margins.second) <= ui::space(ui::box::icon) / 2,
+                 qPrintable(QStringLiteral("%1 %2").arg(margins.first).arg(margins.second)));
 
         auto *third = segment(QStringLiteral("Three"));
         SegmentStrip three({segment(QStringLiteral("One")), segment(QStringLiteral("Two")), third});
@@ -6526,7 +8120,10 @@ esac
         AgentPopover *card = f.agentCard();
         QWidget *host = f.host();
         // The window's margin all round, which the card stays inside.
-        const QMargins margins(ui::windowMargin(), ui::windowMargin(), ui::windowMargin(), ui::windowMargin());
+        const auto margins = [&] {
+            const int m = ui::windowMargin(f.window.get());
+            return QMargins(m, m, m, m);
+        };
         QToolButton *cog = f.page()->agentButton();
         const auto cogRect = [&] { return rectIn(cog, host); };
 
@@ -6538,8 +8135,8 @@ esac
         settle();
         QVERIFY(card->isVisible());
         QCOMPARE(card->width(), ui::space(360));
-        QCOMPARE(card->geometry().right(), cogRect().right());
-        QCOMPARE(card->geometry().bottom() + 1 + ui::space(6), cogRect().y());
+        QCOMPARE(card->geometry().right(), cogRect().right() + ui::space(ui::gap::icon));
+        QCOMPARE(card->geometry().bottom() + 1 + ui::space(ui::gap::cluster), cogRect().y());
         QCOMPARE(card->height(), card->sizeHint().height());
 
         // Another agent, another height; the bottom stays over the cog.
@@ -6554,8 +8151,8 @@ esac
         QCOMPARE(card->levelTrack()->labels().size(), 7);
         QVERIFY(card->height() != claudeHeight);
         QCOMPARE(card->height(), card->sizeHint().height());
-        QCOMPARE(card->geometry().bottom() + 1 + ui::space(6), cogRect().y());
-        QCOMPARE(card->geometry().right(), cogRect().right());
+        QCOMPARE(card->geometry().bottom() + 1 + ui::space(ui::gap::cluster), cogRect().y());
+        QCOMPARE(card->geometry().right(), cogRect().right() + ui::space(ui::gap::icon));
         // A model with fewer levels, a shorter track; none, no track at all.
         QTest::mouseClick(modelRow(card, QStringLiteral("GPT-5.5")), Qt::LeftButton);
         settle();
@@ -6567,10 +8164,11 @@ esac
         f.window->setMinimumSize(1, 1);
         f.window->resize(300, 1234);
         settle();
-        QTRY_COMPARE(card->width(), qMin(ui::space(360), host->width() - margins.left() - margins.right()));
-        QCOMPARE(card->x(), qMax(margins.left(), cogRect().right() + 1 - card->width()));
-        QVERIFY(host->width() < 360 + margins.left() + margins.right());
-        QCOMPARE(card->x(), margins.left());
+        QTRY_COMPARE(card->width(), qMin(ui::space(360), host->width() - margins().left() - margins().right()));
+        QCOMPARE(card->x(), qMax(margins().left(), qMin(cogRect().right() + 1 + ui::space(ui::gap::icon), host->width() - margins().right())
+                                                    - card->width()));
+        QVERIFY(host->width() < 360 + margins().left() + margins().right());
+        QCOMPARE(card->x(), margins().left());
 
         // Short: moved up to fit, never above the top margin. Widening out of
         // the stacked width closes the card, so it is opened again first.
@@ -6580,10 +8178,10 @@ esac
         QTest::mouseClick(cog, Qt::LeftButton);
         settle();
         QVERIFY(card->isVisible());
-        QTRY_VERIFY(card->geometry().bottom() + 1 <= host->height() - margins.bottom()
-                    || card->y() == margins.top());
-        QVERIFY(card->y() < cogRect().bottom() + 1 + ui::space(6));
-        QVERIFY(card->y() >= margins.top());
+        QTRY_VERIFY(card->geometry().bottom() + 1 <= host->height() - margins().bottom()
+                    || card->y() == margins().top());
+        QVERIFY(card->y() < cogRect().bottom() + 1 + ui::space(ui::gap::cluster));
+        QVERIFY(card->y() >= margins().top());
     }
 
     // Mini, from the commit card's cog: beside that card, 8 to its right and
@@ -6613,7 +8211,10 @@ esac
                 AgentPopover *card = f.agentCard();
                 QWidget *host = f.host();
                 // The window's margin all round, which the card stays inside.
-        const QMargins margins(ui::windowMargin(), ui::windowMargin(), ui::windowMargin(), ui::windowMargin());
+                const auto margins = [&] {
+                    const int m = ui::windowMargin(f.window.get());
+                    return QMargins(m, m, m, m);
+                };
                 QToolButton *cog = commitCard->agentButton();
                 QTest::mouseClick(cog, Qt::LeftButton);
                 settle();
@@ -6635,7 +8236,7 @@ esac
                 // as the window's bottom margin asks.
                 f.window->setMinimumSize(1, 1);
                 const auto room = [&] {
-                    return host->width() - margins.right() - (commitCard->geometry().right() + 1 + ui::space(8));
+                    return host->width() - margins().right() - (commitCard->geometry().right() + 1 + ui::space(8));
                 };
                 for (int width = 945; width > 300 && room() >= ui::space(240); width -= 10) {
                     f.window->resize(width, 1234);
@@ -6645,14 +8246,16 @@ esac
                 QVERIFY(commitCard->isVisible());
                 QVERIFY(card->isVisible());
                 const QRect cogRect = rectIn(cog, host);
-                const int under = cogRect.bottom() + 1 + ui::space(6);
-                const int over = cogRect.y() - ui::space(6) - card->height();
-                const int bottom = host->height() - margins.bottom();
+                const int under = cogRect.bottom() + 1 + ui::space(ui::gap::cluster);
+                const int over = cogRect.y() - ui::space(ui::gap::cluster) - card->height();
+                const int bottom = host->height() - margins().bottom();
                 QTRY_COMPARE(card->y(), under + card->height() <= bottom ? under
-                                        : over >= margins.top()           ? over
-                                                                          : qMax(margins.top(), bottom - card->height()));
-                QCOMPARE(card->x(), qMax(margins.left(), cogRect.right() + 1 - card->width()));
-                QCOMPARE(card->width(), qMin(ui::space(360), host->width() - margins.left() - margins.right()));
+                                        : over >= margins().top()           ? over
+                                                                          : qMax(margins().top(), bottom - card->height()));
+                // The card's right edge on the edge of the column the cog stands in, 4 past the cog's.
+                const int column = qMin(cogRect.right() + 1 + ui::space(ui::gap::icon), host->width() - margins().right());
+                QCOMPARE(card->x(), qMax(margins().left(), column - card->width()));
+                QCOMPARE(card->width(), qMin(ui::space(360), host->width() - margins().left() - margins().right()));
             }
         }
         g_theme.reset(new OmarchyTheme);
@@ -6974,24 +8577,37 @@ esac
     // square.
     void kitButtonsMeasureLikeTheDesign()
     {
-        const auto label = [](const QToolButton *b, const QString &text) {
+        const auto label = [](const QAbstractButton *b, const QString &text) {
             return qCeil(QFontMetricsF(b->font()).horizontalAdvance(text));
         };
+        // kit.js measureButton(): [8][glyph box 16][4][label][4][chevron box
+        // 12][8], 28 high; the primary action pads 16.
         std::unique_ptr<ui::KitButton> plain(ui::toolButton<ui::KitButton>(QStringLiteral("Load more")));
-        QCOMPARE(plain->sizeHint(), QSize(ui::space(20) + label(plain.get(), QStringLiteral("Load more")), ui::space(28)));
+        QCOMPARE(plain->sizeHint(), QSize(ui::space(8 + 8) + label(plain.get(), QStringLiteral("Load more")), ui::space(28)));
+        ui::setPrimary(plain.get());
+        QCOMPARE(plain->sizeHint(), QSize(ui::space(16 + 16) + label(plain.get(), QStringLiteral("Load more")), ui::space(28)));
         if (ui::icon(ui::kPull).isEmpty())
             QSKIP("the font has no Nerd Font glyphs");
         std::unique_ptr<ui::KitButton> pull(ui::toolButton<ui::KitButton>(ui::icon(ui::kPull) + QStringLiteral("Pull")));
-        QCOMPARE(pull->sizeHint(), QSize(ui::space(10 + 14 + 6 + 10) + label(pull.get(), QStringLiteral("Pull")), ui::space(28)));
+        QCOMPARE(pull->sizeHint(), QSize(ui::space(8 + 16 + 4 + 8) + label(pull.get(), QStringLiteral("Pull")), ui::space(28)));
         std::unique_ptr<ui::KitButton> chip(
             ui::toolButton<ui::KitButton>(ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron()));
-        QCOMPARE(chip->sizeHint().width(), ui::space(10 + 14 + 6 + 6 + 12 + 10) + label(chip.get(), QStringLiteral("main")));
+        QCOMPARE(chip->sizeHint().width(), ui::space(8 + 16 + 4 + 4 + 12 + 8) + label(chip.get(), QStringLiteral("main")));
         std::unique_ptr<ui::KitButton> dropdown(ui::toolButton<ui::KitButton>(ui::icon(ui::kSplit) + ui::chevron()));
-        QCOMPARE(dropdown->sizeHint().width(), ui::space(10 + 14 + 6 + 12 + 10));
+        QCOMPARE(dropdown->sizeHint().width(), ui::space(8 + 16 + 4 + 12 + 8));
         std::unique_ptr<ui::KitButton> glyph(ui::toolButton<ui::KitButton>(ui::icon(ui::kPull).trimmed()));
         QCOMPARE(glyph->sizeHint(), QSize(ui::space(28), ui::space(28)));
         ui::setIconForm(pull.get(), true);
         QCOMPARE(pull->sizeHint(), QSize(ui::space(28), ui::space(28)));
+        ui::setIconForm(pull.get(), true, 32); // the top bar's sync buttons: 8 + 16 + 8
+        QCOMPARE(pull->sizeHint(), QSize(ui::space(32), ui::space(28)));
+        QCOMPARE(pull->width(), ui::space(32));
+        // A push button with the kit's face: the primary action's 16.
+        ui::KitPushButton commit;
+        commit.setText(ui::icon(ui::kCommit) + QStringLiteral("Commit 5 files"));
+        ui::setPrimary(&commit);
+        QCOMPARE(commit.sizeHint(),
+                 QSize(ui::space(16 + 16 + 4 + 16) + label(&commit, QStringLiteral("Commit 5 files")), ui::space(28)));
     }
 
     // The popup prompt carries no box of its own — the popup's accent frame
@@ -7120,11 +8736,17 @@ esac
         QVERIFY(QTest::qWaitForWindowExposed(&edit));
         const int spacing = edit.fontMetrics().lineSpacing();
 
+        // One line: a box as low as a field holds it (centred).
         const int oneLine = edit.contentHeight();
-        QVERIFY(oneLine > spacing);
+        QCOMPARE(oneLine, ui::space(ui::box::control));
         QVERIFY(oneLine < edit.height()); // an empty box is taller than its text
+        // More: the lines 8 from the box's edges (its frame, its margins and
+        // the document's together), one line spacing a line.
+        edit.setPlainText(QStringLiteral("one\ntwo"));
+        const int twoLines = edit.contentHeight();
+        QCOMPARE(twoLines, 2 * spacing + 2 * ui::space(ui::pad::control));
         edit.setPlainText(QStringLiteral("one\ntwo\nthree"));
-        QCOMPARE(edit.contentHeight(), oneLine + 2 * spacing);
+        QCOMPARE(edit.contentHeight(), twoLines + spacing);
 
         // One paragraph the box has to wrap counts as the lines it takes on
         // screen, not as the single block it is.
@@ -7201,23 +8823,25 @@ esac
         QVERIFY(splitter);
         QVERIFY(message);
         // The section grid: the handle between the changes and the message is
-        // the 16 px the design puts between two sections (the stylesheet's
-        // 8 px handle must not win), and the header rows carry 24 px squares.
-        QCOMPARE(splitter->handleWidth(), ui::sectionGap());
-        QCOMPARE(splitter->handle(1)->height(), ui::sectionGap());
-        // ...and the action bar hangs 8 px under the message, a gap of its own.
-        QCOMPARE(page.layout()->spacing(), ui::space(8));
+        // the block gap the design puts between the parts of a pane (the
+        // regular 8 of a page no window has classified; the stylesheet's
+        // handle must not win), and the header rows carry 24 px squares.
+        const int block = ui::space(ui::kRegularDensity.block);
+        QCOMPARE(splitter->handleWidth(), block);
+        QCOMPARE(splitter->handle(1)->height(), block);
+        // ...and the action bar hangs the same block gap under the message.
+        QCOMPARE(page.layout()->spacing(), block);
         QList<QToolButton *> squares = page.findChildren<QToolButton *>(QStringLiteral("iconButton"));
         // the agent cog, the three files-view buttons, the unversioned eye and
         // Refresh; the stacked action bar's options button is a toolbar one
         squares.removeOne(page.optionsButton());
         QCOMPARE(squares.size(), 6);
         for (const QToolButton *square : squares)
-            QCOMPARE(square->size(), QSize(ui::space(24), ui::space(24)));
+            QCOMPARE(square->size(), QSize(ui::space(ui::box::row), ui::space(ui::box::row)));
 
         // The message's pane is the MESSAGE row and its gap over the box;
         // what follows measures the box.
-        const int header = ui::headerRowHeight() + ui::headerGap();
+        const int header = ui::space(ui::box::row) + ui::space(ui::gap::header);
         const auto pane = [splitter, header] { return splitter->sizes().at(1) - header; };
         const int initial = pane();
         const int total = splitter->sizes().at(0) + splitter->sizes().at(1);
@@ -8372,7 +9996,7 @@ esac
         // would have handed it.
         const auto render = [](QAbstractItemDelegate *delegate, const QModelIndex &index, const QFont &font) {
             QStyleOptionViewItem option;
-            option.rect = QRect(0, 0, 200, ui::tableRowHeight());
+            option.rect = QRect(0, 0, 200, ui::rowHeight());
             option.font = font;
             option.fontMetrics = QFontMetrics(font);
             option.state = QStyle::State_Enabled;
@@ -8425,23 +10049,41 @@ esac
         QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
         settle();
         QTableView *table = f.page->table();
-        table->setColumnWidth(ChangesModel::Name, 313); // a width the user chose
+        const int frame = table->frameWidth();
+        const auto shownColumns = [table] {
+            QList<int> shown;
+            for (int c = 0; c < ChangesModel::ColumnCount; ++c)
+                if (!table->isColumnHidden(c))
+                    shown << c;
+            return shown;
+        };
+        // The table: the design's columns for a wide page (screens.js
+        // changesTable()), no Ext and one "+ −", Name taking the rest.
+        const QList<int> tableColumns{int(ChangesModel::Check), int(ChangesModel::Name), int(ChangesModel::Path),
+                                      int(ChangesModel::Size), int(ChangesModel::Status), int(ChangesModel::LinesAdded)};
+        QCOMPARE(shownColumns(), tableColumns);
+        // Name takes what the others leave, down to its floor.
+        const auto nameFills = [table] {
+            int others = 0;
+            for (int c = 0; c < ChangesModel::ColumnCount; ++c)
+                if (c != ChangesModel::Name && !table->isColumnHidden(c))
+                    others += table->columnWidth(c);
+            return table->columnWidth(ChangesModel::Name)
+                == qMax(ui::space(ui::kMinStretchColumn), table->viewport()->width() - others);
+        };
+        QVERIFY(nameFills());
+        table->setColumnWidth(ChangesModel::Path, 213); // a width the user chose
         const int sorted = f.header()->sortIndicatorSection();
-        QList<int> widths;
-        for (int c = 0; c < ChangesModel::ColumnCount; ++c)
-            widths << table->columnWidth(c);
 
         f.page->setFilesView(CommitPage::FilesView::Compact, false);
         settle();
         QCOMPARE(f.page->activeListView(), table); // compact is the table itself
-        QList<int> shown;
-        for (int c = 0; c < ChangesModel::ColumnCount; ++c)
-            if (!table->isColumnHidden(c))
-                shown << c;
-        QCOMPARE(shown, QList<int>({int(ChangesModel::Check), int(ChangesModel::Name), int(ChangesModel::Status)}));
-        QCOMPARE(table->columnWidth(ChangesModel::Check), ui::space(30));
-        QCOMPARE(table->columnWidth(ChangesModel::Status), ui::space(30));
-        QVERIFY(table->columnWidth(ChangesModel::Name) > 2 * ui::space(30)); // Name has the rest
+        QCOMPARE(shownColumns(), QList<int>({int(ChangesModel::Check), int(ChangesModel::Name), int(ChangesModel::Status)}));
+        // The design's 32 px from the table's outer edge, the frame inside them.
+        QCOMPARE(table->columnWidth(ChangesModel::Check), ui::space(32) - frame);
+        QCOMPARE(table->columnWidth(ChangesModel::Status), ui::space(32) - frame);
+        QVERIFY(table->columnWidth(ChangesModel::Name) > 2 * ui::space(32)); // Name has the rest
+        QVERIFY(nameFills());
         QCOMPARE(f.header()->sortIndicatorSection(), sorted);
         // The "St" heading is this presentation's alone: the shared model and
         // the proxy still call the column what they always did.
@@ -8450,22 +10092,14 @@ esac
         QCOMPARE(f.model()->headerData(ChangesModel::Status, Qt::Horizontal, Qt::DisplayRole).toString(),
                  QStringLiteral("Status"));
 
-        // A text size change while compact keeps the presentation and leaves
-        // the widths put away for the table alone.
-        f.page->applyTheme();
-        settle();
-        QCOMPARE(table->columnWidth(ChangesModel::Status), ui::space(30));
-        QVERIFY(table->isColumnHidden(ChangesModel::Path));
-
+        // Back to the table: the width the user chose comes back.
         f.page->setFilesView(CommitPage::FilesView::Table, false);
         settle();
-        for (int c = 0; c < ChangesModel::ColumnCount; ++c)
-            QVERIFY2(!table->isColumnHidden(c), qPrintable(QString::number(c)));
-        QCOMPARE(table->columnWidth(ChangesModel::Name), widths.at(ChangesModel::Name));
-        QCOMPARE(table->columnWidth(ChangesModel::Check), ui::space(30)); // the design's, not the user's
+        QCOMPARE(shownColumns(), tableColumns);
+        QCOMPARE(table->columnWidth(ChangesModel::Path), 213);
+        QCOMPARE(table->columnWidth(ChangesModel::Check), ui::space(32) - frame); // the design's, not the user's
         QCOMPARE(f.header()->sortIndicatorSection(), sorted);
-        // Path absorbs the viewport again.
-        QVERIFY(table->columnWidth(ChangesModel::Path) > 0);
+        QVERIFY(nameFills());
 
         // ...and again, and again: the widths do not drift.
         for (int round = 0; round < 3; ++round) {
@@ -8473,7 +10107,19 @@ esac
             f.page->setFilesView(CommitPage::FilesView::Table, false);
         }
         settle();
-        QCOMPARE(table->columnWidth(ChangesModel::Name), widths.at(ChangesModel::Name));
+        QCOMPARE(table->columnWidth(ChangesModel::Path), 213);
+
+        // A text size change while compact keeps the presentation; the class's
+        // widths come back with it, at the new size.
+        f.page->setFilesView(CommitPage::FilesView::Compact, false);
+        f.page->applyTheme();
+        settle();
+        QCOMPARE(table->columnWidth(ChangesModel::Status), ui::space(32) - frame);
+        QVERIFY(table->isColumnHidden(ChangesModel::Path));
+        f.page->setFilesView(CommitPage::FilesView::Table, false);
+        settle();
+        QCOMPARE(table->columnWidth(ChangesModel::Path), ui::space(128));
+        QVERIFY(nameFills());
     }
 
     // One of the three is always on, the choice is remembered, and a run
@@ -9306,31 +10952,73 @@ esac
     // own, and puts the desktop's back when it is done.
 
     // Every measurement of the kit is in 12 px-base pixels and grows with the
-    // desktop's text size.
+    // desktop's text size, on one grid unit scaled once: round(4 × base / 12),
+    // so sums of the design's multiples of 4 add up exactly at every size.
+    // Text sizes are not grid values: they scale on their own.
     void spacingFollowsTheBaseFontSize()
     {
         QCOMPARE(ui::space(12), OmarchyTheme::instance()->fontBase());
         QTemporaryDir dir, home;
         QVERIFY(dir.isValid() && home.isValid());
-        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 18\n"));
-        qputenv("OMAGIT_THEME_DIR", dir.path().toUtf8());
-        {
+        for (const int base : {9, 12, 14, 18}) {
+            QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")),
+                                 QStringLiteral("[font]\nbase-size = %1\n").arg(base).toUtf8()));
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
             // The scratch home keeps the desktop's own shell.toml, which would
             // be read after the theme's, out of the way.
             ScopedEnv scratchHome("HOME", home.path().toUtf8());
             OmarchyTheme theme;
-            QCOMPARE(theme.fontBase(), 18);
+            const QByteArray where = QByteArray::number(base);
+            QVERIFY2(theme.fontBase() == base, where.constData());
+            const int unit = qMax(1, qRound(4 * base / 12.0));
+            QVERIFY2(ui::gridUnit() == unit, where.constData());
+            QVERIFY2(ui::space(4) == unit, where.constData());
+            QVERIFY2(ui::space(4) + ui::space(4) == ui::space(8), where.constData());
+            QVERIFY2(ui::space(24) == 6 * ui::space(4), where.constData());
+            QVERIFY2(ui::space(28) == ui::space(24) + ui::space(4), where.constData());
+            QVERIFY2(ui::space(ui::box::row) + ui::space(ui::gap::header)
+                         == ui::space(ui::box::control) + ui::space(ui::gap::controlRow),
+                     where.constData());
+            QVERIFY2(ui::space(ui::kBar + ui::box::control + ui::kBar) == 11 * unit, where.constData());
+            QVERIFY2(ui::fontPx(11) == qRound(11 * base / 12.0), where.constData());
+            QVERIFY2(ui::space(0) == 1, where.constData()); // never nothing at all
+        }
+        {
+            QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 18\n"));
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
             QCOMPARE(ui::space(12), 18);
             QCOMPARE(ui::space(24), 36);
-            QCOMPARE(ui::headerRowHeight(), 36);
-            QCOMPARE(ui::headerGap(), 9);
-            QCOMPARE(ui::sectionGap(), 24);
-            QCOMPARE(ui::space(1), 2);
-            QCOMPARE(ui::space(0), 1); // never nothing at all
+            QCOMPARE(ui::space(1), 2); // the rest of a unit, rounded
+            QCOMPARE(ui::space(2), 3);
         }
-        qunsetenv("OMAGIT_THEME_DIR");
         g_theme.reset(new OmarchyTheme);
         g_theme->apply(*qApp);
+    }
+
+    // The window's density (screens.js density()): the side margins by the
+    // width class, the block gap by the height class.
+    void theDensityFollowsTheWindowsClasses()
+    {
+        const QList<QPair<WidthClass, int>> margins{
+            {WidthClass::Wide, 16}, {WidthClass::Large, 12}, {WidthClass::Medium, 12}, {WidthClass::Stacked, 8}};
+        const QList<QPair<HeightClass, int>> blocks{
+            {HeightClass::Shallow, 4}, {HeightClass::Normal, 8}, {HeightClass::Tall, 12}};
+        for (const auto &[width, margin] : margins) {
+            for (const auto &[height, block] : blocks) {
+                const ui::Density d = ui::densityFor(width, height);
+                QCOMPARE(d.margin, margin);
+                QCOMPARE(d.block, block);
+            }
+        }
+        QCOMPARE(ui::kRegularDensity.margin, 12);
+        QCOMPARE(ui::kRegularDensity.block, 8);
+        // Outside the window, the regular margin.
+        QWidget lone;
+        QCOMPARE(ui::windowMargin(&lone), ui::space(12));
+        ui::setWindowMargin(&lone, 16);
+        QCOMPARE(ui::windowMargin(&lone), ui::space(16));
     }
 
     // `omarchy display text size` rewrites shell.toml under a running window:
@@ -9372,7 +11060,7 @@ esac
             QCOMPARE(live.inlineButton->size(), QSize(ui::space(24), ui::space(24)));
             QCOMPARE(live.toolbarButton->width(), ui::space(28));
             QCOMPARE(live.promptField->height(), ui::space(28));
-            QCOMPARE(live.header->height(), ui::headerRowHeight());
+            QCOMPARE(live.header->height(), ui::space(ui::box::row));
             // The toolbar one is as tall as a text button, whatever that is
             // with this font, not the 28 px the design names for its width.
             QCOMPARE(live.toolbarButton->sizeHint().height(), live.textButton->sizeHint().height());
@@ -9424,11 +11112,13 @@ esac
                 // ...and both fold at the same width, wherever that is.
                 for (const int width : {760, 430})
                     QCOMPARE(live.levelAt(width), fresh.levelAt(width));
-                // The icon form is the design's square at whatever text size
-                // this is, and the names never follow the folding at all.
+                // The icon form is the design's width at whatever text size
+                // this is (8 + 16 + 8, More the 28 px square), and the names
+                // never follow the folding at all.
                 QCOMPARE(live.levelAt(live.widthForLevel(2)), 2);
-                for (QToolButton *b : {live.bar->pullButton(), live.bar->pushButton(), live.bar->moreButton()})
+                for (QToolButton *b : {live.bar->pullButton(), live.bar->pushButton()})
                     QCOMPARE(live.rectOf(b).width(), iconFormWidth());
+                QCOMPARE(live.rectOf(live.bar->moreButton()).width(), ui::space(ui::box::control));
                 QCOMPARE(barNames(live.bar), kBarNames);
                 QCOMPARE(barNames(fresh.bar), kBarNames);
                 live.levelAt(live.bar->sizeHint().width());
@@ -9597,25 +11287,27 @@ esac
                 fresh.pageEditor()->replaceText(text);
                 settle();
                 QTRY_COMPARE(popoverMetrics(live), popoverMetrics(fresh));
-                // The design's exact offsets, whatever the text size.
+                // The design's exact offsets, whatever the text size: the
+                // card's 12 of padding, the 24 px MESSAGE row and its 8.
                 const QStringList metrics = popoverMetrics(live);
-                QVERIFY(metrics.contains(QStringLiteral("editorTop=%1").arg(ui::space(32))));
-                QVERIFY(metrics.contains(QStringLiteral("editorLeft=%1").arg(ui::space(10))));
+                QVERIFY(metrics.contains(QStringLiteral("editorTop=%1")
+                                             .arg(ui::space(ui::pad::popover + ui::box::row + ui::gap::header))));
+                QVERIFY(metrics.contains(QStringLiteral("editorLeft=%1").arg(ui::space(ui::pad::popover))));
                 QVERIFY(metrics.contains(QStringLiteral("rail=%1").arg(MiniRail::railWidth())));
-                QVERIFY(metrics.contains(QStringLiteral("square=%1").arg(ui::space(40))));
+                QVERIFY(metrics.contains(QStringLiteral("square=%1").arg(ui::space(ui::box::tile))));
                 QVERIFY(metrics.contains(QStringLiteral("hintPx=%1").arg(qRound(OmarchyTheme::instance()->fontBase() * 11 / 12.0))));
                 QVERIFY(metrics.contains(QStringLiteral("hintBold=0")));
                 MessageEdit *editor = live.popover()->editor();
                 QTRY_COMPARE(editor->contentHeight(), freshContentHeight(editor, text));
                 // The body puts the splitter after the rail's scaled width and
-                // the design's 12 px gap.
+                // the window's margin.
                 QSplitter *splitter = nullptr;
                 for (QSplitter *s : fresh.window->findChildren<QSplitter *>())
                     if (s->orientation() == Qt::Horizontal && s->objectName().isEmpty())
                         splitter = s;
                 QVERIFY(splitter);
                 QCOMPARE(rectIn(splitter, fresh.host()).x(),
-                         fresh.rail()->geometry().x() + MiniRail::railWidth() + ui::space(12));
+                         fresh.rail()->geometry().x() + MiniRail::railWidth() + ui::windowMargin(fresh.window.get()));
                 // ...and the left section's first width is the design's for
                 // the window's width class, on the text size of the moment.
                 fresh.window->setPaneLayout(PaneLayout::Docked, false);
@@ -9627,18 +11319,19 @@ esac
             matchesAFreshWindow();
             const QStringList atTwelve = popoverMetrics(live);
             QVERIFY(atTwelve.contains(QStringLiteral("rail=40")));
-            QVERIFY(atTwelve.contains(QStringLiteral("editorTop=32")));
+            QVERIFY(atTwelve.contains(QStringLiteral("editorTop=44")));
 
             QVERIFY(writeFixture(toml, "[font]\nbase-size = 16\n"));
             QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 16, 10000);
             settle();
             matchesAFreshWindow();
             const QStringList atSixteen = popoverMetrics(live);
-            QVERIFY(atSixteen.contains(QStringLiteral("rail=53")));
-            QVERIFY(atSixteen.contains(QStringLiteral("square=53")));
-            QVERIFY(atSixteen.contains(QStringLiteral("tile=53x53")));
-            QVERIFY(atSixteen.contains(QStringLiteral("editorTop=43")));
-            QVERIFY(atSixteen.contains(QStringLiteral("editorLeft=13")));
+            // At 16 the grid's unit is 5 (round(4 × 16 / 12)).
+            QVERIFY(atSixteen.contains(QStringLiteral("rail=50")));
+            QVERIFY(atSixteen.contains(QStringLiteral("square=50")));
+            QVERIFY(atSixteen.contains(QStringLiteral("tile=50x50")));
+            QVERIFY(atSixteen.contains(QStringLiteral("editorTop=55")));
+            QVERIFY(atSixteen.contains(QStringLiteral("editorLeft=15")));
             QVERIFY(live.popover()->isVisible()); // a text size is no reason to close
 
             QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
@@ -9703,23 +11396,27 @@ esac
                     QTRY_COMPARE(agentCardMetrics(card), agentCardMetrics(fresh.agentCard()));
                     QCOMPARE(card->geometry(), fresh.agentCard()->geometry());
                     const QStringList metrics = agentCardMetrics(card);
-                    const int pad = ui::space(10) - 2;
+                    const int pad = ui::space(ui::pad::popover) - 2; // the 2 px frame inside the padding
                     QVERIFY(metrics.contains(QStringLiteral("margins=%1,%1,%1,%1").arg(pad)));
                     QVERIFY(metrics.contains(QStringLiteral("width=%1").arg(ui::space(360))));
                     QVERIFY(metrics.contains(QStringLiteral("notePx=%1").arg(OmarchyTheme::instance()->captionFont().pixelSize()))
                             || !installed);
                     QVERIFY(metrics.contains(QStringLiteral("noteBold=0")));
                     if (installed) {
-                        QVERIFY(metrics.contains(QStringLiteral("row=%1").arg(ui::space(28))));
-                        QVERIFY(metrics.contains(QStringLiteral("picker=%1").arg(ui::space(28))));
-                        QVERIFY(metrics.contains(QStringLiteral("pickerTop=%1").arg(ui::space(10) + ui::space(22))));
-                        QVERIFY(metrics.contains(QStringLiteral("track=%1").arg(ui::space(44))));
-                        QVERIFY(metrics.contains(QStringLiteral("stop0=%1").arg(ui::space(28))));
+                        // screens.js agentPopover(): 24 px model rows, the
+                        // picker a 28 px control under its caption's 16 px
+                        // line and 4, the 40 px track's stops 24 in and 12 down.
+                        QVERIFY(metrics.contains(QStringLiteral("row=%1").arg(ui::space(ui::box::row))));
+                        QVERIFY(metrics.contains(QStringLiteral("picker=%1").arg(ui::space(ui::box::control))));
+                        QVERIFY(metrics.contains(QStringLiteral("pickerTop=%1")
+                                                     .arg(ui::space(ui::pad::popover + ui::box::line + ui::gap::caption))));
+                        QVERIFY(metrics.contains(QStringLiteral("track=%1").arg(ui::space(40))));
+                        QVERIFY(metrics.contains(QStringLiteral("stop0=%1").arg(ui::space(24))));
                         QVERIFY(metrics.contains(QStringLiteral("stopY=%1").arg(ui::space(12))));
                     } else {
                         QVERIFY(metrics.contains(QStringLiteral("notePx=%1").arg(qRound(OmarchyTheme::instance()->fontBase() * 11 / 12.0))));
-                        QVERIFY(metrics.contains(QStringLiteral("command=%1").arg(ui::space(30))));
-                        QVERIFY(metrics.contains(QStringLiteral("copy=%1").arg(ui::space(24))));
+                        QVERIFY(metrics.contains(QStringLiteral("command=%1").arg(ui::space(ui::box::control))));
+                        QVERIFY(metrics.contains(QStringLiteral("copy=%1").arg(ui::space(ui::box::row))));
                     }
                     fresh.window.reset();
                 }
@@ -9734,8 +11431,9 @@ esac
             QTRY_COMPARE_WITH_TIMEOUT(theme.fontBase(), 16, 10000);
             settle();
             matchesAFreshWindow();
-            QVERIFY(agentCardMetrics(live.agentCard()).contains(QStringLiteral("width=480")));
-            QVERIFY(agentCardMetrics(live.agentCard()).contains(QStringLiteral("row=37")));
+            // At 16 the grid's unit is 5 (round(4 × 16 / 12)).
+            QVERIFY(agentCardMetrics(live.agentCard()).contains(QStringLiteral("width=450")));
+            QVERIFY(agentCardMetrics(live.agentCard()).contains(QStringLiteral("row=30")));
             QVERIFY(live.agentCard()->isVisible()); // a text size is no reason to close
 
             QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));

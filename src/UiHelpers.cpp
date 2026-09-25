@@ -17,7 +17,9 @@
 #include <QPainterPath>
 #include <QPalette>
 #include <QPointer>
+#include <QPushButton>
 #include <QStyle>
+#include <QStyleOptionButton>
 #include <QStyleOptionToolButton>
 #include <QStylePainter>
 #include <QTableView>
@@ -35,12 +37,16 @@ void onThemeScale(QObject *owner, const std::function<void()> &apply)
     QObject::connect(OmarchyTheme::instance(), &OmarchyTheme::changed, owner, apply);
 }
 
-// The design's button height (kit.js button(): h = 28), the square of an
-// icon-only one, and its padding, glyph box and chevron box.
-constexpr int kButtonHeight = 28;
-constexpr int kButtonPad = 10, kButtonGlyph = 14, kButtonGap = 6;
-constexpr int kChevronGap = 6, kChevronBox = 12, kChevronNudge = 2;
+// The design's chevron (kit.js button()): the plain foreground at 70 %
+// whatever colour the label wears.
 constexpr qreal kChevronOpacity = 0.7;
+// What windowMargin() reads off a window (setWindowMargin()), in design px.
+const char *const kWindowMarginProperty = "gridMargin";
+// What QLineEdit keeps between its contents rectangle and the text on its own
+// (QLineEditPrivate::horizontalMargin), under any style: a prompt's text
+// stands that much closer to the magnifier than the design's 4, so the two
+// together come to it.
+constexpr int kLineEditMargin = 2;
 
 // A button's chrome by the style (fill, border, the state of the moment),
 // without its text, and the pen the stylesheet gives the text in that state:
@@ -91,7 +97,7 @@ public:
     {
         if (!m_toolbar)
             return QToolButton::sizeHint();
-        return QSize(space(int(IconButtonSize::Toolbar)), space(kButtonHeight));
+        return QSize(space(int(IconButtonSize::Toolbar)), space(box::control));
     }
     QSize minimumSizeHint() const override { return sizeHint(); }
 
@@ -190,17 +196,32 @@ private:
 
 } // namespace
 
+int gridUnit()
+{
+    return qMax(1, qRound(4 * OmarchyTheme::instance()->fontBase() / 12.0));
+}
+
 int space(int px)
+{
+    const int unit = gridUnit();
+    return qMax(1, px / 4 * unit + qRound(px % 4 * unit / 4.0));
+}
+
+int fontPx(int px)
 {
     return qMax(1, qRound(px * OmarchyTheme::instance()->fontBase() / 12.0));
 }
 
-int headerRowHeight() { return space(24); }
-int headerGap() { return space(6); }
-int barGap() { return space(5); }
-int buttonHeight() { return space(kButtonHeight); }
-int sectionGap() { return space(16); }
-int windowMargin() { return space(12); }
+int windowMargin(const QWidget *widget)
+{
+    const QVariant margin = widget ? widget->window()->property(kWindowMarginProperty) : QVariant();
+    return space(margin.isValid() ? margin.toInt() : kRegularDensity.margin);
+}
+
+void setWindowMargin(QWidget *window, int px)
+{
+    window->setProperty(kWindowMarginProperty, px);
+}
 
 QString icon(uint cp, const QString &fallback)
 {
@@ -259,6 +280,15 @@ QLabel *sectionLabel(const QString &text)
     l->setObjectName(QStringLiteral("sectionLabel"));
     l->setFont(OmarchyTheme::instance()->captionFont());
     return l;
+}
+
+void placeOnLine(QLabel *label, const QFont &font, int px)
+{
+    const int baseline = qRound(space(px) / 2.0 + 0.36 * font.pixelSize());
+    const QMargins m = label->contentsMargins();
+    label->setContentsMargins(m.left(), qMax(0, baseline - QFontMetrics(font).ascent()), m.right(), 0);
+    label->setAlignment((label->alignment() & Qt::AlignHorizontal_Mask) | Qt::AlignTop);
+    label->setFixedHeight(space(px));
 }
 
 QLabel *dimLabel(const QString &text)
@@ -335,7 +365,7 @@ QToolButton *iconButton(uint glyph, const QString &fallback, const QString &tip,
     return b;
 }
 
-void setIconForm(QToolButton *button, bool on)
+void setIconForm(QToolButton *button, bool on, int px)
 {
     // Repolishing is a whole style pass, so only a real change pays for one.
     if (button->property("iconForm").toBool() != on) {
@@ -347,11 +377,23 @@ void setIconForm(QToolButton *button, bool on)
     // Both are no-ops when the width already is what the form asks, and a
     // text-size change gets the new square from the same call.
     if (on) {
-        button->setFixedWidth(space(int(IconButtonSize::Toolbar)));
+        button->setProperty("iconFormWidth", px);
+        button->setFixedWidth(space(px));
     } else {
         button->setMinimumWidth(0);
         button->setMaximumWidth(QWIDGETSIZE_MAX);
     }
+}
+
+void setPrimary(QAbstractButton *button, bool on)
+{
+    if (button->property("primary").toBool() == on)
+        return;
+    button->setProperty("primary", on);
+    button->style()->unpolish(button);
+    button->style()->polish(button);
+    button->updateGeometry();
+    button->update();
 }
 
 QLineEdit *promptField(const QString &placeholder)
@@ -361,7 +403,7 @@ QLineEdit *promptField(const QString &placeholder)
     field->setPlaceholderText(placeholder);
     field->setFrame(false);
     onThemeScale(field, [field] {
-        field->setFixedHeight(space(28));
+        field->setFixedHeight(space(box::control));
         // The prompt reads like a menu entry waiting to be typed over, so its
         // placeholder is as dim as the magnifier beside it.
         QPalette pal = field->palette();
@@ -380,8 +422,8 @@ QWidget *promptBox(QLineEdit *field)
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
-    // The magnifier stands where a menu entry's text starts, and the typed
-    // text 22 px after it, the way the design puts an entry's icon and label.
+    // The magnifier stands where a menu entry's icon does and the typed text
+    // where its label does (kit.js field(), state prompt): [8][16][4][text].
     QLabel *magnifier = nullptr;
     const QString glyph = icon(kMagnify).trimmed();
     if (!glyph.isEmpty()) {
@@ -398,13 +440,13 @@ QWidget *promptBox(QLineEdit *field)
     rows->addLayout(hairRow);
 
     onThemeScale(box, [row, hairRow, magnifier] {
-        row->setContentsMargins(space(14), 0, space(14), space(3));
-        row->setSpacing(space(8));
+        row->setContentsMargins(space(pad::control), 0, space(pad::control), 0);
+        row->setSpacing(qMax(0, space(gap::icon) - kLineEditMargin));
         if (magnifier)
-            magnifier->setFixedWidth(space(14));
-        // Inset like the menu's own separators, and the same 2 px of air
-        // under it before the first entry.
-        hairRow->setContentsMargins(space(4), 0, space(4), space(2));
+            magnifier->setFixedWidth(space(box::icon));
+        // Under the field, the band of a menu separator (screens.js
+        // menuCard()): 8 high, the hairline in its middle, inset 4.
+        hairRow->setContentsMargins(space(4), space(4), space(4), space(8) - space(4) - 1);
     });
     return box;
 }
@@ -415,20 +457,16 @@ QHBoxLayout *sectionHeaderRow(QLabel *label)
     row->setContentsMargins(0, 0, 0, 0);
     // A strut of no width holds the row at the design's 24 px, so the label
     // and the icon buttons the caller adds share one line.
-    auto *strut = new QSpacerItem(0, headerRowHeight(), QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto *strut = new QSpacerItem(0, space(box::row), QSizePolicy::Fixed, QSizePolicy::Fixed);
     row->addItem(strut);
     // The label takes the row's height and puts its baseline where the
-    // design's text has it: the row's middle plus 0.36 of the caption size
-    // (kit.js text()), which centring the text box by Qt's metrics leaves a
-    // pixel high.
+    // design's text has it (placeOnLine()).
     label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     row->addWidget(label);
     onThemeScale(row, [row, strut, label] {
-        row->setSpacing(headerGap());
-        strut->changeSize(0, headerRowHeight(), QSizePolicy::Fixed, QSizePolicy::Fixed);
-        const QFont caption = OmarchyTheme::instance()->captionFont();
-        const int baseline = qRound(headerRowHeight() / 2.0 + 0.36 * caption.pixelSize());
-        label->setContentsMargins(0, qMax(0, baseline - QFontMetrics(caption).ascent()), 0, 0);
+        row->setSpacing(0); // the caller's buttons keep gaps of their own
+        strut->changeSize(0, space(box::row), QSizePolicy::Fixed, QSizePolicy::Fixed);
+        placeOnLine(label, OmarchyTheme::instance()->captionFont(), box::row);
         row->invalidate();
     });
     return row;
@@ -461,22 +499,92 @@ KitButton::KitButton(QWidget *parent)
 {
 }
 
-QSize KitButton::sizeHint() const
+namespace {
+
+// The padding at either side: the primary action's 16, everyone else's 8.
+int kitPad(const QWidget *button)
 {
-    const int height = space(kButtonHeight);
-    const KitParts parts = kitParts(text());
-    // The square: the icon form, and a face that is a glyph and nothing else.
-    if (property("iconForm").toBool() || (parts.label.isEmpty() && !parts.chevron))
-        return QSize(space(int(IconButtonSize::Toolbar)), height);
-    int width = 2 * space(kButtonPad);
+    return space(button->property("primary").toBool() ? pad::primary : pad::control);
+}
+
+// Whether a face is the square: the icon form, or a glyph and nothing else.
+bool kitSquare(const QWidget *button, const KitParts &parts)
+{
+    return button->property("iconForm").toBool() || (parts.label.isEmpty() && !parts.chevron);
+}
+
+// kit.js measureButton(): [pad][glyph box 16][4][label][4][chevron box 12]
+// [pad], 28 high; the square as wide as its form says.
+QSize kitSize(const QWidget *button, const QString &text)
+{
+    const int height = space(box::control);
+    const KitParts parts = kitParts(text);
+    if (kitSquare(button, parts)) {
+        const QVariant px = button->property("iconFormWidth");
+        return QSize(space(px.isValid() ? px.toInt() : int(IconButtonSize::Toolbar)), height);
+    }
+    int width = 2 * kitPad(button);
     if (!parts.glyph.isEmpty())
-        width += space(kButtonGlyph) + (parts.label.isEmpty() ? 0 : space(kButtonGap));
+        width += space(box::icon) + (parts.label.isEmpty() ? 0 : space(gap::icon));
     // Rounded up: the label is drawn whole only in a box at least as wide as
     // its fractional advance, and a rounded-down width would elide it.
-    width += qCeil(QFontMetricsF(font()).horizontalAdvance(parts.label));
+    width += qCeil(QFontMetricsF(button->font()).horizontalAdvance(parts.label));
     if (parts.chevron)
-        width += space(kChevronGap) + space(kChevronBox);
+        width += space(gap::icon) + space(box::chevron);
     return QSize(width, height);
+}
+
+// The three parts on the design's grid rather than centred as one string: the
+// glyph's 16 px box `pad` in, the glyph keeping its font size and centred by
+// its ink in the box, the label 4 after it; the chevron's 12 px box `pad` from
+// the right edge, the glyph at 12/16 of the others' size, in the plain
+// foreground at 70 % whatever colour the label wears. A button wider than it
+// asks keeps its content at the left, as the design's.
+void paintKitFace(QPainter &p, const QWidget *button, const QString &text, const QColor &pen)
+{
+    if (text.isEmpty())
+        return;
+    p.setFont(button->font());
+    p.setPen(pen);
+    const int width = button->width(), height = button->height();
+    const KitParts parts = kitParts(text);
+    if (kitSquare(button, parts)) {
+        drawCentred(p, parts.glyph.isEmpty() ? parts.label : parts.glyph, QRectF(button->rect()));
+        return;
+    }
+    const int pad = kitPad(button);
+    int x = pad;
+    if (!parts.glyph.isEmpty()) {
+        drawCentred(p, parts.glyph, QRectF(x, 0, space(box::icon), height));
+        x += space(box::icon) + space(gap::icon);
+    }
+    const int chevronLeft = width - pad - space(box::chevron);
+    if (!parts.label.isEmpty()) {
+        const int end = width - pad - (parts.chevron ? space(gap::icon) + space(box::chevron) : 0);
+        const QString label = button->fontMetrics().elidedText(parts.label, Qt::ElideRight, qMax(0, end - x));
+        p.drawText(QRect(x, 0, qMax(0, end - x), height), Qt::AlignLeft | Qt::AlignVCenter | Qt::TextDontClip, label);
+    }
+    if (parts.chevron) {
+        QColor dim = button->isEnabled() ? OmarchyTheme::instance()->text() : pen;
+        dim.setAlphaF(dim.alphaF() * kChevronOpacity);
+        p.setPen(dim);
+        QFont small = button->font();
+        if (small.pixelSize() > 0)
+            small.setPixelSize(qMax(1, qRound(small.pixelSize() * box::chevron / double(box::icon))));
+        else
+            small.setPointSizeF(small.pointSizeF() * box::chevron / box::icon);
+        p.setFont(small);
+        const QString glyph = chevron().trimmed();
+        const QRectF chevronBox(chevronLeft, 0, space(box::chevron), height);
+        p.drawText(chevronBox.center() - inkRect(small, glyph).center(), glyph);
+    }
+}
+
+} // namespace
+
+QSize KitButton::sizeHint() const
+{
+    return kitSize(this, text());
 }
 
 QSize KitButton::minimumSizeHint() const
@@ -485,54 +593,46 @@ QSize KitButton::minimumSizeHint() const
 }
 
 // The chrome (fill, border, the state of the moment) is the style's; the
-// three parts are placed here, on the design's grid rather than centred as
-// one string, so the glyph sits 10 px in and the label 6 px after its box.
+// three parts are the kit's (paintKitFace()).
 void KitButton::paintEvent(QPaintEvent *)
 {
     QStylePainter p(this);
     QStyleOptionToolButton option;
     initStyleOption(&option);
     const QColor pen = paintChrome(this, p, option);
-    const QString text = this->text();
-    if (text.isEmpty())
-        return;
-    p.setFont(font());
-    p.setPen(pen);
-    const auto centred = [&](const QString &glyph, const QRectF &box) { drawCentred(p, glyph, box); };
+    paintKitFace(p, this, text(), pen);
+}
 
-    const KitParts parts = kitParts(text);
-    if (property("iconForm").toBool() || (parts.label.isEmpty() && !parts.chevron)) {
-        centred(parts.glyph.isEmpty() ? parts.label : parts.glyph, QRectF(rect()));
-        return;
-    }
-    int x = space(kButtonPad);
-    if (!parts.glyph.isEmpty()) {
-        centred(parts.glyph, QRectF(x, 0, space(kButtonGlyph), height()));
-        x += space(kButtonGlyph) + space(kButtonGap);
-    }
-    const int chevronLeft = width() - space(kButtonPad) - space(kChevronBox) + space(kChevronNudge);
-    if (!parts.label.isEmpty()) {
-        const int end = width() - space(kButtonPad)
-            - (parts.chevron ? space(kChevronGap) + space(kChevronBox) : 0);
-        const QString label = fontMetrics().elidedText(parts.label, Qt::ElideRight, qMax(0, end - x));
-        p.drawText(QRect(x, 0, qMax(0, end - x), height()), Qt::AlignLeft | Qt::AlignVCenter | Qt::TextDontClip, label);
-    }
-    if (parts.chevron) {
-        // The design's chevron is a 12 px icon beside the 14 px ones, in the
-        // plain foreground at 70 % whatever colour the label wears.
-        QColor dim = isEnabled() ? OmarchyTheme::instance()->text() : pen;
-        dim.setAlphaF(dim.alphaF() * kChevronOpacity);
-        p.setPen(dim);
-        QFont small = font();
-        if (small.pixelSize() > 0)
-            small.setPixelSize(qMax(1, qRound(small.pixelSize() * kChevronBox / double(kButtonGlyph))));
-        else
-            small.setPointSizeF(small.pointSizeF() * kChevronBox / kButtonGlyph);
-        p.setFont(small);
-        const QString glyph = chevron().trimmed();
-        const QRectF box(chevronLeft, 0, space(kChevronBox), height());
-        p.drawText(box.center() - inkRect(small, glyph).center(), glyph);
-    }
+KitPushButton::KitPushButton(QWidget *parent)
+    : QPushButton(parent)
+{
+}
+
+QSize KitPushButton::sizeHint() const
+{
+    return kitSize(this, text());
+}
+
+QSize KitPushButton::minimumSizeHint() const
+{
+    return sizeHint();
+}
+
+// The bevel is the style's, for the state of the moment; the pen the
+// stylesheet's for a push button: the accent on the default one, the
+// disabled pen of the palette on a disabled one.
+void KitPushButton::paintEvent(QPaintEvent *)
+{
+    QStylePainter p(this);
+    QStyleOptionButton option;
+    initStyleOption(&option);
+    option.text.clear();
+    option.icon = QIcon();
+    p.drawControl(QStyle::CE_PushButton, option);
+    const QColor pen = !isEnabled() ? palette().color(QPalette::Disabled, QPalette::ButtonText)
+        : isDefault()               ? OmarchyTheme::instance()->accent()
+                                    : palette().color(QPalette::Active, QPalette::ButtonText);
+    paintKitFace(p, this, text(), pen);
 }
 
 QToolButton *dropdownButton(const QString &objectName)
@@ -552,7 +652,14 @@ QAction *addMenuHeader(QMenu *menu, const QString &text)
 {
     auto *action = new QWidgetAction(menu);
     QLabel *label = sectionLabel(text);
-    label->setContentsMargins(14, 6, 14, 3);
+    // On the row's grid (screens.js menuCard(), a section): 8 in, and the
+    // baseline where kit.js text() puts it for the row's middle (the middle
+    // plus 0.36 of the caption size).
+    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    onThemeScale(label, [label] {
+        label->setContentsMargins(space(pad::control), 0, space(pad::control), 0);
+        placeOnLine(label, OmarchyTheme::instance()->captionFont(), box::row);
+    });
     action->setDefaultWidget(label);
     menu->addAction(action);
     return action;
@@ -583,9 +690,11 @@ protected:
         if (m_bar && pos.y() >= button.y() + button.height())
             pos.setY(popupTop(m_bar));
         if (pos.x() + menu->width() > area.x() + area.width())
-            pos.setX(qMax(area.x(), area.x() + area.width() - windowMargin() - menu->width()));
-        if (pos.y() + menu->height() > area.y() + area.height() && button.y() - menu->height() >= area.y())
-            pos.setY(button.y() - menu->height());
+            pos.setX(qMax(area.x(), area.x() + area.width() - windowMargin(window) - menu->width()));
+        // Upwards, 4 over the button (screens.js: the OptionsMenu card).
+        const int above = button.y() - space(gap::cluster) - menu->height();
+        if (pos.y() + menu->height() > area.y() + area.height() && above >= area.y())
+            pos.setY(above);
         if (pos != menu->pos())
             menu->move(pos);
         return false;
@@ -596,8 +705,6 @@ private:
     QPointer<QWidget> m_bar;
 };
 
-// The design's gap between the top bar and a popup hanging from it.
-constexpr int kPopupDrop = 4;
 } // namespace
 
 void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar)
@@ -607,34 +714,29 @@ void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar)
 
 int popupTop(const QWidget *bar)
 {
-    return bar->mapToGlobal(QPoint(0, bar->height())).y() + space(kPopupDrop);
+    return bar->mapToGlobal(QPoint(0, bar->height())).y() + space(gap::cluster);
 }
 
 int popupWidth(const QWidget *window, int px)
 {
-    return qMax(1, qMin(space(px), window->width() - 2 * windowMargin()));
+    return qMax(1, qMin(space(px), window->width() - 2 * windowMargin(window)));
 }
 
-// The shell's list row: 2.33 × the base font, so the rows grow with the text size.
-int tableRowHeight()
+int rowHeight()
 {
-    return qRound(OmarchyTheme::instance()->fontBase() * 2.33);
+    return space(box::row);
 }
 
-// The design's file row and table header (screens.js changesTable(): rh and hh).
-int fileRowHeight()
-{
-    return space(26);
-}
-
+// screens.js changesTable(): hh = 24 with its hairline at y + hh − 1, the
+// table's border its first row. The header view sits inside that border.
 int tableHeaderHeight()
 {
-    return space(26);
+    return space(box::row) - 1;
 }
 
 void fitStretchColumn(QTableView *table, int column, int others, int floor)
 {
-    table->setColumnWidth(column, qMax(floor, table->viewport()->width() - others));
+    table->setColumnWidth(column, qMax(space(floor), table->viewport()->width() - others));
 }
 
 void onHeaderResize(QTableView *table, std::function<void()> fit)

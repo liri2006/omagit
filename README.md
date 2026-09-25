@@ -119,10 +119,13 @@ history with a branch graph, and plugs into the Nautilus context menu as
   untick go back to the working tree as staged changes. You are warned when the commit is
   already on a remote branch.
 - **History** (Ctrl+2, or `--history`): the commits of the current branch (or *All branches*)
-  with a lane graph, branch/remote/tag chips, author, date and SHA; filter by message, author
-  or SHA (Ctrl+S); commits load 500 at a time as you scroll. Selecting a commit shows its
-  details and the files it touched; selecting a file shows the diff against the parent in
-  the same diff pane. Right-click a commit to copy its SHA or message.
+  with a lane graph, branch/remote/tag chips, author, date and SHA; the filter (Ctrl+S)
+  searches the whole history by message, author, e-mail or SHA, the matches showing as git
+  finds them. Commits load 500 at a time as you scroll, and so do the filter's matches;
+  loading a second page of either writes git's commit-graph file if the repository has none
+  (as `git gc` does), which keeps the later pages fast. Selecting a commit shows its details
+  and the files it touched; selecting a file shows the diff against the parent in the same
+  diff pane. Right-click a commit to copy its SHA or message.
 - **Top bar**: one row above the whole window, in every layout — the repository and the
   branch chip on the left, the **Changes *n* | History** tabs centred in the window (the
   count is what the changes list shows, whichever tab is on), and Pull, Push, Fetch, Merge

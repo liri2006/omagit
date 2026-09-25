@@ -298,14 +298,14 @@
   "id": "CommitPopover",
   "page": "Components",
   "w": 360,
-  "h": 203
+  "h": 212
  },
  {
   "file": "44-AgentPopover.svg",
   "id": "AgentPopover",
   "page": "Components",
   "w": 360,
-  "h": 389
+  "h": 364
  },
  {
   "file": "45-Cover-Omagit-UI.svg",
@@ -318,7 +318,7 @@
   "file": "46-Foundations.svg",
   "id": "Foundations",
   "page": "Foundations",
-  "w": 1840,
+  "w": 1980,
   "h": 1180
  },
  {
@@ -334,5 +334,96 @@
   "page": "Layout rules",
   "w": 1500,
   "h": 1000
+ },
+ {
+  "file": "49-Full-history-search-proposals.svg",
+  "id": "Full history search · proposals",
+  "page": "Screens · Half & Quarter",
+  "w": 1640,
+  "h": 620
+ },
+ {
+  "file": "50-A-Count-row-action-Half-capped.svg",
+  "id": "A · Count-row action · Half · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "51-A-Count-row-action-Half-full-search-on.svg",
+  "id": "A · Count-row action · Half · full search on",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "52-A-Count-row-action-Eighth-capped.svg",
+  "id": "A · Count-row action · Eighth · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "53-B-Filter-row-toggle-Half-capped.svg",
+  "id": "B · Filter-row toggle · Half · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "54-B-Filter-row-toggle-Half-full-search-on.svg",
+  "id": "B · Filter-row toggle · Half · full search on",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "55-B-Filter-row-toggle-Eighth-capped.svg",
+  "id": "B · Filter-row toggle · Eighth · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "56-C-In-field-toggle-Half-capped.svg",
+  "id": "C · In-field toggle · Half · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "57-C-In-field-toggle-Half-full-search-on.svg",
+  "id": "C · In-field toggle · Half · full search on",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "58-C-In-field-toggle-Eighth-capped.svg",
+  "id": "C · In-field toggle · Eighth · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "59-D-Search-options-menu-Half-capped.svg",
+  "id": "D · Search options menu · Half · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "60-D-Search-options-menu-Half-full-search-on.svg",
+  "id": "D · Search options menu · Half · full search on",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 1234
+ },
+ {
+  "file": "61-D-Search-options-menu-Eighth-capped.svg",
+  "id": "D · Search options menu · Eighth · capped",
+  "page": "Screens · Half & Quarter",
+  "w": 470,
+  "h": 612
  }
 ]

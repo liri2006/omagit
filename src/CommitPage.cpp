@@ -39,26 +39,14 @@
 using namespace ui;
 
 namespace {
-// The design hangs the action bar 8 px under the changes list — its own gap,
-// not the 6 px a section header row keeps to its content.
-int actionBarGap()
-{
-    return space(8);
-}
-
-// The stacked action bar's gap between the options button and Commit.
-constexpr int kStackedActionGap = 6;
-
 // The stacked action bar's options menu (screens.js: the OptionsMenu card).
 constexpr int kOptionsMenuWidth = 240;
-// The header rows' icon buttons stand this far inside the page's right edge
-// (screens.js changesPage(): a 24 px button at x + w − 26).
-constexpr int kHeaderInset = 2;
 
 // The message box's resting heights (screens.js changesPage(): mh), in
-// 12 px-base pixels: by the window's width class, and one line when the
-// window is shallow. The one-line box is also the least it may be dragged to.
-constexpr int kMessageWide = 96, kMessageLarge = 84, kMessageNarrow = 68, kMessageShallow = 34;
+// 12 px-base pixels: 5, 4 and 3 lines of 16 inside 8 px of padding by the
+// window's width class, and one line — a field, 28 — when the window is
+// shallow. The one-line box is also the least it may be dragged to.
+constexpr int kMessageWide = 96, kMessageLarge = 80, kMessageNarrow = 64, kMessageShallow = box::control;
 
 // The eye's filter, and with it the check-all box of the table's header: the
 // box stands for the rows the list is showing, so with the unversioned files
@@ -162,40 +150,38 @@ protected:
 
 // ---- The tree and compact presentations ------------------------------------
 
-// The design's geometry of a file list, in the pixels of a 12 px font — every
-// one of them goes through space(), so the tree follows the text size like
-// everything else. A level of the tree is 14 px, and the whole of it is
-// painted in the Name column: the checkbox column stays one straight line,
-// however deep a row sits.
-constexpr int kNarrowColumn = 30; // the checkbox and the status pill
-constexpr int kLevel = 14;
-constexpr int kChevronX = 6, kChevronGlyph = 12;
-constexpr int kFolderX = 20, kFolderGlyph = 14;
-constexpr int kDirNameX = 38, kFileNameX = 8;
-constexpr int kNameInset = 10;    // the compact table's Name cell
-constexpr int kSuffixGap = 8, kSuffixText = 11;
+// The design's geometry of a file list (screens.js changesTable()), in the
+// pixels of a 12 px font — every one of them goes through space(), so the
+// tree follows the text size like everything else. A level of the tree is
+// 16 px, and the whole of it is painted in the Name column: the checkbox
+// column stays one straight line, however deep a row sits. A directory row
+// is [8][chevron 12][4][folder 16][4][name], so a file's name, 8 and its
+// level's indent in, stands under its folder's icon.
+constexpr int kNarrowColumn = 32; // the checkbox and the status pill, a 16 px box with 8 either side
+constexpr int kLevel = 16;
+constexpr int kChevronGlyph = 12, kFolderGlyph = 14; // the glyphs' text sizes
 
-// Where a directory's chevron and folder sit in its Name cell, measured from
-// the cell's left edge. Painting and the click that opens the branch share
-// it, so a row can never open somewhere other than where it says it will.
+// Where a directory's chevron and folder boxes sit in its Name cell, measured
+// from the cell's left edge. Painting and the click that opens the branch
+// share it, so a row can never open somewhere other than where it says it will.
 QRect branchRect(const QRect &cell, int depth)
 {
-    const int left = cell.left() + space(kChevronX + kLevel * depth);
-    const int right = cell.left() + space(kFolderX + kLevel * depth) + space(kFolderGlyph);
+    const int left = cell.left() + space(pad::control + kLevel * depth);
+    const int right = left + space(box::chevron + gap::icon + box::icon);
     return QRect(left, cell.top(), right - left, cell.height());
 }
 
-// One Nerd Font glyph, `px` design pixels tall, at the left of `box`.
+// One Nerd Font glyph at the text size `px`, centred by its ink in `box`.
 void paintGlyph(QPainter *painter, const QRect &box, uint code, const QString &fallback, int px,
                 const QColor &colour)
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
-    const QString glyph = theme->glyph(code);
+    const QString glyph = theme->glyph(code).isEmpty() ? fallback : theme->glyph(code);
     QFont font = theme->uiFont();
-    font.setPixelSize(space(px));
+    font.setPixelSize(fontPx(px));
     painter->setFont(font);
     painter->setPen(colour);
-    painter->drawText(box, Qt::AlignLeft | Qt::AlignVCenter, glyph.isEmpty() ? fallback : glyph);
+    painter->drawText(QRectF(box).center() - inkRect(font, glyph).center(), glyph);
 }
 
 // A name with a dim, smaller note after it: the file count of a folded
@@ -218,12 +204,12 @@ void paintNameWithSuffix(QPainter *painter, const QRect &box, const QString &nam
                       width <= room ? name : nameMetrics.elidedText(name, Qt::ElideMiddle, room));
     if (suffix.isEmpty())
         return;
-    const int left = box.left() + room + space(kSuffixGap);
+    const int left = box.left() + room + space(gap::item);
     const int rest = box.right() + 1 - left;
     if (rest <= 0)
         return;
     QFont small = theme->uiFont();
-    small.setPixelSize(space(kSuffixText));
+    small.setPixelSize(fontPx(11)); // the design's small text
     const QFontMetrics smallMetrics(small);
     const int suffixWidth = smallMetrics.horizontalAdvance(suffix);
     painter->setFont(small);
@@ -243,7 +229,7 @@ public:
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
         QSize size = QStyledItemDelegate::sizeHint(option, index);
-        size.setHeight(fileRowHeight());
+        size.setHeight(rowHeight());
         return size;
     }
 
@@ -282,12 +268,32 @@ public:
     }
 };
 
-// The checkbox column: the themed 14 px indicator the table has always had,
-// and nothing else — no text, and no depth, however deep the row sits.
+// The checkbox column: the themed 16 px indicator the table has, centred in
+// the column as the table's is (checkBoxRect()), and nothing else — no text,
+// and no depth, however deep the row sits.
 class CheckColumnDelegate : public PresentationDelegate
 {
 public:
     using PresentationDelegate::PresentationDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index); // the row's background
+        paintCheckBox(painter, option, index);
+    }
+
+    bool editorEvent(QEvent *event, QAbstractItemModel *model, const QStyleOptionViewItem &option,
+                     const QModelIndex &index) override
+    {
+        return checkBoxEvent(event, model, option, index);
+    }
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
+    {
+        PresentationDelegate::initStyleOption(option, index);
+        option->features &= ~QStyleOptionViewItem::HasCheckIndicator;
+    }
 };
 
 // The Name column of the compact table: the file name, then the dim, smaller
@@ -304,7 +310,7 @@ public:
         const QString path = index.data(ChangesModel::PathRole).toString();
         const int separator = path.lastIndexOf(QLatin1Char('/'));
         const QString folder = separator < 0 ? QString() : path.left(separator) + QLatin1Char('/');
-        const QRect box = option.rect.adjusted(space(kNameInset), 0, -space(kNameInset), 0);
+        const QRect box = option.rect.adjusted(space(pad::control), 0, -space(pad::control), 0);
         painter->save();
         paintNameWithSuffix(painter, box, index.data(Qt::DisplayRole).toString(), rowFont(option, index),
                             option.state & QStyle::State_Selected ? OmarchyTheme::instance()->accent()
@@ -338,16 +344,15 @@ public:
             const QModelIndex branch = index.siblingAtColumn(ChangesTreeModel::Check);
             const bool open = m_tree->isExpanded(branch);
             const QColor dim = theme->mutedText();
-            paintGlyph(painter,
-                       QRect(cell.left() + space(kChevronX + kLevel * depth), cell.top(),
-                             space(kFolderX - kChevronX), cell.height()),
+            const QRect boxes = branchRect(cell, depth);
+            paintGlyph(painter, QRect(boxes.left(), cell.top(), space(box::chevron), cell.height()),
                        open ? kChevron : kChevronRight, open ? QStringLiteral("▾") : QStringLiteral("▸"),
                        kChevronGlyph, dim);
             paintGlyph(painter,
-                       QRect(cell.left() + space(kFolderX + kLevel * depth), cell.top(),
-                             space(kDirNameX - kFolderX), cell.height()),
+                       QRect(boxes.left() + space(box::chevron + gap::icon), cell.top(), space(box::icon),
+                             cell.height()),
                        kFolderOutline, QStringLiteral("/"), kFolderGlyph, dim);
-            const int left = cell.left() + space(kDirNameX + kLevel * depth);
+            const int left = boxes.right() + 1 + space(gap::icon);
             const int files = m_model->fileCount(index);
             // A folded directory says how many files it is keeping from view;
             // an open one has them all on screen already.
@@ -358,7 +363,7 @@ public:
                                 index.data(Qt::DisplayRole).toString(), font,
                                 selected ? theme->accent() : theme->text(), count);
         } else {
-            const int left = cell.left() + space(kFileNameX + kLevel * depth);
+            const int left = cell.left() + space(pad::control + kLevel * depth);
             paintNameWithSuffix(painter, QRect(left, cell.top(), cell.right() + 1 - left, cell.height()),
                                 index.data(Qt::DisplayRole).toString(), font,
                                 selected ? theme->accent() : statusColour(index), QString());
@@ -484,14 +489,14 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
 {
     setupAgent();
 
-    // The page is the two sections over the action bar: inside, a header row
-    // is 6 px above its content; the bar itself sits 8 px under the message
-    // and ends with the page, on the line the diff pane beside it ends on (the
-    // user's choice over the design's 12 px under it; applyTheme() scales the
-    // gaps).
+    // The page is the two sections over the action bar (screens.js
+    // changesPage()): inside, a 24 px header row stands 8 over its content;
+    // the sections and the action bar are a block gap apart (the window's
+    // height class, setWindowClass()), and the bar ends with the page, on the
+    // line the diff pane beside it ends on.
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(actionBarGap());
+    layout->setSpacing(space(m_block));
 
     // The changes list over the message, so the message is written right
     // above the Commit button; the two share the height, and where the user
@@ -523,9 +528,9 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     QSettings().remove(settings::kWindowCommitMessageSplitter);
     m_messageSplitter->restoreState(QSettings().value(settings::kWindowCommitSplitter).toByteArray());
     // The handle is all that stands between the two sections, so it carries
-    // the gap between them — after restoreState(), which brings the handle
-    // width of whatever text size saved the state back with it.
-    m_messageSplitter->setHandleWidth(sectionGap());
+    // the block gap between them — after restoreState(), which brings the
+    // handle width of whatever text size saved the state back with it.
+    applyBlockGap();
 
     // How the last run left the files listed; anything unreadable, or nothing
     // at all, is the table. Reading a choice back never writes it again.
@@ -586,20 +591,19 @@ void CommitPage::setupAgent()
     });
 }
 
-// The CHANGES row stands on the diff pane's toolbar line beside it: centred
-// on a row of buttons, and the list as far under that row as the diff is
-// under the toolbar, so the two boxes start on one line.
-QMargins CommitPage::changesRowMargins()
+// A header row's icon buttons stand 4 in from the page's edge, so their glyph
+// sits on the 8 px text padding of the boxes below (screens.js
+// headerButtonX()). The row is 24 and its content 8 under it: the list starts
+// 32 under the page's top, level with the diff under its toolbar (28 + 4).
+QMargins CommitPage::headerRowMargins()
 {
-    const int top = (buttonHeight() - headerRowHeight()) / 2;
-    const int bottom = buttonHeight() + barGap() - headerGap() - headerRowHeight() - top;
-    return QMargins(0, top, space(kHeaderInset), qMax(0, bottom));
+    return QMargins(0, 0, space(gap::icon), 0);
 }
 
 // What the message's pane holds over the box: the MESSAGE row and its gap.
 int CommitPage::messageHeaderHeight()
 {
-    return headerRowHeight() + headerGap();
+    return space(box::row) + space(gap::header);
 }
 
 // MESSAGE, with the agent settings at the far right, over the message box,
@@ -609,11 +613,11 @@ QWidget *CommitPage::buildMessageSection()
     auto *section = new QWidget;
     auto *sectionLayout = new QVBoxLayout(section);
     sectionLayout->setContentsMargins(0, 0, 0, 0);
-    sectionLayout->setSpacing(headerGap());
+    sectionLayout->setSpacing(space(gap::header));
     m_messageLayout = sectionLayout;
 
     auto *messageRow = m_messageRow = sectionHeaderRow(sectionLabel(tr("Message")));
-    messageRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
+    messageRow->setContentsMargins(headerRowMargins());
     messageRow->addStretch();
     m_agentButton = iconButton(kCog, tr("⚙"), agentButtonTip());
     connect(m_agentButton, &QToolButton::clicked, this, [this] { requestAgentSettings(m_agentButton); });
@@ -676,12 +680,12 @@ QWidget *CommitPage::buildChangesSection()
     auto *changes = new QWidget;
     auto *changesLayout = new QVBoxLayout(changes);
     changesLayout->setContentsMargins(0, 0, 0, 0);
-    changesLayout->setSpacing(headerGap());
+    changesLayout->setSpacing(space(gap::header));
     m_changesLayout = changesLayout;
 
     m_changesLabel = sectionLabel(tr("Changes"));
     auto *changesRow = m_changesRow = sectionHeaderRow(m_changesLabel);
-    changesRow->setContentsMargins(changesRowMargins());
+    changesRow->setContentsMargins(headerRowMargins());
     changesRow->addStretch();
 
     m_model = new ChangesModel(this);
@@ -727,17 +731,27 @@ QWidget *CommitPage::buildChangesSection()
 }
 
 // title, stretch, compact, tree, table, divider, eye, divider, Refresh — in a
-// layout of its own, with the design's 2 / 6 / 7 px gaps as spacers, so the
-// section row's own spacing is not added on top of them.
+// layout of its own, with the design's gaps as spacers (screens.js
+// changesPage()): the three files-view buttons a cluster apart, and a group
+// gap with a divider at its middle (8 | 8) either side of the eye.
 QHBoxLayout *CommitPage::buildChangesTools()
 {
     m_changesTools = new QHBoxLayout;
     m_changesTools->setContentsMargins(0, 0, 0, 0);
     m_changesTools->setSpacing(0);
-    const auto gap = [this](int px) {
-        auto *spacer = new QSpacerItem(space(px), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
-        m_toolSpacers.append({spacer, px});
+    // A spacer of `px` design px, less the 1 px line before it where there is one.
+    const auto gap = [this](int px, int less = 0) {
+        auto *spacer = new QSpacerItem(space(px) - less, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+        m_toolSpacers.append({spacer, {px, less}});
         m_changesTools->addItem(spacer);
+    };
+    const auto divider = [this, gap] {
+        gap(ui::gap::group / 2);
+        QWidget *line = hairline(Qt::Vertical);
+        line->setFixedHeight(space(box::divider)); // applyTheme() keeps it on the text size
+        m_changesTools->addWidget(line, 0, Qt::AlignVCenter);
+        gap(ui::gap::group / 2, 1);
+        return line;
     };
     const auto add = [this](QToolButton *button) {
         m_changesTools->addWidget(button, 0, Qt::AlignVCenter);
@@ -750,7 +764,7 @@ QHBoxLayout *CommitPage::buildChangesTools()
     const auto switcher = [this, add, gap](FilesView view, uint glyph, const QString &fallback,
                                            const QString &name) {
         if (view != FilesView::Compact)
-            gap(2); // the first of the three needs nothing before it
+            gap(ui::gap::cluster); // the first of the three needs nothing before it
         QToolButton *button = iconButton(glyph, fallback, name);
         button->setCheckable(true);
         button->setAccessibleName(name);
@@ -766,12 +780,9 @@ QHBoxLayout *CommitPage::buildChangesTools()
             setFilesView(FilesView(id));
     });
 
-    // The eye acts on the list, Refresh reloads it: a divider tells them apart.
-    gap(6);
-    m_toolsDivider = hairline(Qt::Vertical);
-    m_toolsDivider->setFixedHeight(space(18)); // applyTheme() keeps it on the text size
-    m_changesTools->addWidget(m_toolsDivider, 0, Qt::AlignVCenter);
-    gap(7);
+    // How the list shows, what it shows (the eye) and Refresh, which reloads
+    // it, are three groups: a divider in the group gap between each two.
+    m_toolsDivider = divider();
     m_unversioned = iconButton(kEye, tr("U"), tr("Show unversioned files"));
     m_unversioned->setCheckable(true);
     m_unversioned->setChecked(true);
@@ -784,11 +795,7 @@ QHBoxLayout *CommitPage::buildChangesTools()
         onCheckedChanged(); // the title counts what the list shows
     });
     add(m_unversioned);
-    gap(6);
-    m_changesDivider = hairline(Qt::Vertical);
-    m_changesDivider->setFixedHeight(space(18));
-    m_changesTools->addWidget(m_changesDivider, 0, Qt::AlignVCenter);
-    gap(7);
+    m_changesDivider = divider();
     auto *refreshButton = iconButton(kRefresh, tr("R"), tr("Re-read the repository (F5)"));
     connect(refreshButton, &QToolButton::clicked, this, &CommitPage::refreshRequested);
     add(refreshButton);
@@ -796,7 +803,7 @@ QHBoxLayout *CommitPage::buildChangesTools()
 }
 
 // The tree over the same proxy: three columns, the two narrow ones fixed at
-// the design's 30 px and Name taking the rest.
+// the design's 32 px and Name taking the rest.
 QWidget *CommitPage::buildChangesTree()
 {
     m_treeModel = new ChangesTreeModel(m_proxy, this);
@@ -875,7 +882,7 @@ QLayout *CommitPage::buildActionBar()
 {
     m_actionBar = new QHBoxLayout;
     m_actionBar->setContentsMargins(0, 0, 0, 0);
-    m_actionBar->setSpacing(sectionGap());
+    m_actionBar->setSpacing(space(gap::group));
     m_optionsButton = iconButton(kDotsHorizontal, QStringLiteral("…"), tr("Options"), IconButtonSize::Toolbar, false);
     m_optionsButton->setAccessibleName(tr("Options"));
     m_optionsButton->setPopupMode(QToolButton::InstantPopup);
@@ -895,8 +902,9 @@ QLayout *CommitPage::buildActionBar()
     m_actionBar->addWidget(m_amend, 1);
     m_actionStretch = new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum); // addStretch()'s own
     m_actionBar->addItem(m_actionStretch);
-    m_commitButton = new QPushButton;
+    m_commitButton = new KitPushButton;
     m_commitButton->setDefault(true);
+    setPrimary(m_commitButton); // 16 in, the primary action of the page
     m_commitButton->setCursor(Qt::PointingHandCursor);
     // No shortcut of its own: Ctrl+Enter is the window's, which presses this
     // button, or opens the commit popover in the Mini layout where the button
@@ -1151,19 +1159,19 @@ void CommitPage::applyTheme()
     m_tableSetup->applyTheme();
     // The gaps of the section grid are in scaled pixels, so a new text size
     // has to lay them out again.
-    layout()->setSpacing(actionBarGap());
-    m_changesRow->setContentsMargins(changesRowMargins());
-    m_messageRow->setContentsMargins(0, 0, space(kHeaderInset), 0);
-    m_changesLayout->setSpacing(headerGap());
-    m_messageLayout->setSpacing(headerGap());
-    m_actionBar->setSpacing(actionBarStacked() ? space(kStackedActionGap) : sectionGap());
+    m_changesRow->setContentsMargins(headerRowMargins());
+    m_messageRow->setContentsMargins(headerRowMargins());
+    m_changesLayout->setSpacing(space(gap::header));
+    m_messageLayout->setSpacing(space(gap::header));
+    m_actionBar->setSpacing(actionBarStacked() ? space(gap::item) : space(gap::group));
     m_optionsButton->setText(icon(kDotsHorizontal, QStringLiteral("…")).trimmed());
     applyRestingMessageHeight(); // in the pixels of the new text size
-    m_messageSplitter->setHandleWidth(sectionGap());
-    m_changesDivider->setFixedHeight(space(18));
-    m_toolsDivider->setFixedHeight(space(18));
+    applyBlockGap();
+    m_changesDivider->setFixedHeight(space(box::divider));
+    m_toolsDivider->setFixedHeight(space(box::divider));
     for (const auto &spacer : std::as_const(m_toolSpacers))
-        spacer.first->changeSize(space(spacer.second), 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+        spacer.first->changeSize(space(spacer.second.first) - spacer.second.second, 0, QSizePolicy::Fixed,
+                                 QSizePolicy::Fixed);
     m_changesTools->invalidate();
     applyTreeMetrics();
     // The glyphs of the generate and Commit buttons are looked up in the font
@@ -1173,13 +1181,18 @@ void CommitPage::applyTheme()
     updateCommitButton(); // also re-fits the amend label, whose width moved with the font
 }
 
-// The tree's own design pixels: the two narrow columns and the row height. It
-// follows the text size whether it is the list on show or not.
+// The tree's own design pixels: the two narrow columns, the header and the
+// row height. It follows the text size whether it is the list on show or not.
+// The two narrow columns are the design's 32 from the tree's outer edge,
+// whose frame is their first (last) pixel: the cells, inside it, are that
+// much narrower (as the table's, ChangesTableSetup).
 void CommitPage::applyTreeMetrics()
 {
-    m_tree->header()->setMinimumSectionSize(space(kNarrowColumn));
-    m_tree->setColumnWidth(ChangesTreeModel::Check, space(kNarrowColumn));
-    m_tree->setColumnWidth(ChangesTreeModel::Status, space(kNarrowColumn));
+    m_tree->ensurePolished(); // the stylesheet's frame
+    const int narrow = space(kNarrowColumn) - m_tree->frameWidth();
+    m_tree->header()->setMinimumSectionSize(narrow);
+    m_tree->setColumnWidth(ChangesTreeModel::Check, narrow);
+    m_tree->setColumnWidth(ChangesTreeModel::Status, narrow);
     m_tree->header()->setFixedHeight(tableHeaderHeight());
     static_cast<ChangesTree *>(m_tree)->refreshRowHeights();
 }
@@ -1225,19 +1238,39 @@ void CommitPage::setStacked(bool on)
     }
 }
 
-void CommitPage::setWindowClass(WidthClass width, bool shallow)
+void CommitPage::setWindowClass(WidthClass width, HeightClass height)
 {
-    if (m_widthClass == width && m_shallow == shallow)
+    const bool shallow = height == HeightClass::Shallow;
+    const int block = densityFor(width, height).block;
+    if (m_widthClass == width && m_shallow == shallow && m_block == block)
         return;
     const bool barWasStacked = actionBarStacked();
     m_widthClass = width;
     m_shallow = shallow;
+    m_block = block;
     if (actionBarStacked() != barWasStacked) {
         applyActionBarForm();
         updateCommitButton(); // the key comes off or back on
     }
+    m_tableSetup->setWidthClass(width);
+    applyBlockGap();
     applyRestingMessageHeight();
     updateAmendLabel();
+}
+
+// The block gap of the window's height class between the parts of the page:
+// the changes list to the MESSAGE row (the splitter's handle) and the message
+// box to the action bar — one and the same gap.
+void CommitPage::applyBlockGap()
+{
+    layout()->setSpacing(space(m_block));
+    m_messageSplitter->setHandleWidth(space(m_block));
+    // The stylesheet lights a 4 px strip in the handle's middle by this.
+    if (m_messageSplitter->property("blockGap").toInt() != m_block) {
+        m_messageSplitter->setProperty("blockGap", m_block);
+        m_messageSplitter->style()->unpolish(m_messageSplitter);
+        m_messageSplitter->style()->polish(m_messageSplitter);
+    }
 }
 
 int CommitPage::restingMessageHeight() const
@@ -1277,10 +1310,10 @@ void CommitPage::applyRestingMessageHeight()
         m_messageSplitter->setSizes({qMax(1, total - wanted - header), wanted + header});
 }
 
-// Stacked (or shallow): the options button, the design's 6 px, and Commit
-// stretching over what Amend and the stretch between them had. Otherwise the
-// row as built: Amend and its stretch, the section gap, and Commit at its own
-// width.
+// Stacked (or shallow): the options button, the design's item gap, and
+// Commit stretching over what Amend and the stretch between them had.
+// Otherwise the row as built: Amend and its stretch, the group gap, and
+// Commit at its own width.
 void CommitPage::applyActionBarForm()
 {
     const bool stacked = actionBarStacked();
@@ -1292,7 +1325,7 @@ void CommitPage::applyActionBarForm()
         m_actionStretch->changeSize(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum);
     m_actionBar->setStretchFactor(m_commitButton, stacked ? 1 : 0);
     m_commitButton->setSizePolicy(stacked ? QSizePolicy::Expanding : QSizePolicy::Minimum, QSizePolicy::Fixed);
-    m_actionBar->setSpacing(stacked ? space(kStackedActionGap) : sectionGap());
+    m_actionBar->setSpacing(stacked ? space(gap::item) : space(gap::group));
     m_actionBar->invalidate();
     updateAmendLabel();
 }

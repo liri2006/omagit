@@ -16,7 +16,7 @@
     const iconSet = cframe.findOne(n => n.type === 'COMPONENT_SET' && n.name === 'Icon'); let added = 0;
     for (const [name, d] of Object.entries(ICONS)) {
       if (iconSet.children.find(c => c.name === 'name=' + name)) continue;
-      const g = figma.createNodeFromSvg(`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"><path d="${d}" fill="#000000"/></svg>`);
+      const g = figma.createNodeFromSvg(om.iconSvg(d));
       g.name = 'name=' + name; g.fills = []; g.clipsContent = false;
       g.findAll(n => n.type === 'VECTOR' || n.type === 'BOOLEAN_OPERATION').forEach(v => { v.name = 'glyph'; om.fill(v, 'Foreground'); v.constraints = { horizontal: 'SCALE', vertical: 'SCALE' }; });
       const comp = figma.createComponentFromNode(g); iconSet.appendChild(comp); added++;

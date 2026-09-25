@@ -1,21 +1,62 @@
 #include "HistoryModel.h"
+#include "ProcessUtil.h"
+
+bool commitMatches(const Commit &c, const QString &text)
+{
+    return c.subject.contains(text, Qt::CaseInsensitive) || c.body.contains(text, Qt::CaseInsensitive)
+        || c.author.contains(text, Qt::CaseInsensitive) || c.email.contains(text, Qt::CaseInsensitive)
+        || c.hash.startsWith(text, Qt::CaseInsensitive);
+}
 
 HistoryModel::HistoryModel(GitRepo *repo, QObject *parent)
     : QAbstractTableModel(parent), m_repo(repo)
 {
+    if (m_repo)
+        connect(m_repo, &GitRepo::rootChanged, this, &HistoryModel::onRootChanged);
 }
 
-void HistoryModel::reload(bool force)
+HistoryModel::~HistoryModel()
+{
+    stopSearch();
+}
+
+bool HistoryModel::reload(bool force, const QString &keep, int rows)
+{
+    return reread(force, qMax(qMax(m_batch, rows), int(m_matches.size())), keep);
+}
+
+// A search that failed is never "nothing moved": a refresh is how it is tried
+// again.
+bool HistoryModel::reread(bool force, int room, const QString &keep)
 {
     const QHash<QString, QList<RefLabel>> refs = m_repo->refs();
     int code = 0;
     QString head = QString::fromUtf8(m_repo->run({QStringLiteral("rev-parse"), QStringLiteral("HEAD")}, &code)).trimmed();
     if (code != 0)
         head.clear();
-    if (!force && m_loaded && !m_failed && refs == m_refs && head == m_head)
-        return; // nothing moved: keep the rows, the selection and the scroll position
-    const int wanted = qMax(m_batch, m_commits.size());
+    if (!force && m_loaded && !m_failed && !(filtering() && m_searchFailed) && refs == m_refs && head == m_head)
+        return false; // nothing moved: keep the rows, the selection and the scroll position
+    m_loaded = true;
+    if (filtering()) {
+        // The matches wear the refs of the moment; the loaded commits, out of
+        // sight, are read again when the filter is cleared.
+        m_refs = refs;
+        m_head = head;
+        m_logStale = true;
+        startOver(m_filter, room, keep);
+        return true;
+    }
     beginResetModel();
+    m_refs = refs;
+    m_head = head;
+    readLog();
+    endResetModel();
+    return true;
+}
+
+void HistoryModel::readLog()
+{
+    const int wanted = qMax(m_batch, m_commits.size());
     m_commits.clear();
     m_rows.clear();
     m_lanes.clear();
@@ -24,9 +65,7 @@ void HistoryModel::reload(bool force)
     m_maxLanes = 0;
     m_exhausted = false;
     m_failed = false;
-    m_refs = refs;
-    m_head = head;
-    m_loaded = true;
+    m_logStale = false;
     bool ok = false;
     const QList<Commit> commits = m_repo->log(0, wanted, m_allRefs, &ok);
     m_failed = !ok;
@@ -35,13 +74,27 @@ void HistoryModel::reload(bool force)
         layoutRow(c);
     }
     m_exhausted = commits.size() < wanted;
-    endResetModel();
 }
 
 bool HistoryModel::loadMore()
 {
+    if (filtering()) {
+        if (!m_moreMatches || m_searching)
+            return false;
+        askForCommitGraph();
+        m_moreMatches = false;
+        m_searchFailed = false;
+        m_searching = true;
+        m_room = m_batch;
+        m_until.clear();
+        runSearch();
+        emit searchChanged();
+        return true;
+    }
     if (m_exhausted || m_failed)
         return false;
+    if (m_commits.size() >= m_batch)
+        askForCommitGraph();
     bool ok = false;
     const QList<Commit> commits = m_repo->log(m_commits.size(), m_batch, m_allRefs, &ok);
     if (!ok) {
@@ -54,12 +107,171 @@ bool HistoryModel::loadMore()
     return !commits.isEmpty();
 }
 
+// Filtering, the new scope is a new search: a page of it, as for a new text.
 void HistoryModel::setAllRefs(bool on)
 {
     if (m_allRefs == on)
         return;
     m_allRefs = on;
-    reload(true);
+    reread(true, m_batch, QString());
+}
+
+void HistoryModel::setFilter(const QString &text)
+{
+    if (text != m_filter)
+        startOver(text, m_batch);
+}
+
+int HistoryModel::rowOf(const QString &hash) const
+{
+    const QList<Commit> &list = shown();
+    for (int row = 0; row < list.size(); ++row)
+        if (list.at(row).hash == hash)
+            return row;
+    return -1;
+}
+
+// The search's start points are read here, once, for all its pages: a ref
+// that moves while the user reads (a commit, a fetch, before any reload
+// notices) must not shift the walk the next page skips into. None at all (no
+// commits yet) is no match, not HEAD's history.
+void HistoryModel::startOver(const QString &filter, int room, const QString &keep)
+{
+    stopSearch();
+    bool resolved = true;
+    const QStringList scope = filter.isEmpty() ? QStringList() : m_repo->logStartPoints(m_allRefs, &resolved);
+    beginResetModel();
+    m_filter = filter;
+    m_matches.clear();
+    m_scope = scope;
+    m_searchFailed = !resolved;
+    m_searching = !m_scope.isEmpty();
+    m_moreMatches = false;
+    m_walked = 0;
+    m_room = room;
+    m_until = keep;
+    if (!filtering() && m_logStale)
+        readLog();
+    endResetModel();
+    if (m_searching)
+        runSearch();
+    emit searchChanged();
+}
+
+// One `git log` over the search's start points, every commit it prints held
+// against the filter as it comes: git cannot do the matching itself, as it
+// ANDs a --grep with an --author where the filter means either. The batch
+// that fills the page keeps what fits and ends the walk there, with more to
+// load; the commits of that batch after its last match are left to the next
+// page, whose walk starts right after it. The pages together are the matches
+// of one walk to the end: the same commits in the same order. A page that
+// goes on for m_until ends right after it where it comes within a batch of
+// matches past the room; where it does not (a commit that is gone), the page
+// ends a batch past its room, the batches git printed meanwhile counted
+// together, instead of walking the whole history for it.
+void HistoryModel::runSearch()
+{
+    const QString text = m_filter;
+    const int run = m_searchRun;
+    m_overrun = m_until.isEmpty() ? 0 : m_batch;
+    QProcess *process = m_repo->logStream(
+        m_scope, m_walked, this,
+        [this, text, run](const QList<Commit> &commits) {
+            if (run != m_searchRun)
+                return;
+            QList<Commit> found;
+            int walked = 0;
+            for (const Commit &c : commits) {
+                ++walked;
+                if (!commitMatches(c, text))
+                    continue;
+                found.append(c);
+                if (c.hash == m_until)
+                    m_until.clear();
+                if (found.size() < m_room)
+                    continue;
+                if (m_until.isEmpty())
+                    break;
+                if (found.size() >= m_room + m_overrun) {
+                    m_until.clear(); // not coming: the page is full
+                    break;
+                }
+            }
+            m_walked += walked;
+            m_overrun -= qMax(0, int(found.size()) - m_room);
+            m_room = qMax(0, m_room - int(found.size()));
+            if (!found.isEmpty()) {
+                beginInsertRows(QModelIndex(), m_matches.size(), m_matches.size() + found.size() - 1);
+                m_matches += found;
+                endInsertRows();
+            }
+            if (m_room == 0 && m_until.isEmpty()) {
+                stopSearch();
+                m_moreMatches = true;
+            }
+            emit searchChanged();
+        },
+        [this, run](bool ok) {
+            // Git's last batch may have filled the page just before: over already.
+            if (run != m_searchRun)
+                return;
+            // At the end of the history, or failed: nothing more to load
+            // either way. A failed page leaves what it found, and says it
+            // failed; a reload tries again.
+            m_search = nullptr;
+            m_searching = false;
+            m_searchFailed = !ok;
+            m_until.clear();
+            emit searchChanged();
+        });
+    if (m_searching)
+        m_search = process; // else git could not even be started, and said so already
+}
+
+// The callbacks come off before the kill, so nothing of this search can
+// arrive after; one under way (the last batch filling the page, done() to
+// follow) finds m_searchRun moved on. The process is the repository's and
+// goes by itself.
+void HistoryModel::stopSearch()
+{
+    abandonProcess(m_search, this);
+    m_search = nullptr;
+    m_searching = false;
+    ++m_searchRun;
+}
+
+// A page past the first says the user reads on: with a commit-graph, every
+// page after it costs git a walk of the commits it skips, not a sort of the
+// whole history. Once per repository, and nothing waits for it.
+void HistoryModel::askForCommitGraph()
+{
+    if (m_commitGraphAsked)
+        return;
+    m_commitGraphAsked = true;
+    m_repo->ensureCommitGraph();
+}
+
+// Everything read so far is the old repository's: the reload that follows a
+// switch (MainWindow refreshes right away) reads it all again even where
+// nothing seems to have moved, and a search of the old repository must not
+// add its commits to the new one's list.
+void HistoryModel::onRootChanged()
+{
+    m_loaded = false;
+    m_commitGraphAsked = false;
+    if (!filtering())
+        return;
+    stopSearch();
+    beginResetModel();
+    m_matches.clear();
+    m_scope.clear();
+    m_moreMatches = false;
+    m_searchFailed = false;
+    m_walked = 0;
+    m_until.clear();
+    m_logStale = true;
+    endResetModel();
+    emit searchChanged();
 }
 
 void HistoryModel::append(const QList<Commit> &commits)
@@ -152,7 +364,7 @@ void HistoryModel::layoutRow(const Commit &commit)
 
 int HistoryModel::rowCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 0 : m_commits.size();
+    return parent.isValid() ? 0 : shown().size();
 }
 
 int HistoryModel::columnCount(const QModelIndex &parent) const
@@ -162,9 +374,9 @@ int HistoryModel::columnCount(const QModelIndex &parent) const
 
 QVariant HistoryModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || index.row() >= m_commits.size())
+    if (!index.isValid() || index.row() >= shown().size())
         return {};
-    const Commit &c = m_commits[index.row()];
+    const Commit &c = shown().at(index.row());
     switch (role) {
     case Qt::DisplayRole:
         switch (index.column()) {
@@ -197,7 +409,7 @@ QVariant HistoryModel::headerData(int section, Qt::Orientation orientation, int 
             return tr("Graph");
         return role == Qt::DisplayRole ? QVariant(QString()) : QVariant();
     }
-    // The titles read from the left, 10 px in (the section's padding), like
+    // The titles read from the left, 8 px in (the section's padding), like
     // the text of the column under them.
     if (role == Qt::TextAlignmentRole)
         return int(Qt::AlignLeft | Qt::AlignVCenter);

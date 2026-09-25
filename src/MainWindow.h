@@ -3,6 +3,7 @@
 #include "CommitPage.h"
 #include "DiffView.h"
 #include "GitRepo.h"
+#include "Grid.h"
 #include "PaneLayout.h"
 #include "RemoteSync.h"
 #include "TopBar.h"
@@ -187,8 +188,9 @@ private:
     // width for the window's width class.
     void applySplitterSizes();
     int defaultLeftWidth() const;
-    // The footer, or the room it leaves, for the window's height class.
-    void applyShallowChrome();
+    // The density of the window's classes: the margins, the gaps and the
+    // footer, or the room it leaves, and whoever lays out with them.
+    void applyDensity();
     // Whether the Mini rail is on screen: the Mini layout, or the Diff tab.
     bool railShowing() const;
     // A tab of the top bar, or Ctrl+1 / Ctrl+2: Changes and History are the
@@ -246,7 +248,8 @@ private:
     bool m_diffVisible = true;
     bool m_stacked = false; // the window is narrower than the stacking width
     WidthClass m_widthClass = WidthClass::Wide;
-    bool m_shallow = false; // the window is lower than the shallow height
+    HeightClass m_heightClass = HeightClass::Normal;
+    ui::Density m_density = ui::kRegularDensity; // of the two classes
     QVBoxLayout *m_rootLayout; // the top bar, the body and the footer
     QHBoxLayout *m_bodyLayout; // the rail and the splitter, inside the window's margins
     bool m_diffTab = false; // stacked: the Diff tab, rather than the mode's page

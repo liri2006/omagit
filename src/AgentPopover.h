@@ -85,8 +85,9 @@ private:
     void buildNoneInstalled();
     // A section's header row: the caption at the left, a note at the right.
     void addHeader(const QString &caption, const QString &note);
-    // A gap of `px` design pixels, re-measured by applyTheme().
-    void addGap(int px);
+    // A gap of `px` design pixels, less `less` pixels of a hairline standing
+    // in it, re-measured by applyTheme().
+    void addGap(int px, int less = 0);
     // A widget kept `px` design pixels tall by applyTheme().
     void fixHeight(QWidget *w, int px);
 
@@ -121,9 +122,15 @@ private:
     QStringList m_levels; // the track's stops, "" first for the default
 
     // What the current build holds; rebuild() replaces all of it.
-    QList<QPair<QSpacerItem *, int>> m_gaps;
+    struct Gap {
+        QSpacerItem *spacer;
+        int px;   // design px
+        int less; // px of a hairline inside it
+    };
+    QList<Gap> m_gaps;
     QList<QPair<QWidget *, int>> m_heights;
     QList<QLabel *> m_notes;  // QLabel#agentPopoverNote and #agentPopoverSmall: sized by the stylesheet
+    QList<QLabel *> m_captions; // the captions and their notes, on their 16 px lines
     QList<QWidget *> m_glyphs; // the none-installed robot
     QList<QLabel *> m_bold;   // the none-installed headline
     QList<QWidget *> m_commandRows;

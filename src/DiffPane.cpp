@@ -6,9 +6,11 @@
 #include "UiHelpers.h"
 
 #include <QAction>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
 #include <QSettings>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -27,10 +29,8 @@ void saveOption(QLatin1StringView key, const QVariant &value)
 // content is bounded and they scale with the text size like the rest.
 constexpr int kLabelledWidth = 900; // the view dropdown labelled from here up
 constexpr int kMiddleWidth = 560;   // Prev, Next and the view options on the row from here up
-// The design's gaps: between Prev and Next and between the view options, and
-// on either side of the counter.
-constexpr int kButtonGap = 4;
-constexpr int kCounterGap = 10;
+// The small 11 px text of the counter and the summary: a text size.
+constexpr int kSmallText = 11;
 
 // A resize that keeps the form must not relay out or repaint a button.
 void setTextOnce(QToolButton *b, const QString &text)
@@ -38,6 +38,90 @@ void setTextOnce(QToolButton *b, const QString &text)
     if (b->text() != text)
         b->setText(text);
 }
+
+// The counter and the summary after it (screens.js diffPane()): "Change 1 of
+// 2", "·", the status, "+4" and "−2", 8 apart but the two counts 4 apart.
+// Rich text has no way to space runs on the design's grid, so the label
+// paints them itself; its text stays the rich text of the same runs, their
+// colours included, which is what a screen reader (and a test) reads.
+class CounterLabel : public QLabel
+{
+public:
+    struct Run {
+        QString text;
+        QColor colour;
+        bool small = true; // the small 11 px text, or the body's
+        int gap = 0;       // design px before it
+    };
+
+    CounterLabel()
+    {
+        setTextFormat(Qt::RichText);
+        // It gives way to the buttons rather than widening the pane.
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        setMinimumWidth(0);
+    }
+
+    void setRuns(const QList<Run> &runs)
+    {
+        m_runs = runs;
+        QString html;
+        for (const Run &run : runs) {
+            if (!html.isEmpty())
+                html += QStringLiteral("&nbsp;");
+            html += QStringLiteral("<span style=\"color:%1\">%2</span>")
+                        .arg(run.colour.name(), run.text.toHtmlEscaped());
+        }
+        if (text() != html) {
+            setText(html);
+            update();
+        }
+    }
+
+    QSize sizeHint() const override { return QSize(runsWidth(), QLabel::sizeHint().height()); }
+    QSize minimumSizeHint() const override { return QSize(0, QLabel::sizeHint().height()); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        const QRect r = contentsRect();
+        int x = r.left();
+        for (const Run &run : std::as_const(m_runs)) {
+            x += space(run.gap);
+            const QFont font = fontOf(run);
+            const int w = QFontMetrics(font).horizontalAdvance(run.text);
+            if (x >= r.right() + 1)
+                break;
+            p.setFont(font);
+            p.setPen(run.colour);
+            // What does not fit is cut at the label's edge, as a narrow pane
+            // cut the rich text before.
+            p.drawText(QRect(x, r.top(), qMin(w, r.right() + 1 - x), r.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                       run.text);
+            x += w;
+        }
+    }
+
+private:
+    QFont fontOf(const Run &run) const
+    {
+        QFont font = OmarchyTheme::instance()->uiFont();
+        if (run.small)
+            font.setPixelSize(fontPx(kSmallText));
+        return font;
+    }
+
+    int runsWidth() const
+    {
+        int w = contentsMargins().left() + contentsMargins().right();
+        for (const Run &run : m_runs)
+            w += space(run.gap) + QFontMetrics(fontOf(run)).horizontalAdvance(run.text);
+        return w;
+    }
+
+    QList<Run> m_runs;
+};
 
 } // namespace
 
@@ -48,18 +132,17 @@ DiffPane::DiffPane(QWidget *parent)
     // user likes: the row folds down to its narrowest form (applyForm()), and
     // below that its buttons just get cut off at the edge.
     setMinimumWidth(1);
+    // The toolbar is a control row, 4 over the diff (screens.js diffPane()),
+    // so the diff's box starts 32 under the pane's top, level with the
+    // changes table and the commit list (applyTheme() rescales it).
     auto *rightLayout = new QVBoxLayout(this);
     rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->setSpacing(barGap()); // the toolbar to the diff (applyTheme() rescales it)
+    rightLayout->setSpacing(space(gap::controlRow));
 
     QHBoxLayout *navRow = m_navRow = new QHBoxLayout;
     m_prevButton = toolButton<KitButton>(icon(kArrowUp) + tr("Prev"), tr("Previous change (Shift+F8)"));
     m_nextButton = toolButton<KitButton>(icon(kArrowDown) + tr("Next"), tr("Next change (F8)"));
-    m_changeLabel = dimLabel();
-    // Let the label shrink instead of forcing the splitter to widen the diff pane.
-    m_changeLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    m_changeLabel->setMinimumWidth(0);
-    m_changeLabel->setTextFormat(Qt::RichText); // the summary's colours
+    m_changeLabel = new CounterLabel;
     navRow->addWidget(m_prevButton);
     navRow->addWidget(m_nextButton);
     navRow->addWidget(m_changeLabel, 1);
@@ -142,7 +225,7 @@ DiffPane::DiffPane(QWidget *parent)
 void DiffPane::applyTheme()
 {
     m_diff->refreshTheme();
-    layout()->setSpacing(barGap());
+    layout()->setSpacing(space(gap::controlRow));
     // The glyphs are looked up in the font of the moment.
     m_wsButton->setText(icon(kPilcrow, QStringLiteral("¶")).trimmed());
     m_syntaxButton->setText(icon(kCodeTags, QStringLiteral("<>")).trimmed());
@@ -193,9 +276,10 @@ void DiffPane::applyForm()
     if (m_optionsButton->isHidden() == compact)
         m_optionsButton->setHidden(!compact);
 
-    // The layout's own spacing is the gap between buttons; the counter's
-    // wider gap is that plus the label's side margins.
-    const int gap = space(kButtonGap), side = space(kCounterGap) - gap;
+    // The layout's own spacing is the gap between buttons acting as one (Prev
+    // and Next, the view options); the counter's 8 is that plus the label's
+    // side margins.
+    const int gap = space(gap::cluster), side = space(gap::item) - gap;
     if (m_navRow->spacing() != gap)
         m_navRow->setSpacing(gap);
     if (m_changeLabel->contentsMargins() != QMargins(side, 0, side, 0))
@@ -213,35 +297,31 @@ void DiffPane::updateViewButton()
     setTextOnce(m_viewButton, face + chevron());
 }
 
-// "Change n of m   ·   summary", or just "n/m" in the narrowest form. The
-// summary is small regular text in the colours of the design: the status in
-// its own, the added lines green, the removed ones red.
+// "Change n of m · summary", or just "n/m" in the narrowest form, in the
+// small dim text. The summary is the design's: the status in its own colour,
+// the added lines green, the removed ones red.
 void DiffPane::updateChangeLabel()
 {
+    const OmarchyTheme *theme = OmarchyTheme::instance();
     const int n = m_changeIndex < 0 ? 0 : m_changeIndex + 1;
-    QString text;
+    QList<CounterLabel::Run> runs;
     if (m_form == Form::Compact) {
         if (m_changeTotal > 0)
-            text = QStringLiteral("%1/%2").arg(n).arg(m_changeTotal);
+            runs.append({QStringLiteral("%1/%2").arg(n).arg(m_changeTotal), theme->mutedText()});
     } else {
-        text = m_changeTotal == 0 ? QString() : tr("Change %1 of %2").arg(n).arg(m_changeTotal);
+        if (m_changeTotal > 0)
+            runs.append({tr("Change %1 of %2").arg(n).arg(m_changeTotal), theme->mutedText()});
         if (!m_summary.status.isEmpty()) {
-            const OmarchyTheme *theme = OmarchyTheme::instance();
-            const QString span = QStringLiteral("<span style=\"color:%1; font-size:%2px; font-weight:normal\">%3</span>");
-            const int small = space(11);
-            QString summary = span.arg(m_summary.colour.name()).arg(small).arg(m_summary.status.toHtmlEscaped());
+            if (!runs.isEmpty())
+                runs.append({QStringLiteral("·"), theme->mutedText(), false, gap::item});
+            runs.append({m_summary.status, m_summary.colour, true, runs.isEmpty() ? 0 : gap::item});
             if (m_summary.added >= 0 && m_summary.removed >= 0) {
-                summary += QStringLiteral("&nbsp;&nbsp;")
-                    + span.arg(theme->diffAddedIcon().name()).arg(small).arg(QStringLiteral("+%1").arg(m_summary.added))
-                    + QStringLiteral("&nbsp;")
-                    + span.arg(theme->diffRemovedIcon().name()).arg(small).arg(QStringLiteral("−%1").arg(m_summary.removed));
+                runs.append({QStringLiteral("+%1").arg(m_summary.added), theme->diffAddedIcon(), true, gap::item});
+                runs.append({QStringLiteral("−%1").arg(m_summary.removed), theme->diffRemovedIcon(), true, gap::cluster});
             }
-            text = text.toHtmlEscaped();
-            text += (text.isEmpty() ? QString() : QStringLiteral("&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;")) + summary;
         }
     }
-    if (m_changeLabel->text() != text)
-        m_changeLabel->setText(text);
+    static_cast<CounterLabel *>(m_changeLabel)->setRuns(runs);
 }
 
 void DiffPane::addViewEntries(QMenu *menu)

@@ -57,7 +57,7 @@ private:
     // The children on the design's grid, for the size and the text size of
     // the moment.
     void place();
-    // The body's text in its 17 px lines.
+    // The body's text in its 16 px lines.
     void setBodyText(const QString &text);
     void updateFilesButton();
     void updateAccessibleText();

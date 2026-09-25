@@ -83,6 +83,7 @@ private:
     // The pickers side by side, or stacked for a narrow window; see
     // fitWidth(). Nothing happens when the form is the one on screen.
     void arrangePickers(bool stacked);
+    void applyPickerMetrics();
     QCheckBox *buildNoFastForwardBox();
     QHBoxLayout *buildButtonRow();
     void applyTheme();
@@ -120,6 +121,7 @@ private:
 
     QGridLayout *m_branchGrid;
     QHBoxLayout *m_swapRow = nullptr; // the stacked form's swap button and INTO caption
+    QHBoxLayout *m_buttonRow;         // Abort merge, Cancel, Merge
     int m_pickersStacked = -1;        // the arrangement on screen: 0 side by side, 1 stacked, -1 none yet
     QLabel *m_sourceCaption, *m_destinationCaption;
     BranchPicker *m_sourcePicker, *m_destinationPicker;

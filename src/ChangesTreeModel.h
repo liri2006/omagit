@@ -17,8 +17,8 @@ class ChangesModel;
 // so the table, the Mini rail and the tree can never disagree about what is
 // checked or what is current.
 //
-// Three columns: the design's 30 px checkbox, the name (which carries the
-// whole depth geometry, painted by the view's delegate), and a 30 px status
+// Three columns: the design's 32 px checkbox, the name (which carries the
+// whole depth geometry, painted by the view's delegate), and a 32 px status
 // pill. Directories carry a derived check state and a name and nothing else.
 class ChangesTreeModel : public QAbstractItemModel
 {

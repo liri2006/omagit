@@ -53,26 +53,16 @@ using namespace ui;
 namespace {
 constexpr int kRecentMax = 15;
 constexpr int kDefaultWidth = 1400, kDefaultHeight = 850;
-constexpr int kBodySpacing = 8;         // in the left section
-// Between the Mini rail and the diff pane, and the docked splitter's gap
-// between the left section and the diff pane (screens.js screen()): 12, and
-// 10 on the stacked Diff tab.
-constexpr int kPaneGap = 12, kStackedRailGap = 10;
-// The design's window grid (screens.js screen()), in 12 px-base pixels: the
-// body keeps the window's margin (ui::windowMargin()) at either side and
-// 10 px from the footer below it. From the top bar's hairline above it, it
-// keeps ui::barGap(), the gap between the bar's row and that hairline, so
-// the first rows of the body stand as far below the line as the bar's row
-// stands above it.
-constexpr int kBodyGap = 10;
 // The docked left section's width before the user drags the splitter, by the
 // width class of the window (design pixels): 560 from 1400 up, 400 from 1000,
 // 340 below that.
 constexpr int kWideWidth = 1400, kLargeWidth = 1000;
 constexpr int kLeftWide = 560, kLeftLarge = 400, kLeftMedium = 340;
-// Lower than this the window is shallow: the message box is one line, the
-// action bar takes its stacked form, whatever the width, and the footer goes.
-constexpr int kShallowHeight = 560;
+// Lower than the first the window is shallow: the message box is one line,
+// the action bar takes its stacked form, whatever the width, and the footer
+// goes. From the second up it is tall. Between the two it is normal; the
+// class steps the block gap (screens.js SHALLOW, TALL, density()).
+constexpr int kShallowHeight = 560, kTallHeight = 1000;
 // Narrower than this (design pixels, so it follows the text size) the body
 // stacks: one presentation at a time, picked by the top bar's tabs.
 constexpr int kStackWidth = 700;
@@ -194,7 +184,7 @@ void MainWindow::buildUi()
     left->setMinimumWidth(1);
     auto *leftLayout = new QVBoxLayout(left);
     leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setSpacing(kBodySpacing);
+    leftLayout->setSpacing(0);
 
     // Pull / Push / Fetch act on the whole repository, so they are the same
     // in both modes. The Pull badge is the number of commits waiting on the
@@ -266,7 +256,8 @@ void MainWindow::buildUi()
 
     auto *splitter = new QSplitter(Qt::Horizontal);
     m_splitter = splitter;
-    splitter->setHandleWidth(space(kPaneGap)); // applyTheme() keeps it on the text size
+    // The handle is the pane gap, the window's side margin (applyDensity()).
+    splitter->setHandleWidth(space(m_density.margin));
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(left);
     splitter->addWidget(m_diffPane);
@@ -730,28 +721,28 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 
 void MainWindow::updateStacking()
 {
-    // The width class and the height class first: they only ever size things
-    // (the message box, the left section, the action bar), and nothing of
-    // them is saved.
-    const int w = width();
+    // The width class and the height class first, and the density they make:
+    // they only ever size things (the margins and gaps, the message box, the
+    // left section, the action bar), and nothing of them is saved.
+    const int w = width(), h = height();
     const bool stacked = w < space(kStackWidth);
     const WidthClass widthClass = stacked ? WidthClass::Stacked
         : w >= space(kWideWidth)         ? WidthClass::Wide
         : w >= space(kLargeWidth)        ? WidthClass::Large
                                          : WidthClass::Medium;
-    const bool shallow = height() < space(kShallowHeight);
+    const HeightClass heightClass = h < space(kShallowHeight) ? HeightClass::Shallow
+        : h >= space(kTallHeight)                            ? HeightClass::Tall
+                                                              : HeightClass::Normal;
     const bool widthClassChanged = widthClass != m_widthClass;
-    if (widthClassChanged || shallow != m_shallow) {
+    if (widthClassChanged || heightClass != m_heightClass) {
         m_widthClass = widthClass;
-        if (shallow != m_shallow) {
-            m_shallow = shallow;
-            applyShallowChrome();
-        }
-        m_commitPage->setWindowClass(widthClass, shallow);
+        m_heightClass = heightClass;
+        applyDensity();
+        m_commitPage->setWindowClass(widthClass, heightClass);
     }
     // On every pass: the narrowest stacked widths, which the width classes do
     // not tell apart from the others, leave the remote chips out of its rows.
-    m_history->setWindowClass(widthClass, shallow, w < space(kExtraSmallWidth));
+    m_history->setWindowClass(widthClass, heightClass, w < space(kExtraSmallWidth));
 
     if (stacked == m_stacked) {
         // A new width class is a new default width for a left section the
@@ -771,7 +762,6 @@ void MainWindow::updateStacking()
         m_commitPopover->dismiss();
         m_diffTab = false;
     }
-    m_bodyLayout->setSpacing(space(stacked ? kStackedRailGap : kPaneGap));
     m_topBar->setStacked(stacked);
     m_commitPage->setStacked(stacked);
     m_history->setStacked(stacked);
@@ -782,15 +772,27 @@ void MainWindow::updateStacking()
         applySplitterSizes();
 }
 
-// A shallow window has no footer (screens.js screen(): footH = 0), and the
-// body ends the window's side margin over its bottom edge — the user's
-// choice over the design's 10 + 12. Messages for the footer are simply not
-// shown, and the keybindings stay on Ctrl+K.
-void MainWindow::applyShallowChrome()
+// The window's grid for its classes (screens.js screen(), density()): the
+// body stands 8 under the top bar's hairline and 8 over the footer's, the
+// side margin in from either edge, its panes a margin apart (the splitter's
+// handle, the Mini rail's gap to the diff). A shallow window has no footer
+// (footH = 0): the body ends the side margin over the window's bottom edge.
+// Messages for the footer are simply not shown there, and the keybindings
+// stay on Ctrl+K. Whatever clamps to the window reads the margin off it
+// (ui::windowMargin()).
+void MainWindow::applyDensity()
 {
-    m_footer->setVisible(!m_shallow);
-    m_rootLayout->setContentsMargins(0, 0, 0, m_shallow ? windowMargin() : 0);
-    m_bodyLayout->setContentsMargins(windowMargin(), barGap(), windowMargin(), m_shallow ? 0 : space(kBodyGap));
+    m_density = densityFor(m_widthClass, m_heightClass);
+    const bool shallow = m_heightClass == HeightClass::Shallow;
+    const int margin = space(m_density.margin);
+    setWindowMargin(this, m_density.margin);
+    m_footer->setVisible(!shallow);
+    m_rootLayout->setContentsMargins(0, 0, 0, shallow ? margin : 0);
+    m_bodyLayout->setContentsMargins(margin, space(kBar), margin, shallow ? 0 : space(kBar));
+    m_bodyLayout->setSpacing(margin);
+    m_splitter->setHandleWidth(margin);
+    m_topBar->setDensity(m_density);
+    m_footer->setDensity(m_density);
 }
 
 // The design's width of the left section for the window's width class.
@@ -842,9 +844,7 @@ void MainWindow::applyTheme()
     const OmarchyTheme *theme = OmarchyTheme::instance();
     // The window's grid, in design pixels.
     m_rootLayout->setSpacing(0); // the body's own margins keep the gaps
-    applyShallowChrome();
-    m_bodyLayout->setSpacing(space(m_stacked ? kStackedRailGap : kPaneGap));
-    m_splitter->setHandleWidth(space(kPaneGap));
+    applyDensity();
     m_diffPane->applyTheme();
     m_topBar->applyTheme();
     m_commitPage->applyTheme();
@@ -1074,14 +1074,18 @@ void MainWindow::showHistoryDiff()
 {
     if (m_mode != HistoryMode)
         return;
-    {
-        bool ok = false;
-        const Commit cur = m_history->currentCommit(&ok);
-        m_rail->setCommitLabel(ok ? cur.shortHash : QString(), ok ? cur.subject : QString());
-    }
     Commit c;
     FileChange f;
-    if (!m_history->currentFile(&c, &f)) {
+    const bool hasFile = m_history->currentFile(&c, &f);
+    {
+        // The files' commit where there is a file: a refresh's search that
+        // is still bringing the commit back leaves no row current, but its
+        // files, and the file's diff, show on.
+        bool ok = hasFile;
+        const Commit cur = hasFile ? c : m_history->currentCommit(&ok);
+        m_rail->setCommitLabel(ok ? cur.shortHash : QString(), ok ? cur.subject : QString());
+    }
+    if (!hasFile) {
         m_diffPane->clearSummary();
         m_diffPane->view()->clear(m_history->emptyMessage());
         return;

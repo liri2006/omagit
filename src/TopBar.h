@@ -5,6 +5,7 @@
 #include <QString>
 #include <QWidget>
 
+#include "Grid.h"
 #include "Segmented.h"
 
 class BadgeButton;
@@ -76,6 +77,8 @@ public:
     // Re-fetches the glyphs and the fonts, re-scales every design distance and
     // measures the row again.
     void applyTheme();
+    // The window's density: the row keeps its side margin.
+    void setDensity(const ui::Density &density);
 
     // 0 spells everything out, 6 is the narrowest form (2 while stacked); what
     // the current width fits (see the tables in TopBar.cpp).
@@ -118,20 +121,21 @@ private:
     // What the row measures, in the pixels of the moment.
     struct Metrics {
         int repoFull = 0;    // folder glyph + name + chevron
-        int repoFolded = 0;  // the bare folder glyph: space(28)
+        int repoFolded = 0;  // the bare folder glyph: 8 + 16 + 8
         int branchFull = 0;
         int branchLabel = 0;    // the name inside it, on its own
         int branchChrome = 0;   // and what the button puts around it
         int branchEllipsis = 0; // a lone "…" in the chip's font: the stacked row's floor
-        int more = 0;           // the more button: the icon form's square
+        int more = 0;           // the more button: the design's 28 px square
         int tabsLabels = 0;
         int tabsGlyphs = 0;
         int toggles = 0; // both, with the gap between them
-        int divider = 0; // the gap, the line and the gap
+        int divider = 0; // the group gap, the line at its middle
         int height = 0;  // the row's
     };
 
     void measure();
+    void applyMargins();
     void relayout();
     // What level `level` comes to with `branchLabelWidth` of the branch name.
     int totalWidth(int level, int branchLabelWidth) const;
@@ -182,6 +186,7 @@ private:
     QString m_repositoryName;
     QString m_branchLabel;
     Metrics m_metrics;
+    ui::Density m_density = ui::kRegularDensity;
     int m_level = 0;
     bool m_stacked = false;
 };

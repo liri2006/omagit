@@ -49,6 +49,22 @@ struct Commit {
     bool isValid() const { return !hash.isEmpty(); }
 };
 
+// The records of `git log -z` in the format GitRepo::log() asks for, read as
+// they come in: feed() takes whatever the pipe had and returns the commits it
+// completes, keeping what follows the last NUL for the next call, so a chunk
+// may end anywhere — inside a multi-byte character too, as a record is only
+// decoded whole. finish() returns what is left, for a last record git did not
+// end with a NUL.
+class LogStreamParser
+{
+public:
+    QList<Commit> feed(const QByteArray &chunk);
+    QList<Commit> finish();
+
+private:
+    QByteArray m_tail;
+};
+
 // A branch/tag/remote decoration attached to a commit in the history view.
 struct RefLabel {
     enum Type { Branch, Remote, Tag, DetachedHead };
@@ -243,6 +259,31 @@ public:
     // `count` commits starting `skip` commits after the tip, parents never before
     // their children (--date-order). ok is false if git failed (e.g. no commits).
     QList<Commit> log(int skip, int count, bool allRefs, bool *ok = nullptr) const;
+    // The commits log() walks from, as the refs stand now: HEAD's, and with
+    // `allRefs` every ref's (tags peeled to their commits, refs to anything
+    // else left out), in a stable order. Empty without commits; ok is false
+    // where git failed.
+    QStringList logStartPoints(bool allRefs, bool *ok = nullptr) const;
+    // The history log() pages through, walked from `startPoints`
+    // (logStartPoints()) and nothing else, without blocking, from `skip`
+    // commits in on: however the refs move meanwhile, the same start points
+    // are the same walk, so a later call skips exactly the commits an earlier
+    // one printed. `batch` gets the commits as git prints them, in log()'s
+    // order, and `done(ok)` follows once git has exited (ok false where git
+    // failed or was killed after the timeout). No start point is an empty
+    // history: `done(true)` from the event loop, and no process. Neither is
+    // called once `context` is gone. The process is runAsync()'s kind; a
+    // caller that loses interest disconnects from it and kills it
+    // (abandonProcess()).
+    QProcess *logStream(const QStringList &startPoints, int skip, QObject *context,
+                        std::function<void(const QList<Commit> &)> batch, std::function<void(bool ok)> done);
+    // Has git write its commit-graph file (`git commit-graph write
+    // --reachable`, as `git gc` does) where the repository has none yet,
+    // without blocking: a walk that skips commits (`--date-order` and
+    // `--skip`) sorts the whole history before it prints anything unless it
+    // can read the graph. Nothing waits for it, and a failure goes unsaid (a
+    // read-only repository simply stays without one).
+    void ensureCommitGraph();
     QHash<QString, QList<RefLabel>> refs() const;
     QList<FileChange> commitChanges(const Commit &commit) const;
     QString commitDiff(const Commit &commit, const FileChange &change, bool *binary = nullptr) const;
@@ -280,6 +321,12 @@ private:
     // The two -c options every command carries, in front of `args`.
     static QStringList fullArgs(const QStringList &args);
     void prepare(QProcess &p, const QStringList &env, bool terminalPrompt) const;
+    // Starts git the way runAsync() and logStream() do: this object's
+    // process, killed after `timeoutMs` and deleting itself when done.
+    // `listen` connects the caller's callbacks before git starts; `input`,
+    // where there is any, is git's stdin, closed after it.
+    QProcess *startAsync(const QStringList &args, int timeoutMs, const QStringList &env,
+                         const std::function<void(QProcess *)> &listen, const QByteArray &input = QByteArray());
     GitResult exec(const QStringList &args, int timeoutMs = kQueryTimeoutMs,
                    const QStringList &env = QStringList()) const;
     // Hands git's own words to the caller: `error` gets stderr, or `fallback`

@@ -8,13 +8,14 @@
 #include <QVariantAnimation>
 
 namespace {
-// The design's badge (design/figma-gen/kit.js badge()), in 12 px-base pixels:
-// its right edge this far past the button's, its top this far above it.
-constexpr int kBadgeRight = 4;
-constexpr int kBadgeRise = 5;
-constexpr int kBadgeHeight = 14;
-constexpr int kBadgeTextPad = 8; // both sides of the text together
-constexpr int kBusyExtra = 6;    // the walking dots' box over a square
+// The design's badge (design/figma-gen/kit.js button(), badge()), in 12 px-base
+// pixels: 12 high and at least as wide, 2 either side of its text, its right
+// edge 4 past the button's and its top 4 above it (hanging 4 into the gap the
+// buttons of a row keep between them). The design has no busy badge: the
+// walking dots get a pill's 16 px.
+constexpr int kBadgeHang = 4;
+constexpr int kBadgeTextPad = 2;
+constexpr int kBusyWidth = 16;
 } // namespace
 
 BadgeButton::BadgeButton(QWidget *parent)
@@ -28,13 +29,13 @@ BadgeButton::BadgeButton(QWidget *parent)
     connect(m_pop, &QVariantAnimation::valueChanged, this, &BadgeButton::badgeRepaint);
 }
 
-// The caption font, bold and a shade smaller: small enough for a corner,
-// still legible against the accent colour.
+// The bold 10 px caption, without the letter spacing of the section captions
+// (kit.js badge()).
 QFont BadgeButton::badgeFont() const
 {
     QFont f = OmarchyTheme::instance()->captionFont();
     f.setBold(true);
-    f.setPixelSize(qMax(8, f.pixelSize() - 1));
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 0);
     return f;
 }
 
@@ -115,11 +116,11 @@ bool BadgeButton::hasBadge() const
 
 QRect BadgeButton::badgeRect(const QRect &button) const
 {
-    const int h = ui::space(kBadgeHeight);
-    const int w = m_busy ? h + ui::space(kBusyExtra)
-                         : qMax(h, QFontMetrics(badgeFont()).horizontalAdvance(badgeText()) + ui::space(kBadgeTextPad));
-    const int right = button.right() + 1 + ui::space(kBadgeRight); // the edge, one past the last column
-    return QRect(right - w, button.top() - ui::space(kBadgeRise), w, h);
+    const int h = ui::space(ui::box::badge);
+    const int w = m_busy ? ui::space(kBusyWidth)
+                         : qMax(h, QFontMetrics(badgeFont()).horizontalAdvance(badgeText()) + 2 * ui::space(kBadgeTextPad));
+    const int right = button.right() + 1 + ui::space(kBadgeHang); // the edge, one past the last column
+    return QRect(right - w, button.top() - ui::space(kBadgeHang), w, h);
 }
 
 void BadgeButton::paintBadge(QPainter *p, const QRect &button) const

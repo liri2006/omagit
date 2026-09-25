@@ -16,32 +16,26 @@
 using namespace ui;
 
 namespace {
-// screens.js commitDetails(), in the pixels of a 12 px base font. The lines
-// are placed by their vertical centre, as the design places text: the title
-// at 16, the meta line at 38, the parents at 56 and the body's first line at
-// 78, its lines 17 apart. Every line starts 12 px in.
-constexpr int kInset = 12;
-constexpr int kTitleY = 16, kMetaY = 38, kParentsY = 56, kBodyY = 78;
-constexpr int kLineHeight = 17;
-constexpr int kTitleText = 13, kSmallText = 11;
-// Between the parts of the meta line, the parents and the first chip; and
-// between two chips.
-constexpr int kPartGap = 12, kChipGap = 6;
-// The body's room ends this far above the card's bottom edge; stacked, the
-// files button stands in that room.
-constexpr int kBodyBottom = 8, kStackedBodyBottom = 30;
+// screens.js commitDetails(), on the grid of Grid.h: the card's padding is a
+// popover's 12, its buttons standing 4 closer to its edges (8 in) so their
+// glyphs sit on that padding. The title on a 24 px row 8 from the top, then
+// 16 px lines: the meta line, 4, the parents with their chips, 8, the body.
+// The lines are placed by their vertical centre, as the design places text:
+// the title at 20, the meta line at 40, the parents at 60 and the body's
+// first line at 84.
+constexpr int kButtonInset = pad::popover - gap::icon;
+constexpr int kTitleY = kButtonInset + box::row / 2;
+constexpr int kMetaY = kButtonInset + box::row + box::line / 2;
+constexpr int kParentsY = kMetaY + box::line + gap::cluster;
+constexpr int kBodyY = kParentsY + box::line + gap::item;
+constexpr int kTitleText = 13, kSmallText = 11; // text sizes
 // What the rounding of scaled pixels may take off the body's room, at most.
 constexpr int kRoundingSlack = 2;
-// The copy button, 6 px from the top and the right edges.
-constexpr int kCopyInset = 6;
-// The stacked files button: 24 px tall, at least 90 wide, 8 px from the right
-// and the bottom edges.
-constexpr int kFilesHeight = 24, kFilesWidth = 90, kFilesInset = 8, kFilesPad = 10;
 
 QFont sizedFont(int px, bool bold = false)
 {
     QFont font = OmarchyTheme::instance()->uiFont();
-    font.setPixelSize(space(px));
+    font.setPixelSize(fontPx(px));
     font.setBold(bold);
     return font;
 }
@@ -146,7 +140,7 @@ void CommitDetails::applyTheme()
     m_body->setPalette(pal);
     setBodyText(m_body->toPlainText()); // the line height is in scaled pixels
     m_copy->setText(icon(kContentCopy, QStringLiteral("⧉")).trimmed());
-    m_filesButton->setFixedHeight(space(kFilesHeight));
+    m_filesButton->setFixedHeight(space(box::row));
     updateFilesButton();
     place();
     updateGeometry();
@@ -187,13 +181,13 @@ QSize CommitDetails::minimumSizeHint() const
     // The parents line's chips end 8 px under its centre; under them, the
     // body's bottom room, or the files button and its inset.
     const int header = space(kParentsY) + refChipHeight() / 2;
-    const int bottom = m_stacked ? space(kFilesHeight + kFilesInset) : space(kBodyBottom);
-    return QSize(space(2 * kInset), header + bottom);
+    const int bottom = m_stacked ? space(box::row + kButtonInset) : space(pad::popover);
+    return QSize(space(2 * pad::popover), header + bottom);
 }
 
 QSize CommitDetails::sizeHint() const
 {
-    return QSize(space(400), space(150));
+    return QSize(space(400), space(152));
 }
 
 void CommitDetails::resizeEvent(QResizeEvent *event)
@@ -204,20 +198,22 @@ void CommitDetails::resizeEvent(QResizeEvent *event)
 
 void CommitDetails::place()
 {
-    const int inset = space(kInset);
+    const int inset = space(pad::popover);
     // By the square the button is sized to rather than its width of the
     // moment: on a new text size it may only be resized after this.
     const int copySide = space(int(IconButtonSize::Inline));
-    m_copy->move(width() - space(kCopyInset) - copySide, space(kCopyInset));
-    m_filesButton->move(width() - space(kFilesInset) - m_filesButton->width(),
-                        height() - space(kFilesInset) - m_filesButton->height());
+    m_copy->move(width() - space(kButtonInset) - copySide, space(kButtonInset));
+    m_filesButton->move(width() - space(kButtonInset) - m_filesButton->width(),
+                        height() - space(kButtonInset) - m_filesButton->height());
     // The first line's baseline where the design has it: Qt sets a line of
     // fixed height with its baseline four fifths of the way down it
     // (QTextDocumentLayout), so the body starts that far above the baseline.
-    const int line = space(kLineHeight);
+    const int line = space(box::line);
     const int baseline = baselineAt(kBodyY, m_body->font());
     const int top = qRound(baseline - 0.8 * line);
-    int room = height() - space(m_stacked ? kStackedBodyBottom : kBodyBottom) - top;
+    // The body's room ends at the card's padding; stacked, the files button
+    // stands in the 24 px over it.
+    int room = height() - space(pad::popover) - (m_stacked ? space(box::row) : 0) - top;
     // At 12 px the stacked room is exactly two lines; the rounding of another
     // text size can leave it a pixel or two short of them, which the body
     // takes rather than scrolling its second line away.
@@ -231,20 +227,21 @@ void CommitDetails::setBodyText(const QString &text)
 {
     m_body->setPlainText(text);
     QTextBlockFormat format;
-    format.setLineHeight(space(kLineHeight), QTextBlockFormat::FixedHeight);
+    format.setLineHeight(space(box::line), QTextBlockFormat::FixedHeight);
     QTextCursor cursor(m_body->document());
     cursor.select(QTextCursor::Document);
     cursor.mergeBlockFormat(format);
 }
 
-// "2 files ›", 24 px tall and at least the design's 90 px wide, its text
-// centred; only stacked, and only for a commit that touches a file at all.
+// "2 files ›", a 24 px ghost button with its text 8 in (kit.js
+// measureButton({label})); only stacked, and only for a commit that touches
+// a file at all.
 void CommitDetails::updateFilesButton()
 {
     const QString text = m_files == 1 ? tr("1 file ›") : tr("%1 files ›").arg(m_files);
     m_filesButton->setText(text);
     const int advance = m_filesButton->fontMetrics().horizontalAdvance(text);
-    m_filesButton->setFixedWidth(qMax(space(kFilesWidth), advance + 2 * space(kFilesPad)));
+    m_filesButton->setFixedWidth(advance + 2 * space(pad::control));
     m_filesButton->setVisible(m_stacked && m_hasCommit && m_files > 0);
     place();
 }
@@ -266,19 +263,19 @@ void CommitDetails::paintEvent(QPaintEvent *event)
         return;
     const OmarchyTheme *theme = OmarchyTheme::instance();
     QPainter p(this);
-    const int left = space(kInset);
-    const int right = width() - space(kInset);
+    const int left = space(pad::popover);
+    const int right = width() - space(pad::popover);
 
     // The subject, elided before the copy button.
     const QFont titleFont = sizedFont(kTitleText, true);
     const QFontMetrics titleMetrics(titleFont);
-    const int titleRoom = qMax(0, m_copy->x() - space(kCopyInset) - left);
+    const int titleRoom = qMax(0, m_copy->x() - space(gap::item) - left);
     p.setFont(titleFont);
     p.setPen(theme->text());
     p.drawText(QPoint(left, baselineAt(kTitleY, titleFont)),
                titleMetrics.elidedText(m_commit.subject, Qt::ElideRight, titleRoom));
 
-    // The meta line: the short SHA in the accent, the rest dim, 12 px apart;
+    // The meta line: the short SHA in the accent, the rest dim, 12 apart;
     // whatever does not fit is elided at the card's inner edge.
     const QFont small = sizedFont(kSmallText);
     const QFontMetrics smallMetrics(small);
@@ -292,7 +289,7 @@ void CommitDetails::paintEvent(QPaintEvent *event)
         p.setPen(i == 0 ? theme->accent() : theme->mutedText());
         p.drawText(QPoint(x, metaBaseline),
                    advance <= room ? parts.at(i) : smallMetrics.elidedText(parts.at(i), Qt::ElideRight, room));
-        x += advance + space(kPartGap);
+        x += advance + space(pad::popover);
     }
 
     // The parents, then every ref the commit wears (the remote ones too,
@@ -304,13 +301,13 @@ void CommitDetails::paintEvent(QPaintEvent *event)
     p.drawText(QPoint(left, baselineAt(kParentsY, small)),
                parentsAdvance <= right - left ? parents
                                               : smallMetrics.elidedText(parents, Qt::ElideRight, right - left));
-    x = left + parentsAdvance + space(kPartGap);
+    x = left + parentsAdvance + space(pad::popover);
     const int chipTop = space(kParentsY) - refChipHeight() / 2;
     for (const RefLabel &label : std::as_const(m_refs)) {
         const int w = refChipWidth(label);
         if (x + w > right)
             break;
         paintRefChip(&p, QPoint(x, chipTop), label);
-        x += w + space(kChipGap);
+        x += w + space(gap::cluster);
     }
 }

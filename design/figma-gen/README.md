@@ -6,8 +6,14 @@ Generates the design frames for the Omagit Figma file
     npm install
     node build.js          # writes out/*.svg and out/frames.json
 
-- `kit.js` — theme palettes (Moodpeak dark/light), type scale, SVG primitives and
-  the widget builders (buttons, fields, chips, tables, diff rows, menus, dialogs).
+- `kit.js` — theme palettes (Moodpeak dark/light), type scale, the 4 px grid
+  (`GRID`, the spacing scale `SP`, sizes `BOX`, padding `PAD`, gaps `GAP`,
+  per-window `DENSITY`, `BAR`), SVG primitives and the widget builders
+  (buttons, fields, chips, tables, diff rows, menus, dialogs). `icon()` takes a
+  box: the glyph fills 7/8 of it (14 in 16).
+- Every composer takes its numbers from those tokens; `screens.js`'s
+  `density(W, H)` picks the side margins and pane gaps by width class and the
+  block and section gaps by height class.
 - `screens.js` — the full window at every width/height class (wide, half,
   quarter, third, eighth, shallow) and its overlays. The Changes | History
   view toggle (plus Diff when stacked) is centred in the top bar; Refresh sits
@@ -20,6 +26,16 @@ Generates the design frames for the Omagit Figma file
   table header cell and Amend in the action bar next to Commit.
   The changes list has three views (`filesView`: table, compact, lazygit-style
   tree via `fileTree`), switched by three icon buttons on the CHANGES row.
+  CHANGES is the top section and MESSAGE the bottom one, over the action bar;
+  the agent popover hangs under its cog, or stands over it where the frame
+  has no room below (`agentPopoverHeight`).
+- Proposals (2026-09-25), for going past the history search's 10,000-match
+  cap: `historyPage` takes `search: { value, proposal: 'A'…'D', on, menu }`
+  (a filter's matches: no graph, Author in every class, `FIX_MATCHES`), the
+  `searchOptions` overlay is proposal D's menu, and `searchProposals()` in
+  `sheets.js` is the notes sheet. In Figma they sit in the section
+  "Proposals · Full history search" at the bottom of Screens · Half &
+  Quarter (the Starter plan has no room for a page of their own).
 - `sheets.js` — Cover, Foundations, Components and Layout-rules sheets.
 - `build.js` — the frame list; `out/frames.json` records name, page and x offset.
 
@@ -58,6 +74,13 @@ kind, rect and props, recorded by the builders in `kit.js`) and `out/icons.json`
 - `figma/fold-count.js` — one-off (2026-09-18): relabels every CHANGES section
   title to "CHANGES · 5/7" and every Commit button to "Commit 5 files" (hugging
   the right-aligned ones), and deletes the old "5 / 7 selected" texts.
+- `figma/grid-rebuild.js` — one-off (2026-09-24): the move to the 4 px grid.
+  The controls changed anatomy (16 px icon boxes, 8 px padding, 4 px gaps, 12 px
+  badges, 16 px checkboxes), so it swapped the Components frame for a fresh
+  import of the sheet (`__omGrid.prepare()`, then `build-components.js` and
+  `replace-instances.js` on it), re-imported every frame in place keeping the
+  layer order (`__omGrid.batch(ids)`) and deleted the old frame once nothing
+  used its components (`__omGrid.finish()`).
 - `figma/replace-instances.js` — swaps the flat SVG groups in every frame for
   instances of those components, matched by layer name and position from the
   manifest; light-theme frames get their instances rebound to the Light styles.

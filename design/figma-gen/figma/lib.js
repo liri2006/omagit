@@ -82,6 +82,8 @@ om.retheme = (root, to = 'Light') => {
 om.propKey = (node, name) => Object.keys(node.componentPropertyDefinitions || node.componentProperties || {}).find(k => k === name || k.startsWith(name + '#'));
 om.setProps = (inst, props) => { const o = {}; for (const [k, v] of Object.entries(props)) { const key = om.propKey(inst, k); if (key) o[key] = v; else om.say('  no prop', k, 'on', inst.name); } if (Object.keys(o).length) inst.setProperties(o); };
 om.child = (node, name) => node.findOne(n => n.name === name);
+// An Icon variant: a 16 px box with the MDI glyph (24 grid) drawn at 14 in its middle, as kit.js icon() draws it.
+om.iconSvg = d => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="-1.7142857 -1.7142857 27.4285714 27.4285714"><path d="${d}" fill="#000000"/></svg>`;
 om.readFile = async name => { const inp = document.getElementById('__omfile'); const f = [...inp.files].find(f => f.name === name); if (!f) throw new Error('file not uploaded: ' + name); return f.text(); };
 om.say('lib ready; vars', 0, 'styles', 0);
 'lib loaded';

@@ -53,9 +53,7 @@ class MiniRail : public QWidget
 {
     Q_OBJECT
 public:
-    // The design's rail width, in the pixels of a 12 px text size: one tile.
-    static constexpr int kWidth = 40;
-    // The rail's width at the text size of the moment.
+    // The rail's width at the text size of the moment: one tile.
     static int railWidth();
 
     explicit MiniRail(QWidget *parent = nullptr);
@@ -110,6 +108,7 @@ private:
     MiniRailList *m_list;
     QVBoxLayout *m_layout;
     QWidget *m_commitSection;      // the gaps, the separator and the tile, shown together
+    QSpacerItem *m_refreshGap;     // the list's separator to Refresh
     QSpacerItem *m_ruleGap;        // Refresh to the separator
     QSpacerItem *m_tileGap;        // the separator to the tile's badge room
     QToolButton *m_commitTile;

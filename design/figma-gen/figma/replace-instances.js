@@ -33,8 +33,8 @@
         if (!chip && r.bold) om.child(inst, 'Label').textStyleId = om.text['Body 12/Bold'].id;
         if (!chip && r.iconAccent) om.fill(om.child(om.child(inst, 'Icon'), 'glyph'), 'Accent');
         if (r.busy) om.fill(om.child(inst, 'Label'), 'Accent');
-        if (r.iconSize && r.iconSize !== 14) om.child(inst, 'Icon').resize(r.iconSize, r.iconSize);
-        if (r.px && r.px !== 10) { try { inst.paddingLeft = r.px; inst.paddingRight = r.px; } catch (e) { om.say('  padding override failed', e.message); } }
+        if (r.iconSize && r.iconSize !== 16) om.child(inst, 'Icon').resize(r.iconSize, r.iconSize);
+        if (r.px !== undefined && r.px !== inst.paddingLeft) { try { inst.paddingLeft = r.px; inst.paddingRight = r.px; } catch (e) { om.say('  padding override failed', e.message); } }
         if (r.fixed) { inst.layoutSizingHorizontal = 'FIXED'; inst.resize(r.w, r.h); }
         else if (r.h !== 28) { inst.resize(inst.width, r.h); inst.layoutSizingHorizontal = 'HUG'; }
         return inst;

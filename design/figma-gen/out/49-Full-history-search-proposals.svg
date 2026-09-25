@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="Full history search · proposals" width="1640" height="620" viewBox="0 0 1640 620">
+<rect x="0" y="0" width="1640" height="620" id="bg" fill="#181c22"/>
+<text x="40" y="53.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading Full history search · proposals" xml:space="preserve">Full history search · proposals</text>
+<text x="40" y="88.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">The history filter searches the whole history (one git log, every commit matched in the app) and stops at 10,000 matches, so a broad filter in a huge repository cannot hold the whole history</text>
+<text x="40" y="106.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">in memory (measured: +200 MB at 300k commits). How does the user turn on the full search?</text>
+<text x="40" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">Frames per proposal: Half 945×1234 when the cap is hit, Half with the full search on (running), Eighth 470×612 when the cap is hit. The filter is &quot;fix&quot;; a filter's matches show no graph,</text>
+<text x="40" y="142.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">Author shows in every class.</text>
+<g id="Proposal A">
+<rect x="40.5" y="180.5" width="369" height="279" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<text x="56" y="213.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">A · Count-row action</text>
+<rect x="320" y="200" width="74" height="16" fill="#4ecdc4"/>
+<text x="357" y="211.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">RECOMMENDED</text>
+<text x="56" y="240.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">When a search stops at the cap, the count row</text>
+<text x="56" y="258.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">says &quot;10,000+ matches&quot; and offers Find all</text>
+<text x="56" y="276.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">matches at its right; while that runs,</text>
+<text x="56" y="294.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">&quot;Searching… 14,203 matches&quot; and Stop. It lasts</text>
+<text x="56" y="312.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">for that search: the next filter is capped</text>
+<text x="56" y="330.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">again.</text>
+<text x="56" y="362.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">+</text>
+<text x="72" y="362.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Shows up only when it matters, says what it</text>
+<text x="72" y="380.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">does, no new chrome, the same at every</text>
+<text x="72" y="398.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">width.</text>
+<text x="56" y="424.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#ff7b92" xml:space="preserve">−</text>
+<text x="72" y="424.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Not a setting: someone who always wants</text>
+<text x="72" y="442.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">everything clicks it every time.</text>
+</g>
+<g id="Proposal B">
+<rect x="430.5" y="180.5" width="369" height="279" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="446" y="213.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">B · Filter-row toggle</text>
+<text x="446" y="240.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">An ∞ &quot;No limit&quot; toggle between All branches</text>
+<text x="446" y="258.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">and Refresh, a scope switch like All branches:</text>
+<text x="446" y="276.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">on, every search finds all matches.</text>
+<text x="446" y="294.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Remembered. Capped, the count points at it.</text>
+<text x="446" y="326.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">+</text>
+<text x="462" y="326.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">A real on / off, always visible, next to its</text>
+<text x="462" y="344.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">sibling scope toggle.</text>
+<text x="446" y="370.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#ff7b92" xml:space="preserve">−</text>
+<text x="462" y="370.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">A permanent 28 px button for a rare need;</text>
+<text x="462" y="388.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">the field loses 36 px (about 140 px left at</text>
+<text x="462" y="406.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">M).</text>
+</g>
+<g id="Proposal C">
+<rect x="820.5" y="180.5" width="369" height="279" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="836" y="213.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">C · In-field toggle</text>
+<text x="836" y="240.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">An ∞ toggle inside the field, before the clear</text>
+<text x="836" y="258.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">×, like VS Code's search options: on, no</text>
+<text x="836" y="276.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">limit. Remembered. Capped, the count points at</text>
+<text x="836" y="294.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">it.</text>
+<text x="836" y="326.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">+</text>
+<text x="852" y="326.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">A setting that costs no row width and sits</text>
+<text x="852" y="344.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">with the search it changes.</text>
+<text x="836" y="370.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#ff7b92" xml:space="preserve">−</text>
+<text x="852" y="370.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Small and easy to miss; a new pattern in the</text>
+<text x="852" y="388.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">app.</text>
+</g>
+<g id="Proposal D">
+<rect x="1210.5" y="180.5" width="369" height="279" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="1226" y="213.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">D · Search options menu</text>
+<text x="1226" y="240.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">A tune button inside the field opens a menu:</text>
+<text x="1226" y="258.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">SEARCH IN Message / Author and e-mail / SHA,</text>
+<text x="1226" y="276.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">MATCHES First 10,000 / All. The button is</text>
+<text x="1226" y="294.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">selected while an option is off its default.</text>
+<text x="1226" y="326.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">+</text>
+<text x="1242" y="326.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Room for more options later (which fields,</text>
+<text x="1242" y="344.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">match case) in one tidy place.</text>
+<text x="1226" y="370.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#ff7b92" xml:space="preserve">−</text>
+<text x="1242" y="370.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Hidden, two clicks, and a menu for mostly</text>
+<text x="1242" y="388.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">one choice today.</text>
+</g>
+<text x="40" y="497.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#e0e6ed" xml:space="preserve">Recommendation</text>
+<text x="40" y="522.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">A. The cap is rare and the moment it is hit is the moment the user looks at the count, so the way past it belongs there, in words, and costs nothing the rest of the time. If people turn out</text>
+<text x="40" y="540.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">to want it on for good, C adds the setting without taking room.</text>
+</svg>

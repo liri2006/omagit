@@ -9,12 +9,11 @@
 using namespace ui;
 
 namespace {
-// The design's distances (design/figma-gen/kit.js segmented()), in 12 px-base
-// pixels: every one of them goes through space().
-constexpr int kSegmentPad = 12;   // inside a segment, left and right
-constexpr int kSegmentGap = 6;    // between its glyph, its label and its pill
-constexpr int kSegmentGlyph = 14; // the least room a glyph gets
-constexpr int kPillHeight = 14, kPillPad = 4;
+// Every segment's box starts with a line the strip draws, the frame's left
+// edge or the divider before it (kit.js segmented(): the lines are drawn
+// inside the boxes): the segment widget begins one pixel after it, so the
+// design's distances from the box's edge are one less from the widget's.
+constexpr int kLeadingLine = 1;
 } // namespace
 
 // ---------------------------------------------------------------- segment
@@ -65,14 +64,11 @@ void SegmentButton::setCentred(bool on)
     update();
 }
 
+// The segment's box, the lines the strip draws included (kit.js segmented():
+// [8][glyph 16][4][label][4][count pill][8], 28 high).
 QSize SegmentButton::sizeHint() const
 {
-    const QFontMetrics fm(OmarchyTheme::instance()->uiFont());
-    // The height a text button of the row comes to: the stylesheet's 5 px
-    // of padding and its 1 px border above and below the text. The bar
-    // measures the buttons themselves and places the strip on their
-    // height, so this is only what the segments ask for on their own.
-    return QSize(2 * space(kSegmentPad) + contentWidth(), fm.height() + 2 * (5 + 1));
+    return QSize(2 * space(pad::control) + contentWidth(), space(box::control));
 }
 
 void SegmentButton::paintEvent(QPaintEvent *)
@@ -89,8 +85,11 @@ void SegmentButton::paintEvent(QPaintEvent *)
     label.setBold(selected);
     p.setPen(fg);
 
-    // Centred the way kit.js rounds it: Math.round((w - content) / 2).
-    int x = m_centred ? qRound((width() - contentWidth()) / 2.0) : space(kSegmentPad);
+    // From the box's left edge, which is the line before the widget: 8 in,
+    // or centred the way kit.js rounds it, Math.round((w - content) / 2), in
+    // the slot the strip gave the segment (the widget and its lines).
+    const int slot = width() + kLeadingLine + (m_lastInStrip ? 1 : 0);
+    int x = (m_centred ? qRound((slot - contentWidth()) / 2.0) : space(pad::control)) - kLeadingLine;
     {
         p.setFont(plain);
         const int w = glyphBox();
@@ -101,14 +100,14 @@ void SegmentButton::paintEvent(QPaintEvent *)
     }
     if (m_labelled && !text().isEmpty()) {
         p.setFont(label);
-        x += space(kSegmentGap);
+        x += space(gap::icon);
         const int w = QFontMetrics(label).horizontalAdvance(text());
         p.drawText(QRect(x, 0, w, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
         x += w;
     }
     if (m_count > 0) {
-        x += space(kSegmentGap);
-        const int w = pillWidth(), h = space(kPillHeight);
+        x += space(gap::icon);
+        const int w = pillWidth(), h = space(box::pill);
         const QRect pill(x, (height() - h) / 2, w, h);
         p.setPen(Qt::NoPen);
         p.setBrush(selected ? t->accent() : t->fill(0.14));
@@ -126,23 +125,27 @@ QString SegmentButton::countText() const
 
 // The room the glyph gets. A Nerd Font glyph's ink hangs over the advance
 // its font metrics report — the History clock is half a pixel column wider
-// on either side — so the box is the design's icon width at the least, and
-// the paint is never clipped to it.
+// on either side — so the box is the design's 16 px icon box at the least,
+// and the paint is never clipped to it.
 int SegmentButton::glyphBox() const
 {
-    return qMax(QFontMetrics(OmarchyTheme::instance()->uiFont()).horizontalAdvance(m_glyphText), space(kSegmentGlyph));
+    return qMax(QFontMetrics(OmarchyTheme::instance()->uiFont()).horizontalAdvance(m_glyphText), space(box::icon));
 }
 
+// The bold 10 px caption, without the section captions' letter spacing
+// (kit.js segmented(): the count's text).
 QFont SegmentButton::pillFont() const
 {
     QFont f = OmarchyTheme::instance()->captionFont();
     f.setBold(true);
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 0);
     return f;
 }
 
+// kit.js pillWidth(): 16 high and at least as wide, 4 either side of the digits.
 int SegmentButton::pillWidth() const
 {
-    return qMax(space(kPillHeight), QFontMetrics(pillFont()).horizontalAdvance(countText()) + 2 * space(kPillPad));
+    return qMax(space(box::pill), QFontMetrics(pillFont()).horizontalAdvance(countText()) + 2 * space(pad::pill));
 }
 
 // The label is measured bold, the weight it wears while selected, so the
@@ -154,9 +157,9 @@ int SegmentButton::contentWidth() const
     bold.setBold(true);
     int w = glyphBox();
     if (m_labelled && !text().isEmpty())
-        w += space(kSegmentGap) + QFontMetrics(bold).horizontalAdvance(text());
+        w += space(gap::icon) + QFontMetrics(bold).horizontalAdvance(text());
     if (m_count > 0)
-        w += space(kSegmentGap) + pillWidth();
+        w += space(gap::icon) + pillWidth();
     return w;
 }
 
@@ -198,6 +201,8 @@ QList<SegmentButton *> SegmentStrip::participating() const
     return out;
 }
 
+// The segments' boxes side by side: the frame and the dividers are drawn
+// inside them, never added to them.
 QSize SegmentStrip::sizeHint() const
 {
     const QList<SegmentButton *> shown = participating();
@@ -207,7 +212,7 @@ QSize SegmentStrip::sizeHint() const
         width += hint.width();
         height = qMax(height, hint.height());
     }
-    return QSize(width + int(shown.size()) + 1, height + 2);
+    return QSize(width, height);
 }
 
 void SegmentStrip::resizeEvent(QResizeEvent *)
@@ -221,25 +226,22 @@ void SegmentStrip::layoutSegments()
     const int n = int(shown.size());
     if (n == 0)
         return;
+    // A box per segment, its leading line (the frame's, or the divider before
+    // it) its first column and, for the last, the frame's right edge its
+    // last; the widget is the box less those lines, and the frame's top and
+    // bottom rows. Stretched, the boxes are floor(width / n) each and the
+    // last takes the remainder (kit.js segmented({stretch: true})); otherwise
+    // each is as wide as its hint and the last takes whatever is left.
     const int h = qMax(0, height() - 2);
-    if (m_stretch) {
-        // A slot of floor(width / n) per segment, its leading line included:
-        // the design's segments share their lines with the frame.
-        const int each = width() / n;
-        for (int i = 0; i < n; ++i) {
-            const int x = i * each + 1;
-            const int w = i == n - 1 ? width() - 1 - x : each - 1;
-            shown.at(i)->setGeometry(x, 1, qMax(0, w), h);
-        }
-        return;
-    }
-    int x = 1;
+    const int each = width() / n;
+    int x = 0;
     for (int i = 0; i < n; ++i) {
-        // Room left for this one and the lines after it.
-        const int room = qMax(0, width() - x - (n - i));
-        const int w = i == n - 1 ? room : qBound(0, shown.at(i)->sizeHint().width(), room);
-        shown.at(i)->setGeometry(x, 1, w, h);
-        x += w + 1;
+        SegmentButton *segment = shown.at(i);
+        const bool last = i == n - 1;
+        const int box = last ? width() - x : m_stretch ? each : qBound(0, segment->sizeHint().width(), width() - x);
+        segment->setLastInStrip(last);
+        segment->setGeometry(x + 1, 1, qMax(0, box - 1 - (last ? 1 : 0)), h);
+        x += box;
     }
 }
 

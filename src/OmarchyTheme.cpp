@@ -1,6 +1,7 @@
 #include "OmarchyTheme.h"
 #include "DiffModel.h" // TokenKind, forward-declared in the header
 #include "TickMenu.h"  // the tick it reserves room for is part of the menu metrics
+#include "UiHelpers.h" // the grid (ui::space()) every padding of the sheet is on
 
 #include <QApplication>
 #include <QDir>
@@ -552,6 +553,17 @@ static QString substitute(const QString &sheet, const QHash<QString, QString> &t
 // accent text for the selected/current item, popups framed by the accent.
 QString OmarchyTheme::buildStyleSheet() const
 {
+    using namespace ui;
+    const auto px = [](int value) { return QString::number(value); };
+    // The text's own height, which a row's vertical padding makes up to the
+    // row's: the rest above it, half of it rounded down, and below it.
+    const int textHeight = QFontMetrics(m_mono).height();
+    const auto above = [textHeight](int height) { return qMax(0, (height - textHeight) / 2); };
+    const auto below = [textHeight](int height) { return qMax(0, height - textHeight - (height - textHeight) / 2); };
+    // A frame's 1 px border is inside the box the design measures from.
+    constexpr int frame = 1;
+    // QLineEdit's own margin between its contents and its text.
+    constexpr int lineEditMargin = 2;
     const QHash<QString, QString> tokens{
         {QStringLiteral("bg"), window().name()},
         {QStringLiteral("fg"), text().name()},
@@ -570,21 +582,74 @@ QString OmarchyTheme::buildStyleSheet() const
         {QStringLiteral("caption"), QString::number(captionFont().pixelSize())},
         // The design's regular 11 px small text, on the scale of ui::space().
         {QStringLiteral("small"), QString::number(qRound(m_fontBase * 11 / 12.0))},
-        // TickMenu paints its check mark at the right edge of the item, inside this padding.
-        {QStringLiteral("tickpad"), QString::number(14 + TickMenu::tickReserve())},
-        // The branch menu's names, 22 px after the glyph BranchMenu paints
-        // 10 px into the row: 32 px in, on the scale of ui::space().
-        {QStringLiteral("glyphpad"), QString::number(qMax(1, qRound(m_fontBase * 32 / 12.0)))},
+        // A menu (screens.js menuCard()): 4 around its rows, the 2 px frame
+        // included; 24 px rows, their text 8 in; separators an 8 px band with
+        // the hairline in its middle, inset 4.
+        {QStringLiteral("menupad"), px(space(pad::menu) - 2)},
+        {QStringLiteral("menuitemtop"), px(above(space(box::row)))},
+        {QStringLiteral("menuitembottom"), px(below(space(box::row)))},
+        {QStringLiteral("menuitempad"), px(space(pad::control))},
+        {QStringLiteral("septop"), px(space(4))},
+        {QStringLiteral("sepinset"), px(space(4))},
+        {QStringLiteral("sepbottom"), px(space(8) - space(4) - frame)},
+        {QStringLiteral("menucheck"), px(space(gap::icon))},
+        // TickMenu paints its tick in a 16 px box 8 from the item's right edge,
+        // inside this padding, the text ending 4 before the box.
+        {QStringLiteral("tickpad"), px(space(pad::control) + TickMenu::tickReserve())},
+        // The branch menu's names where a menu row's label starts, after the
+        // glyph BranchMenu paints in the row's icon box: 8 + 16 + 4.
+        {QStringLiteral("glyphpad"), px(space(pad::control) + space(box::icon) + space(gap::icon))},
+        // Buttons (kit.js button()): 28 high, 8 in, the primary action 16 in.
+        {QStringLiteral("buttontop"), px(above(space(box::control) - 2 * frame))},
+        {QStringLiteral("buttonbottom"), px(below(space(box::control) - 2 * frame))},
+        {QStringLiteral("buttonpad"), px(space(pad::control) - frame)},
+        {QStringLiteral("primarypad"), px(space(pad::primary) - frame)},
+        // Fields (kit.js field()): 28 high, the text 8 in.
+        {QStringLiteral("fieldtop"), px(above(space(box::control) - 2 * frame - 2))},
+        {QStringLiteral("fieldbottom"), px(below(space(box::control) - 2 * frame - 2))},
+        {QStringLiteral("fieldpad"), px(qMax(0, space(pad::control) - frame - lineEditMargin))},
+        // A tooltip: 24 high, 8 in.
+        {QStringLiteral("tiptop"), px(above(space(box::row) - 2 * frame))},
+        {QStringLiteral("tipbottom"), px(below(space(box::row) - 2 * frame))},
+        {QStringLiteral("tippad"), px(space(pad::control) - frame)},
+        // A table's cells and headers: the text 8 in, a header's from the
+        // divider it starts with.
+        {QStringLiteral("cellpad"), px(space(pad::control))},
+        {QStringLiteral("headerpad"), px(space(pad::control) - frame)},
+        // A list's rows (the clone dialog's repositories): 24 high, 8 in.
+        {QStringLiteral("listtop"), px(above(space(box::row)))},
+        {QStringLiteral("listbottom"), px(below(space(box::row)))},
+        // The clone dialog's inline name field, its text 4 in.
+        {QStringLiteral("clonenamepad"), px(qMax(0, space(4) - lineEditMargin))},
+        // The merge view's conflicted files: 16 px lines, 4 in.
+        {QStringLiteral("linetop"), px(above(space(box::line)))},
+        {QStringLiteral("linebottom"), px(below(space(box::line)))},
+        {QStringLiteral("linepad"), px(space(4))},
+        // The message box's text 8 in: its border, this padding and the
+        // document's own 4 px margin together.
+        {QStringLiteral("messagepad"), px(qMax(0, space(pad::control) - frame - 4))},
+        // Checkboxes (kit.js checkbox()): a 16 px box, border included, 8 to its label.
+        {QStringLiteral("checkbox"), px(space(box::check) - 2 * frame)},
+        {QStringLiteral("checkgap"), px(space(gap::check))},
+        // The merge view's branch pickers: 36 high, 12 in.
+        {QStringLiteral("bigpad"), px(space(pad::big) - frame)},
+        // The default splitter handle and a toolbar's spacing: the item gap.
+        {QStringLiteral("gapitem"), px(space(gap::item))},
+        // Scrollbars (kit.js scrollbar()): an 8 px track, the 4 px handle
+        // centred in it, 24 at the least.
+        {QStringLiteral("scroll"), px(space(8))},
+        {QStringLiteral("scrollinset"), px(space(2))},
+        {QStringLiteral("scrollmin"), px(space(box::row))},
+        // A splitter handle that is a block gap between two sections (the
+        // commit page's, the history's) lights only a 4 px strip in its
+        // middle under the pointer, whichever block gap the window has.
+        {QStringLiteral("hover8"), px((space(8) - space(4)) / 2)},
+        {QStringLiteral("hover12"), px((space(12) - space(4)) / 2)},
         {QStringLiteral("family"), m_mono.family()},
         {QStringLiteral("base"), QString::number(m_fontBase)},
         {QStringLiteral("heading"), QString::number(headingFont().pixelSize())},
-        // The design's 14 px glyph, on the same scale as ui::space().
-        {QStringLiteral("icon"), QString::number(qMax(1, qRound(m_fontBase * 14 / 12.0)))},
-        // Air above and below the commit page's 16 px splitter handle, so
-        // only a 4 px strip in its middle lights up under the pointer.
-        {QStringLiteral("handlepad"), QString::number(qMax(1, qRound(m_fontBase * 6 / 12.0)))},
-        // The same for the history's 10 px handles: 3 px either side.
-        {QStringLiteral("historypad"), QString::number(qMax(1, qRound(m_fontBase * 3 / 12.0)))},
+        // The design's glyph, 14 px in its 16 px box: a text size.
+        {QStringLiteral("icon"), px(fontPx(14))},
         {QStringLiteral("big"), QString::number(qRound(m_fontBase * 1.5))},
     };
 
@@ -592,11 +657,14 @@ QString OmarchyTheme::buildStyleSheet() const
 QMainWindow, QDialog, QMessageBox { background: %bg%; }
 QWidget { color: %fg%; font-family: "%family%"; font-size: %base%px; }
 /* railTip is the Mini rail's own tooltip label, framed like a real one. */
-QToolTip, QLabel#railTip { background: %bg%; color: %fg%; border: 1px solid %fg%; padding: 4px 8px; }
+QToolTip, QLabel#railTip {
+    background: %bg%; color: %fg%; border: 1px solid %fg%; padding: %tiptop%px %tippad%px %tipbottom%px %tippad%px;
+}
 
 QPlainTextEdit, QTextEdit, QLineEdit {
     background: %fill4%; color: %fg%; border: 1px solid %bd40%; border-radius: 0;
-    selection-background-color: %sel35%; selection-color: %fg%; padding: 4px 6px;
+    selection-background-color: %sel35%; selection-color: %fg%;
+    padding: %fieldtop%px %fieldpad%px %fieldbottom%px %fieldpad%px;
 }
 QPlainTextEdit:hover, QTextEdit:hover, QLineEdit:hover { background: %fill8%; border-color: %bd25%; }
 QPlainTextEdit:focus, QTextEdit:focus, QLineEdit:focus { background: %fill8%; border-color: %bd25%; }
@@ -605,7 +673,7 @@ QTableView, QTreeView {
     background: %bg%; border: 1px solid %bd40%; border-radius: 0; gridline-color: %hair%;
     selection-background-color: %fill8%; selection-color: %acc%; outline: 0;
 }
-QTableView::item, QTreeView::item { padding: 0 10px; border: none; }
+QTableView::item, QTreeView::item { padding: 0 %cellpad%px; border: none; }
 QTableView::item:hover, QTreeView::item:hover { background: %fill4%; }
 QTableView::item:selected, QTreeView::item:selected { background: %fill8%; color: %acc%; }
 /* The changes tree paints its own chevrons in the Name column and has no
@@ -613,7 +681,7 @@ QTableView::item:selected, QTreeView::item:selected { background: %fill8%; color
    belongs in its checkbox column. */
 QTreeView::branch { background: transparent; image: none; }
 QLineEdit#cloneName {
-    background: transparent; color: %dim%; padding: 2px 3px;
+    background: transparent; color: %dim%; padding: 0 %clonenamepad%px;
     border: none; border-bottom: 1px solid %bd40%;
 }
 QLineEdit#cloneName:hover { background: %fill4%; border-bottom-color: %bd25%; }
@@ -621,7 +689,7 @@ QLineEdit#cloneName:focus { background: %fill8%; color: %fg%; border-bottom-colo
 QListWidget#cloneRepositories {
     background: %bg%; border: 1px solid %bd40%; border-radius: 0; outline: 0;
 }
-QListWidget#cloneRepositories::item { padding: 6px 10px; border: none; }
+QListWidget#cloneRepositories::item { padding: %listtop%px %cellpad%px %listbottom%px %cellpad%px; border: none; }
 QListWidget#cloneRepositories::item:hover { background: %fill4%; }
 QListWidget#cloneRepositories::item:selected { background: %fill8%; color: %acc%; }
 /* What stands in for the list of repositories, framed as the list itself is. */
@@ -632,15 +700,20 @@ QDialog#cloneDialog QProgressBar::chunk { background: %acc%; }
 QHeaderView { background: transparent; }
 QHeaderView::section {
     background: transparent; color: %dim%; font-weight: bold; font-size: %caption%px;
-    padding: 6px 10px; border: none; border-bottom: 1px solid %hair20%; border-right: 1px solid %hair%;
+    padding: 0 %cellpad%px 0 %headerpad%px; border: none; border-bottom: 1px solid %hair20%; border-left: 1px solid %hair%;
 }
-QHeaderView::section:last, QHeaderView::section:only-one { border-right: none; }
+/* The column dividers are the first pixel of the column they start (screens.js
+   changesTable()), so the first column has none. */
+QHeaderView::section:first, QHeaderView::section:only-one { border-left: none; }
 QHeaderView::down-arrow, QHeaderView::up-arrow { width: 0; height: 0; }
 QTableCornerButton::section { background: transparent; border: none; }
 
 QPushButton, QToolButton {
-    background: %fill4%; color: %fg%; border: 1px solid %bd40%; border-radius: 0; padding: 5px 10px;
+    background: %fill4%; color: %fg%; border: 1px solid %bd40%; border-radius: 0;
+    padding: %buttontop%px %buttonpad%px %buttonbottom%px %buttonpad%px;
 }
+/* The primary action of a surface (ui::setPrimary()): 16 in, not 8. */
+QPushButton[primary="true"] { padding-left: %primarypad%px; padding-right: %primarypad%px; }
 QPushButton:hover, QToolButton:hover { background: %fill8%; border-color: %bd25%; }
 QPushButton:pressed, QToolButton:pressed { background: %fill22%; border-color: %bd25%; }
 QPushButton:checked, QToolButton:checked { background: %fill18%; color: %acc%; border-color: %fill18%; }
@@ -657,7 +730,7 @@ QToolButton::menu-indicator { image: none; width: 0; height: 0; }
    form itself); its vertical padding centres the glyph in that height.
    Ghost ones carry no chrome of their own until the pointer is on them. */
 QToolButton#iconButton, QToolButton#ghostButton { padding: 0; }
-QToolButton#iconButton[toolbar="true"] { padding: 5px 0; }
+QToolButton#iconButton[toolbar="true"] { padding: %buttontop%px 0 %buttonbottom%px 0; }
 QToolButton#iconButton[ghost="true"], QToolButton#ghostButton { background: transparent; border: 1px solid transparent; }
 QToolButton#iconButton[ghost="true"]:hover, QToolButton#ghostButton:hover, QToolButton#ghostButton:focus { background: %fill8%; border-color: %bd25%; }
 QToolButton#iconButton[ghost="true"]:pressed, QToolButton#ghostButton:pressed { background: %fill22%; border-color: %bd25%; }
@@ -668,14 +741,15 @@ QToolButton#iconButton[ghost="true"]:disabled { background: transparent; border-
 QToolButton#cornerButton { background: transparent; border: 1px solid transparent; padding: 0; color: %fg%; }
 QToolButton#cornerButton:hover { background: %fill8%; border-color: %bd25%; }
 QToolButton#cornerButton:pressed { background: %fill22%; border-color: %bd25%; }
-/* The message box's text starts 8 px in, border, padding and the document's
-   own 4 px margin together, and its first line 6 px down. */
-MessageEdit { padding: 1px 3px; }
+/* The message box's text starts 8 px in: border, padding and the document's
+   own 4 px margin together. Its first line's place is the box's own
+   (MessageEdit::updateMargins()). */
+MessageEdit { padding: 0 %messagepad%px; }
 
-QCheckBox { spacing: 8px; }
-/* 14 px with the border, like the design's boxes. */
+QCheckBox { spacing: %checkgap%px; }
+/* 16 px with the border, like the design's boxes. */
 QCheckBox::indicator, QTableView::indicator, QTreeView::indicator {
-    width: 12px; height: 12px; border: 1px solid %bd40%; border-radius: 0; background: %fill4%;
+    width: %checkbox%px; height: %checkbox%px; border: 1px solid %bd40%; border-radius: 0; background: %fill4%;
 }
 QCheckBox::indicator:hover, QTableView::indicator:hover, QTreeView::indicator:hover { border-color: %bd25%; background: %fill8%; }
 QCheckBox::indicator:checked, QTableView::indicator:checked, QTreeView::indicator:checked {
@@ -687,21 +761,22 @@ QCheckBox::indicator:indeterminate, QTableView::indicator:indeterminate, QTreeVi
 }
 
 QSplitter::handle { background: transparent; }
-QSplitter::handle:horizontal { width: 8px; }
-QSplitter::handle:vertical { height: 8px; }
+QSplitter::handle:horizontal { width: %gapitem%px; }
+QSplitter::handle:vertical { height: %gapitem%px; }
 QSplitter::handle:hover { background: %fill8%; }
-/* The commit page's handle carries the whole gap between two sections, so
-   lighting the band edge to edge would be a bar; only its middle answers.
-   Hover only: a margin in the resting rule would go into the handle's size
-   hint (sizeFromContents asks for it stateless) and widen the gap itself. */
-QSplitter#commitMessageSplitter::handle:vertical:hover { margin: %handlepad%px 0; }
-QSplitter#historySplitter::handle:vertical:hover { margin: %historypad%px 0; }
+/* The commit page's and the history's handles carry the whole block gap
+   between two sections, so lighting the band edge to edge would be a bar;
+   only a 4 px strip in its middle answers (their blockGap property names the
+   gap). Hover only: a margin in the resting rule would go into the handle's
+   size hint (sizeFromContents asks for it stateless) and widen the gap itself. */
+QSplitter[blockGap="8"]::handle:vertical:hover { margin: %hover8%px 0; }
+QSplitter[blockGap="12"]::handle:vertical:hover { margin: %hover12%px 0; }
 
-QScrollBar:vertical { background: transparent; width: 8px; margin: 0; border: none; }
-QScrollBar::handle:vertical { background: %bd25%; min-height: 24px; border-radius: 0; margin: 0 2px; }
+QScrollBar:vertical { background: transparent; width: %scroll%px; margin: 0; border: none; }
+QScrollBar::handle:vertical { background: %bd25%; min-height: %scrollmin%px; border-radius: 0; margin: 0 %scrollinset%px; }
 QScrollBar::handle:vertical:hover { background: %acc%; }
-QScrollBar:horizontal { background: transparent; height: 8px; margin: 0; border: none; }
-QScrollBar::handle:horizontal { background: %bd25%; min-width: 24px; border-radius: 0; margin: 2px 0; }
+QScrollBar:horizontal { background: transparent; height: %scroll%px; margin: 0; border: none; }
+QScrollBar::handle:horizontal { background: %bd25%; min-width: %scrollmin%px; border-radius: 0; margin: %scrollinset%px 0; }
 QScrollBar::handle:horizontal:hover { background: %acc%; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
@@ -722,12 +797,14 @@ QToolButton#branchButton, QToolButton#repoButton { background: transparent; bord
 QToolButton#branchButton { color: %acc%; font-weight: bold; }
 QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
 QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
-QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: 6px; }
-QMenu::item { padding: 6px 14px; border-radius: 0; }
+QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: %menupad%px; }
+QMenu::item { padding: %menuitemtop%px %menuitempad%px %menuitembottom%px %menuitempad%px; border-radius: 0; }
 QMenu::item:selected { background: %fill8%; color: %acc%; }
 QMenu::item:disabled { color: %disabled%; }
-QMenu::separator { height: 1px; background: %hair%; margin: 4px 2px; }
-QMenu::indicator { width: 12px; height: 12px; border: 1px solid %bd40%; background: %fill4%; margin-left: 4px; }
+QMenu::separator { height: 1px; background: %hair%; margin: %septop%px %sepinset%px %sepbottom%px %sepinset%px; }
+QMenu::indicator {
+    width: %checkbox%px; height: %checkbox%px; border: 1px solid %bd40%; background: %fill4%; margin-left: %menucheck%px;
+}
 QMenu::indicator:checked { background: %acc%; border-color: %acc%; image: url(:/check.svg); }
 TickMenu::item { padding-right: %tickpad%px; }
 TickMenu::item:checked { color: %acc%; }
@@ -746,19 +823,20 @@ QDialog#keybindingsPanel { background: %bg%; border: 2px solid %acc%; }
 QFrame#commitPopover, QFrame#agentPopover { background: %bg%; border: 2px solid %acc%; }
 /* An install command in the agent settings, with its copy button inside. */
 QFrame#commandRow { background: %fill4%; border: 1px solid %bd25%; }
-/* Generate now reads from the left, like the design's primary buttons. */
-QPushButton#agentGenerate { text-align: left; }
 QLineEdit#keybindingsSearch, QLineEdit#keybindingsSearch:hover, QLineEdit#keybindingsSearch:focus {
     background: transparent; border: none; padding: 0; font-size: %heading%px; font-weight: 500;
 }
 QListView#keybindingsList { background: transparent; border: none; }
-QToolButton#branchPicker { padding: 8px 12px; }
+QToolButton#branchPicker { padding: 0 %bigpad%px; }
 QToolButton#branchPicker:disabled { background: %fill4%; border-color: %hair20%; }
 QToolButton#swapButton { padding: 0; }
+/* Narrow, the merge view's swap is a ghost button between the stacked pickers. */
+QToolButton#swapButton[ghost="true"] { background: transparent; border: 1px solid transparent; }
+QToolButton#swapButton[ghost="true"]:hover { background: %fill8%; border-color: %bd25%; }
 /* The show/hide eye inside the sign-in dialog's password field: part of the
    field, so it carries no chrome of its own — only its glyph lights up. */
 QToolButton#revealButton, QToolButton#revealButton:checked, QToolButton#revealButton:hover {
-    background: transparent; border: 1px solid transparent; padding: 1px 3px; color: %dim%;
+    background: transparent; border: 1px solid transparent; padding: 0; color: %dim%;
 }
 QToolButton#revealButton:hover { color: %fg%; }
 QToolButton#revealButton:checked { color: %acc%; }
@@ -770,9 +848,9 @@ QTextEdit#commitBody, QTextEdit#commitBody:hover, QTextEdit#commitBody:focus {
     background: transparent; border: none; padding: 0;
 }
 QListWidget#mergeFiles { background: transparent; border: none; outline: 0; }
-QListWidget#mergeFiles::item { padding: 2px 4px; border: none; }
+QListWidget#mergeFiles::item { padding: %linetop%px %linepad%px %linebottom%px %linepad%px; border: none; }
 QListWidget#mergeFiles::item:hover, QListWidget#mergeFiles::item:selected { background: %fill8%; color: %fg%; }
-QToolBar { background: %bg%; border: none; spacing: 8px; }
+QToolBar { background: %bg%; border: none; spacing: %gapitem%px; }
 DiffView { border: 1px solid %bd40%; background: %bg%; }
 QMessageBox QLabel { color: %fg%; }
 QAbstractScrollArea { background: %bg%; }

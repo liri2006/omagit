@@ -3,6 +3,7 @@
 #include "ChangesModel.h"
 #include "CommitMessageAgent.h"
 #include "GitRepo.h"
+#include "Grid.h"
 #include "MessageEdit.h"
 #include "PaneLayout.h"
 
@@ -128,11 +129,12 @@ public:
     // chosen a files view, the list turns compact. Nothing of it is saved.
     void setStacked(bool on);
     bool isStacked() const { return m_stacked; }
-    // The window's classes, which only ever size things: the message box's
-    // resting height (96, 84, 68, one line when shallow), the Amend label
-    // (short in the medium class) and, shallow, the action bar's stacked form
-    // at any width. Nothing of it is saved.
-    void setWindowClass(WidthClass width, bool shallow);
+    // The window's classes, which only ever size things: the table's
+    // columns, the message box's resting height (96, 80, 64, one line when
+    // shallow), the Amend label (short in the medium class), the block gap
+    // between the page's parts (4, 8, 12 by the height class) and, shallow,
+    // the action bar's stacked form at any width. Nothing of it is saved.
+    void setWindowClass(WidthClass width, HeightClass height);
 
     // The three files-view buttons, for the tests and for anyone who wants to
     // press one without going through the accessible names.
@@ -199,9 +201,8 @@ private:
     // "Amend last commit" where the row has the width for it, "Amend" where
     // it has not.
     void updateAmendLabel();
-    // The three ghost buttons at the right of the CHANGES row, in their own
-    // layout so the section row's spacing is not added on top of the
-    // design's 2 / 6 / 7 px gaps.
+    // The ghost buttons at the right of the CHANGES row, in their own layout
+    // with the design's gaps.
     QHBoxLayout *buildChangesTools();
     // The tree, its model and its delegates, built once beside the table.
     QWidget *buildChangesTree();
@@ -245,7 +246,8 @@ private:
     int restingMessageHeight() const;
     void applyRestingMessageHeight();
     void fillOptionsMenu();
-    static QMargins changesRowMargins();
+    void applyBlockGap();
+    static QMargins headerRowMargins();
     static int messageHeaderHeight();
     void setGenerating(bool on);
     // The one place the generate button's face changes, so the text and the
@@ -271,7 +273,7 @@ private:
     QToolButton *m_tableButton;
     QButtonGroup *m_viewButtons;
     QHBoxLayout *m_changesTools;        // the switcher, the eye and Refresh
-    QList<QPair<QSpacerItem *, int>> m_toolSpacers; // their gaps, with the design px
+    QList<QPair<QSpacerItem *, QPair<int, int>>> m_toolSpacers; // their gaps: design px, less the px of a line
     QWidget *m_toolsDivider;            // between the switcher and the eye
     QString m_treeCurrentPath;          // the tree's own row, kept over rebuilds
     bool m_treeCurrentIsDirectory = false; // ...and which of the two lookups finds it again
@@ -285,14 +287,15 @@ private:
     QLayout *m_changesLayout;     // CHANGES: its header row over the list, a scaled gap apart
     QLayout *m_messageLayout;     // MESSAGE: its header row over the box, the same gap apart
     QHBoxLayout *m_changesRow;    // the CHANGES and MESSAGE header rows, their buttons
-    QHBoxLayout *m_messageRow;    // kept 2 px inside the page's right edge
-    QHBoxLayout *m_actionBar;     // the bottom row, a scaled gap under the message
+    QHBoxLayout *m_messageRow;    // kept 4 inside the page's right edge
+    QHBoxLayout *m_actionBar;     // the bottom row, a block gap under the message
     QSpacerItem *m_actionStretch = nullptr; // between Amend and Commit on the ordinary row
     QToolButton *m_optionsButton = nullptr; // stacked only
     QMenu *m_optionsMenu = nullptr;
     bool m_stacked = false;
     WidthClass m_widthClass = WidthClass::Wide;
     bool m_shallow = false;
+    int m_block = ui::kRegularDensity.block; // design px, by the window's height class
     bool m_messageSizedByHand = false; // the user dragged the handle this session
     int m_messageRestHeight = -1;      // the box's height before any text grew it
     QToolButton *m_agentButton;  // the cog at the right of the MESSAGE label: agent, model, reasoning

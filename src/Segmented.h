@@ -28,6 +28,9 @@ public:
     // gives, instead of starting at the segment's left padding.
     void setCentred(bool on);
     bool isCentred() const { return m_centred; }
+    // The last segment's box ends with the frame's right edge as well as
+    // starting with a line, which centring in its slot counts; the strip says.
+    void setLastInStrip(bool on) { m_lastInStrip = on; }
 
     QSize sizeHint() const override;
 
@@ -46,13 +49,15 @@ private:
     QString m_glyphText;
     bool m_labelled = true;
     bool m_centred = false;
+    bool m_lastInStrip = false;
     int m_count = 0;
 };
 
 // The frame the segments share: one border around them all and one divider
 // between each pair, painted here so no segment doubles a line of its own.
-// The segments sit inside those lines, which is where the extra n + 1 px of
-// the size hint go.
+// The lines are drawn inside the segments' boxes (kit.js segmented()): the
+// strip is exactly as wide as its segments' boxes, and each segment widget
+// is its box less the lines it starts (and, last, ends) with.
 class SegmentStrip : public QWidget
 {
 public:

@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="C · In-field toggle · Eighth · capped" width="470" height="612" viewBox="0 0 470 612">
+<rect x="0" y="0" width="470" height="612" id="window" fill="#181c22"/>
+<g id="TopBar">
+<g id="RepoChip">
+<g id="icon/folderOpen" transform="translate(17,15) scale(0.5833)"><path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" fill="#e0e6ed"/></g>
+</g>
+<g id="BranchChip">
+<g id="icon/branch" transform="translate(53,15) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#4ecdc4"/></g>
+<text x="72" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
+<g id="icon/chevron" transform="translate(105.75,16.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+</g>
+<g id="BranchChip/label-accent">
+<text x="72" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">main</text>
+</g>
+<g id="More">
+<rect x="434" y="8" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="434.5" y="8.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/dots" transform="translate(441,15) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
+</g>
+<g id="SyncDropdown">
+<rect x="330" y="8" width="96" height="28" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="330.5" y="8.5" width="95" height="27" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/down" transform="translate(339,15) scale(0.5833)"><path d="M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z" fill="#e0e6ed"/></g>
+<text x="358" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">2</text>
+<g id="icon/up" transform="translate(375,15) scale(0.5833)"><path d="M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z" fill="#e0e6ed"/></g>
+<text x="394" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">1</text>
+<g id="icon/chevron" transform="translate(406.75,16.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+</g>
+<g id="NavTabs">
+<rect x="177" y="8" width="116" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<g id="Segment/normal commit">
+<g id="icon/commit" transform="translate(186,15) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#e0e6ed"/></g>
+<rect x="205" y="14" width="16" height="16" fill="#e0e6ed" fill-opacity="0.14"/>
+<text x="213" y="25.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#e0e6ed" text-anchor="middle" xml:space="preserve">7</text>
+</g>
+<g id="Segment/normal diff">
+<g id="icon/diff" transform="translate(238,15) scale(0.5833)"><path d="M10,18H6V16H10V18M10,14H6V12H10V14M10,1V2H6C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H10V23H12V1H10M20,8V20C20,21.11 19.11,22 18,22H14V20H18V11H14V9H18.5L14,4.5V2L20,8M16,14H14V12H16V14M16,18H14V16H16V18Z" fill="#e0e6ed"/></g>
+</g>
+<rect x="229" y="8" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
+<g id="Segment/selected history">
+<rect x="261" y="8" width="32" height="28" fill="#e0e6ed" fill-opacity="0.18"/>
+<g id="icon/history" transform="translate(270,15) scale(0.5833)"><path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" fill="#4ecdc4"/></g>
+</g>
+<rect x="261" y="8" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
+<rect x="177.5" y="8.5" width="115" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+</g>
+<rect x="0" y="43" width="470" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
+</g>
+<g id="Footer">
+<rect x="0" y="584" width="470" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
+<text x="8" y="602.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">~/Projects/omagit</text>
+<g id="Keybindings">
+<g id="icon/keyboard" transform="translate(443,591) scale(0.5833)"><path d="M4,5A2,2 0 0,0 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7A2,2 0 0,0 20,5H4M4,7H20V17H4V7M5,8V10H7V8H5M8,8V10H10V8H8M11,8V10H13V8H11M14,8V10H16V8H14M17,8V10H19V8H17M5,11V13H7V11H5M8,11V13H10V11H8M11,11V13H13V11H11M14,11V13H16V11H14M17,11V13H19V11H17M8,14V16H16V14H8Z" fill="#e0e6ed"/></g>
+</g>
+</g>
+<g id="HistoryPage">
+<g id="Field/normal">
+<rect x="8" y="52" width="382" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="8.5" y="52.5" width="381" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/search" transform="translate(17,59) scale(0.5833)"><path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" fill="#8791a6"/></g>
+<text x="36" y="70.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="value" xml:space="preserve">fix</text>
+<g id="icon/close" transform="translate(367,59) scale(0.5833)"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" fill="#8791a6"/></g>
+</g>
+<g id="NoLimit">
+<g id="icon/infinity" transform="translate(343,59) scale(0.5833)"><path d="M18.6,6.62C21.58,6.62 24,9 24,12C24,14.96 21.58,17.37 18.6,17.37C17.15,17.37 15.8,16.81 14.78,15.8L12,13.34L9.17,15.85C8.2,16.82 6.84,17.38 5.4,17.38C2.42,17.38 0,14.96 0,12C0,9.04 2.42,6.62 5.4,6.62C6.84,6.62 8.2,7.18 9.22,8.2L12,10.66L14.83,8.15C15.8,7.18 17.16,6.62 18.6,6.62M7.8,14.39L10.5,12L7.84,9.65C7.16,8.97 6.31,8.62 5.4,8.62C3.53,8.62 2,10.13 2,12C2,13.87 3.53,15.38 5.4,15.38C6.31,15.38 7.16,15.03 7.8,14.39M16.2,9.61L13.5,12L16.16,14.35C16.84,15.03 17.7,15.38 18.6,15.38C20.47,15.38 22,13.87 22,12C22,10.13 20.47,8.62 18.6,8.62C17.69,8.62 16.84,8.97 16.2,9.61Z" fill="#e0e6ed"/></g>
+</g>
+<g id="AllBranches">
+<rect x="398" y="52" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="398.5" y="52.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/branch" transform="translate(405,59) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#e0e6ed"/></g>
+</g>
+<g id="Refresh">
+<rect x="434" y="52" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="434.5" y="52.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/refresh" transform="translate(441,59) scale(0.5833)"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" fill="#e0e6ed"/></g>
+</g>
+<g id="CommitsTable">
+<rect x="8.5" y="84.5" width="453" height="327" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="8" y="107" width="454" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
+<text x="16" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" xml:space="preserve">Message</text>
+<rect x="390" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="398" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" xml:space="preserve">Author</text>
+<g id="CommitRow/selected e41c2a7">
+<rect x="9" y="108" width="452" height="24" fill="#e0e6ed" fill-opacity="0.08"/>
+<g id="RefChip/head main">
+<rect x="16" y="112" width="32" height="16" fill="#4ecdc4"/>
+<text x="32" y="123.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">main</text>
+</g>
+<text x="52" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Fix the diff scroll after a refresh</text>
+<text x="398" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras</text>
+</g>
+<g id="CommitRow/normal 8b0f3d1">
+<text x="16" y="148.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix askpass prompt showing twice for one remote</text>
+<text x="398" y="148.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras</text>
+</g>
+<g id="CommitRow/normal c93e5a0">
+<g id="RefChip/tag v0.3.1">
+<rect x="16" y="160" width="44" height="16" fill="#82eeff" fill-opacity="0.14"/>
+<rect x="16.5" y="160.5" width="43" height="15" fill="none" stroke="#82eeff" stroke-width="1" stroke-opacity="0.8"/>
+<text x="38" y="171.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#82eeff" text-anchor="middle" xml:space="preserve">v0.3.1</text>
+</g>
+<text x="64" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix crash when the repository has no commits</text>
+<text x="398" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Halina</text>
+</g>
+<g id="CommitRow/normal 51d7ee4">
+<text x="16" y="196.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Prefix remote branch names in the merge dialog</text>
+<text x="398" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Istvan</text>
+</g>
+<g id="CommitRow/normal 2a6f190">
+<text x="16" y="220.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix tree view losing folded folders on sort</text>
+<text x="398" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras</text>
+</g>
+<g id="CommitRow/normal f07b3c8">
+<text x="16" y="244.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Hotfix: keep the window geometry on Hyprland</text>
+<text x="398" y="244.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Halina</text>
+</g>
+<g id="CommitRow/normal 9e24d6b">
+<text x="16" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix syntax colours for raw string literals</text>
+<text x="398" y="268.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Istvan</text>
+</g>
+<g id="CommitRow/normal 06ac5f2">
+<text x="16" y="292.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix off-by-one in the lane layout for octopus mer…</text>
+<text x="398" y="292.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras</text>
+</g>
+<g id="CommitRow/normal 7d3b9a4">
+<text x="16" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix typo in README install steps</text>
+<text x="398" y="316.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Halina</text>
+</g>
+<g id="CommitRow/normal b85e017">
+<text x="16" y="340.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix fetch backoff never resetting</text>
+<text x="398" y="340.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras</text>
+</g>
+<g id="CommitRow/normal 3c1f6e9">
+<text x="16" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix Nautilus extension on paths with spaces</text>
+<text x="398" y="364.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Istvan</text>
+</g>
+<g id="CommitRow/normal d2e84b0">
+<text x="16" y="388.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Fix the status bar clipping at base 18</text>
+<text x="398" y="388.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras</text>
+</g>
+<rect x="455" y="110" width="4" height="90" id="Scrollbar" fill="#e0e6ed" fill-opacity="0.25"/>
+</g>
+<g id="CommitDetails">
+<rect x="8.5" y="420.5" width="453" height="131" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="CopySha">
+<g id="icon/copy" transform="translate(435,433) scale(0.5833)"><path d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" fill="#e0e6ed"/></g>
+</g>
+<text x="20" y="444.7" font-family="JetBrains Mono" font-size="13" font-weight="700" fill="#e0e6ed" xml:space="preserve">Fix the diff scroll after a refresh</text>
+<text x="20" y="464.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" xml:space="preserve">e41c2a7</text>
+<text x="78" y="464.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras &lt;andras@example.org&gt;</text>
+<text x="20" y="484.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Parent 6bd79ab</text>
+<g id="RefChip/head main">
+<rect x="124" y="472" width="32" height="16" fill="#4ecdc4"/>
+<text x="140" y="483.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">main</text>
+</g>
+<text x="20" y="508.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The diff kept its document but not its scroll position when</text>
+<g id="ShowFiles">
+<text x="381" y="536.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">2 files ›</text>
+</g>
+</g>
+<text x="8" y="568.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" id="SearchCount" xml:space="preserve">10,000+ matches — ∞ finds all</text>
+</g>
+</svg>

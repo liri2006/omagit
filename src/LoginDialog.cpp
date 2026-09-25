@@ -19,13 +19,11 @@ namespace {
 // md-eye, md-eye_off: the show/hide toggle of the password field.
 constexpr uint kEye = 0xF0208, kEyeOff = 0xF0209;
 // As wide as the two fields want to be — narrower than the merge view, which
-// carries two branch pickers side by side.
+// carries two branch pickers side by side. Everything else is the grid's
+// (Grid.h), as the merge view has it: a dialog's 16 of padding, its groups a
+// group gap apart, captions 4 over their 28 px fields, the eye a 24 px ghost
+// square 4 in from the field's right edge.
 constexpr int kDialogWidth = 480;
-// Between the field's frame and the eye inside it.
-constexpr int kRevealInset = 3;
-// The fields are as tall as the merge view's branch pickers, so the two
-// dialogs read as the same kit.
-constexpr int kFieldPadding = 8;
 // How long git may take to say which credential helper is configured. It is
 // a config read, so this is only there to keep a wedged git off the screen.
 constexpr int kConfigTimeoutMs = 3000;
@@ -223,14 +221,11 @@ public:
         m_reveal->setText(ui::icon(shown ? kEyeOff : kEye, shown ? QStringLiteral("•") : QStringLiteral("◦")).trimmed());
         m_reveal->setToolTip(shown ? tr("Hide the password") : tr("Show the password"));
         m_reveal->setAccessibleName(shown ? tr("Hide") : tr("Show"));
-        // A square, so the glyph swap does not move the field's text about.
-        // Measured free of the size a previous glyph fixed it at.
-        m_reveal->setMinimumSize(0, 0);
-        m_reveal->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
-        const QSize hint = m_reveal->sizeHint();
-        m_side = qMax(hint.width(), hint.height());
+        // The design's square, so the glyph swap does not move the field's
+        // text about; the text keeps clear of it and of its inset.
+        m_side = ui::space(ui::box::row);
         m_reveal->setFixedSize(m_side, m_side);
-        setTextMargins(0, 0, m_side + kRevealInset, 0);
+        setTextMargins(0, 0, m_side + ui::space(ui::gap::icon), 0);
         place();
     }
 
@@ -244,7 +239,7 @@ protected:
 private:
     void place()
     {
-        m_reveal->move(rect().right() - m_side - kRevealInset, (height() - m_side) / 2);
+        m_reveal->move(width() - ui::space(ui::gap::icon) - m_side, (height() - m_side) / 2);
     }
 
     QToolButton *m_reveal;
@@ -421,23 +416,24 @@ QString LoginDialog::noteText(const QString &credentialHelper, bool forEveryRemo
 
 void LoginDialog::buildUi()
 {
+    // The heading and its hint, the fields, the note and the buttons, a group
+    // gap apart (applyTheme() scales every gap).
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 18, 20, 16);
-    layout->setSpacing(10);
 
+    auto *head = m_headLayout = new QVBoxLayout;
+    head->setContentsMargins(0, 0, 0, 0);
     m_heading = new QLabel(headingText());
     m_heading->setWordWrap(true);
     m_heading->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_hint = ui::dimLabel(hintText());
     m_hint->setWordWrap(true);
     m_hint->setVisible(!m_hint->text().isEmpty());
-    layout->addWidget(m_heading);
-    layout->addWidget(m_hint);
-    layout->addSpacing(2);
+    head->addWidget(m_heading);
+    head->addWidget(m_hint);
+    layout->addLayout(head);
 
     // Caption above field, twice, the way the merge view captions its pickers.
-    auto *fields = new QVBoxLayout;
-    fields->setSpacing(6);
+    auto *fields = m_fieldsLayout = new QVBoxLayout;
     m_userCaption = ui::sectionLabel(tr("Username"));
     m_userEdit = new QLineEdit;
     m_userEdit->setObjectName(QStringLiteral("usernameEdit"));
@@ -451,7 +447,9 @@ void LoginDialog::buildUi()
         m_secretEdit->setPlaceholderText(tr("Password or token"));
     fields->addWidget(m_userCaption);
     fields->addWidget(m_userEdit);
-    fields->addSpacing(6);
+    // With the layout's caption gap before it, the gap between the groups.
+    m_fieldsGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    fields->addItem(m_fieldsGap);
     fields->addWidget(m_secretCaption);
     fields->addWidget(m_secretEdit);
     layout->addLayout(fields);
@@ -466,14 +464,12 @@ void LoginDialog::buildUi()
         m_userEdit->setToolTip(tr("The user the remote's URL names"));
     }
 
-    layout->addSpacing(2);
     m_noteLabel = ui::dimLabel(m_note);
     m_noteLabel->setWordWrap(true);
     layout->addWidget(m_noteLabel);
     layout->addStretch(1);
 
-    auto *buttons = new QHBoxLayout;
-    buttons->setSpacing(10);
+    auto *buttons = m_buttonRow = new QHBoxLayout;
     m_cancelButton = new QPushButton(tr("Cancel"));
     m_cancelButton->setCursor(Qt::PointingHandCursor);
     m_cancelButton->setAutoDefault(false);
@@ -481,6 +477,7 @@ void LoginDialog::buildUi()
     m_signInButton = new QPushButton(tr("Sign in"));
     m_signInButton->setCursor(Qt::PointingHandCursor);
     m_signInButton->setDefault(true);
+    ui::setPrimary(m_signInButton); // 16 in, the dialog's primary action
     connect(m_signInButton, &QPushButton::clicked, this, &QDialog::accept);
     buttons->addStretch();
     buttons->addWidget(m_cancelButton);
@@ -497,7 +494,7 @@ void LoginDialog::buildUi()
         });
     }
 
-    setFixedWidth(kDialogWidth);
+    setFixedWidth(ui::space(kDialogWidth));
     setTabOrder(m_userEdit, m_secretEdit);
     setTabOrder(m_secretEdit, m_signInButton);
     setTabOrder(m_signInButton, m_cancelButton);
@@ -506,14 +503,26 @@ void LoginDialog::buildUi()
 void LoginDialog::applyTheme()
 {
     const OmarchyTheme *t = OmarchyTheme::instance();
+    const int pad = ui::space(ui::pad::dialog);
+    layout()->setContentsMargins(pad, pad, pad, pad);
+    layout()->setSpacing(ui::space(ui::gap::group));
+    m_headLayout->setSpacing(ui::space(ui::gap::caption));
+    m_fieldsLayout->setSpacing(ui::space(ui::gap::caption));
+    m_fieldsGap->changeSize(0, ui::space(ui::gap::group) - ui::space(ui::gap::caption), QSizePolicy::Minimum,
+                            QSizePolicy::Fixed);
+    m_buttonRow->setSpacing(ui::space(ui::gap::item));
     // Bold at the base size, like the merge view's verdict headline: the
     // stylesheet decides the size, the font the weight.
     m_heading->setFont(t->titleFont());
-    for (QLabel *l : {m_hint, m_noteLabel, m_userCaption, m_secretCaption})
+    for (QLabel *l : {m_hint, m_noteLabel})
         l->setFont(t->captionFont());
+    for (QLabel *l : {m_userCaption, m_secretCaption}) {
+        l->setFont(t->captionFont());
+        ui::placeOnLine(l, t->captionFont(), ui::box::line);
+    }
     for (QLineEdit *edit : {m_userEdit, static_cast<QLineEdit *>(m_secretEdit)}) {
         edit->setFont(t->uiFont());
-        edit->setMinimumHeight(QFontMetrics(t->titleFont()).height() + 2 * kFieldPadding + 2);
+        edit->setFixedHeight(ui::space(ui::box::control));
     }
     m_secretEdit->applyTheme();
     fitToContent();

@@ -7,10 +7,13 @@
 
 class GitRepo;
 class SecretEdit;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QSpacerItem;
 class QUrl;
+class QVBoxLayout;
 
 // The credential helpers git would end up with for `target`, worked out the
 // way credential.c works them out. `configEntries` holds every
@@ -97,4 +100,8 @@ private:
     SecretEdit *m_secretEdit;
     QLabel *m_noteLabel;
     QPushButton *m_cancelButton, *m_signInButton;
+    QVBoxLayout *m_headLayout;   // the heading and its hint
+    QVBoxLayout *m_fieldsLayout; // the captions and their fields
+    QSpacerItem *m_fieldsGap;    // between the two captioned fields
+    QHBoxLayout *m_buttonRow;
 };

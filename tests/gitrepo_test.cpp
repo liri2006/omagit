@@ -302,6 +302,213 @@ static void testStatusAndHistory(const QString &base)
     CHECK(find(st, "notes.txt") && find(st, "notes.txt")->isUntracked());
 }
 
+// The records of `git log -z` fed in pieces cut anywhere — inside a
+// multi-byte character, right at a NUL, a byte at a time — come out as the
+// whole stream does; a last record git did not end with a NUL waits for
+// finish().
+static void testLogStreamParser()
+{
+    const auto record = [](const QString &hash, const QString &parents, const QString &author, const QString &subject,
+                           const QString &body) {
+        return QStringList({hash, hash.left(7), parents, author, "a@example.com", "2024-01-01T01:00:00+00:00", subject, body})
+            .join(QChar(0x1f))
+            .toUtf8();
+    };
+    const QString one(40, '1'), two(40, '2'), three(40, '3');
+    const QByteArray stream = record(one, QString(), "Ádám Őrs", "első", "line one\n\nline two\n") + '\0'
+        + record(two, one, "Zoë", "second", QString()) + '\0' + record(three, one + ' ' + two, "Łukasz", "third", "last");
+
+    LogStreamParser whole;
+    QList<Commit> expected = whole.feed(stream);
+    CHECK(expected.size() == 2); // the third is still open
+    expected += whole.finish();
+    CHECK(expected.size() == 3);
+    CHECK(whole.finish().isEmpty());
+    if (expected.size() != 3)
+        return;
+    CHECK(expected[0].hash == one && expected[0].shortHash == "1111111" && expected[0].parents.isEmpty());
+    CHECK(expected[0].author == QString("Ádám Őrs") && expected[0].subject == QString("első"));
+    CHECK(expected[0].body == "line one\n\nline two");
+    CHECK(expected[0].date == QDateTime::fromString("2024-01-01T01:00:00+00:00", Qt::ISODate));
+    CHECK(expected[1].author == QString("Zoë") && expected[1].parents == QStringList({one}) && expected[1].body.isEmpty());
+    CHECK(expected[2].parents == QStringList({one, two}) && expected[2].body == "last");
+
+    const auto same = [](const QList<Commit> &a, const QList<Commit> &b) {
+        if (a.size() != b.size())
+            return false;
+        for (int i = 0; i < a.size(); ++i)
+            if (a[i].hash != b[i].hash || a[i].shortHash != b[i].shortHash || a[i].parents != b[i].parents
+                || a[i].author != b[i].author || a[i].email != b[i].email || a[i].date != b[i].date
+                || a[i].subject != b[i].subject || a[i].body != b[i].body)
+                return false;
+        return true;
+    };
+    // Two pieces, cut at every byte.
+    for (int cut = 0; cut <= stream.size(); ++cut) {
+        LogStreamParser parser;
+        QList<Commit> commits = parser.feed(stream.left(cut));
+        commits += parser.feed(stream.mid(cut));
+        commits += parser.finish();
+        CHECK(same(commits, expected));
+    }
+    // A byte at a time.
+    {
+        LogStreamParser parser;
+        QList<Commit> commits;
+        for (char byte : stream)
+            commits += parser.feed(QByteArray(1, byte));
+        commits += parser.finish();
+        CHECK(same(commits, expected));
+    }
+    // Inside the Á of the first author: nothing yet, then the name whole.
+    {
+        const int inside = stream.indexOf("\xc3\x81") + 1;
+        LogStreamParser parser;
+        CHECK(parser.feed(stream.left(inside)).isEmpty());
+        const QList<Commit> rest = parser.feed(stream.mid(inside));
+        CHECK(rest.size() == 2 && rest.first().author == QString("Ádám Őrs"));
+    }
+    // Right before and right after the first NUL.
+    {
+        const int nul = stream.indexOf('\0');
+        LogStreamParser before;
+        CHECK(before.feed(stream.left(nul)).isEmpty());
+        CHECK(before.feed(stream.mid(nul, 1)).size() == 1);
+        LogStreamParser after;
+        CHECK(after.feed(stream.left(nul + 1)).size() == 1);
+        CHECK(after.feed(stream.mid(nul + 1)).size() == 1);
+        CHECK(after.finish().size() == 1);
+    }
+}
+
+// Runs GitRepo::logStream() to its end from the scope's start points:
+// whether git was ok, the commits of every batch in order, and how many
+// batches there were.
+static bool streamLog(GitRepo &repo, bool allRefs, QList<Commit> *commits, int *batches, int skip = 0)
+{
+    QEventLoop loop;
+    QObject context;
+    bool result = false, done = false;
+    bool resolved = false;
+    const QStringList startPoints = repo.logStartPoints(allRefs, &resolved);
+    CHECK(resolved && !startPoints.isEmpty());
+    QPointer<QProcess> process = repo.logStream(
+        startPoints, skip, &context,
+        [&](const QList<Commit> &batch) {
+            CHECK(!done && !batch.isEmpty());
+            *commits += batch;
+            ++*batches;
+        },
+        [&](bool ok) {
+            result = ok;
+            done = true;
+            loop.quit();
+        });
+    CHECK(process && process->parent() == &repo);
+    QTimer::singleShot(15000, &loop, &QEventLoop::quit);
+    if (!done)
+        loop.exec();
+    CHECK(done);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    CHECK(!process); // deleted itself once git was done
+    return result;
+}
+
+// The streamed log is log()'s, whole and in its order, over the same scope,
+// and from as far into it as it is asked to start. A repository without
+// commits has no start point, and no start point is no history — not
+// HEAD's, which is what git log would walk given none.
+static void testLogStream(const QString &base)
+{
+    const QString empty = initRepo(base + "/log-stream-empty");
+    {
+        GitRepo repo(empty);
+        for (const bool allRefs : {false, true}) {
+            bool ok = false;
+            CHECK(repo.logStartPoints(allRefs, &ok).isEmpty() && ok);
+        }
+        QEventLoop loop;
+        QObject context;
+        int batches = 0;
+        bool result = false, done = false;
+        CHECK(!repo.logStream({}, 0, &context, [&](const QList<Commit> &) { ++batches; },
+                              [&](bool ok) {
+                                  result = ok;
+                                  done = true;
+                                  loop.quit();
+                              }));
+        CHECK(!done); // from the event loop
+        QTimer::singleShot(15000, &loop, &QEventLoop::quit);
+        if (!done)
+            loop.exec();
+        CHECK(done && result && batches == 0);
+        CHECK(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    const QString dir = initRepo(base + "/log-stream");
+    for (int i = 0; i < 40; ++i)
+        git(dir, {"commit", "-q", "--allow-empty", "-m", QString("commit %1").arg(i), "-m", "Ünïcode body\n\nsecond paragraph"});
+    git(dir, {"checkout", "-q", "-b", "side", "HEAD~5"});
+    git(dir, {"commit", "-q", "--allow-empty", "-m", "on the side"});
+    git(dir, {"checkout", "-q", "main"});
+
+    GitRepo repo(dir);
+    for (const bool allRefs : {false, true}) {
+        QList<Commit> commits;
+        int batches = 0;
+        CHECK(streamLog(repo, allRefs, &commits, &batches));
+        CHECK(batches >= 1);
+        const QList<Commit> paged = repo.log(0, 1000, allRefs);
+        CHECK(commits.size() == (allRefs ? 41 : 40) && commits.size() == paged.size());
+        for (int i = 0; i < qMin(commits.size(), paged.size()); ++i)
+            CHECK(commits[i].hash == paged[i].hash && commits[i].body == paged[i].body);
+        CHECK(!commits.isEmpty() && commits.last().body == QString("Ünïcode body\n\nsecond paragraph"));
+
+        QList<Commit> rest;
+        CHECK(streamLog(repo, allRefs, &rest, &batches, 12));
+        const QList<Commit> tail = repo.log(12, 1000, allRefs);
+        CHECK(rest.size() == commits.size() - 12 && rest.size() == tail.size());
+        for (int i = 0; i < qMin(rest.size(), tail.size()) && 12 + i < commits.size(); ++i)
+            CHECK(rest[i].hash == tail[i].hash && rest[i].hash == commits[12 + i].hash);
+    }
+}
+
+// The start points of the history: HEAD's commit; with every ref, each
+// branch's and tag's commit too — an annotated tag's, a tag of a tag's —
+// once, in a stable order, and none for a tag of a tree. A walk from them is
+// log()'s of the same scope.
+static void testLogStartPoints(const QString &base)
+{
+    const QString dir = initRepo(base + "/log-start-points");
+    for (int i = 0; i < 4; ++i)
+        git(dir, {"commit", "-q", "--allow-empty", "-m", QString("commit %1").arg(i)});
+    const QString head = QString::fromUtf8(git(dir, {"rev-parse", "HEAD"}));
+    const QString second = QString::fromUtf8(git(dir, {"rev-parse", "HEAD~2"}));
+    git(dir, {"checkout", "-q", "-b", "side", "HEAD~3"});
+    git(dir, {"commit", "-q", "--allow-empty", "-m", "on the side"});
+    const QString side = QString::fromUtf8(git(dir, {"rev-parse", "HEAD"}));
+    git(dir, {"checkout", "-q", "main"});
+    git(dir, {"tag", "-a", "-m", "annotated", "v1", second});
+    git(dir, {"-c", "advice.nestedTag=false", "tag", "-a", "-m", "nested", "v1-again", "v1"});
+    git(dir, {"tag", "tree", "HEAD^{tree}"});
+
+    GitRepo repo(dir);
+    bool ok = false;
+    CHECK(repo.logStartPoints(false, &ok) == QStringList({head}) && ok);
+    const QStringList all = repo.logStartPoints(true, &ok);
+    CHECK(ok && all.size() == 3);
+    CHECK(all.contains(head) && all.contains(side) && all.contains(second));
+    CHECK(repo.logStartPoints(true) == all);
+
+    QList<Commit> commits;
+    int batches = 0;
+    CHECK(streamLog(repo, true, &commits, &batches));
+    const QList<Commit> logged = repo.log(0, 1000, true);
+    CHECK(commits.size() == 5 && commits.size() == logged.size());
+    for (int i = 0; i < qMin(commits.size(), logged.size()); ++i)
+        CHECK(commits[i].hash == logged[i].hash);
+}
+
 // Runs one RemoteSync operation to completion and returns whether it succeeded.
 static bool runOp(RemoteSync &sync, void (RemoteSync::*op)(), QString *message = nullptr)
 {
@@ -1183,6 +1390,9 @@ int main(int argc, char **argv)
     testAmendRoot(tmp.path());
     testCommitIgnoredDeletion(tmp.path());
     testStatusAndHistory(tmp.path());
+    testLogStreamParser();
+    testLogStream(tmp.path());
+    testLogStartPoints(tmp.path());
     testRemote(tmp.path());
     testBranches(tmp.path());
     testMerge(tmp.path());

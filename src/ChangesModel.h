@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GitRepo.h"
+#include "PaneLayout.h"
 
 #include <QAbstractTableModel>
 #include <QHash>
@@ -15,6 +16,7 @@
 class QAbstractItemDelegate;
 class QAbstractItemView;
 class QPainter;
+class QStyleOptionViewItem;
 class QTableView;
 
 // The list of changes in the commit dialog. Also used, without
@@ -103,6 +105,17 @@ private:
 // gives it (the plain foreground where it gives none).
 QColor statusColour(const QModelIndex &index);
 
+// The 16 px box of a checkbox column (screens.js changesTable(): a 32 px
+// column, the box centred), where the delegates and the header paint it and
+// what a click toggles. `leading` is the pixels of the view's frame the
+// column's design box starts with and its cell does not (the first column's).
+QRect checkBoxRect(const QRect &cell, int leading = 0);
+// The row's box at checkBoxRect(), in the state the model gives it, drawn by
+// the view's style; and QStyledItemDelegate::editorEvent() for that box.
+void paintCheckBox(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index);
+bool checkBoxEvent(QEvent *event, QAbstractItemModel *model, const QStyleOptionViewItem &option,
+                   const QModelIndex &index);
+
 // The kit's status pill (kit.js statusPill()): a 16 px square with square
 // corners, the row's status colour at 18 % for the fill and the status letter
 // in it, centred in `cell`. A directory row of the tree has no status of its
@@ -120,7 +133,7 @@ public:
     explicit ChangesHeader(QAbstractItemView *view);
 
     // A label this presentation alone paints over the model's own, for the
-    // compact table, which spells Status "St" in a 30 px column. The model
+    // tables that spell Status "St" in a 32 px column. The model
     // and the proxy every other view shares are left untouched; an empty
     // text hands the section back to them.
     void setSectionText(int section, const QString &text);
@@ -154,13 +167,15 @@ private:
     bool m_checkHovered = false; // the pointer is over the box, not just the section
 };
 
-// Applies the shared look of a changes table (column widths, row height, no
-// grid) and keeps the Path column filling the leftover width, never narrower
-// than ui::kMinStretchColumn (then the view scrolls horizontally).
-// The table's model — and whether that model is checkable — has to be set
-// before this is built: the first column is the design's to size where the
-// list has checkboxes and the user's where it has row numbers, and the
-// constructor reads which it is from the model that is on the table then.
+// Applies the shared look of a file list (screens.js changesTable()) — the
+// commit page's changes and a commit's files in the history — and keeps its
+// columns on the design's: a 32 px first column (the checkboxes, or the row
+// numbers where the model has none), Path, Status (the "St" pill where it is
+// 32 px), "+ −" and Size as the window's width class has them, and Name
+// taking the rest, never narrower than ui::kMinStretchColumn (then the view
+// scrolls sideways). Every row and every cell is painted on the design's
+// grid. The table's model — and whether that model is checkable — has to be
+// set before this is built.
 class ChangesTableSetup : public QObject
 {
     Q_OBJECT
@@ -168,40 +183,34 @@ public:
     explicit ChangesTableSetup(QTableView *table);
     void applyTheme();
 
-    // The column that takes the leftover width outside the compact
-    // presentation, and the least it may be given before the table scrolls
-    // sideways instead: Path and ui::kMinStretchColumn unless the caller says
-    // otherwise (a commit's files in the history stretch their Name, in a
-    // section far narrower than the commit page's). Fits it at once.
-    void setStretchColumn(int column, int floor);
-    // Whichever column of the presentation on show takes the leftover width;
-    // the table's own resizes call it, and a caller that has moved the other
-    // columns calls it again.
+    // The window's width class: the columns and their widths. The widths are
+    // the user's to drag until the class or the text size changes.
+    void setWidthClass(WidthClass widthClass);
+    WidthClass widthClass() const { return m_widthClass; }
+    // Gives Name whatever the other columns leave; the table's own resizes
+    // call it, and a caller that has moved the other columns calls it again.
     void fitStretchColumn();
 
     // The compact presentation: the same table, its columns down to the
     // checkbox, the file name and a narrow status pill headed "St", with Name
     // taking whatever is left. The painting is the caller's — the commit page
-    // owns both delegates — and so is the decision to switch; everything the
-    // columns had before (widths, resize modes, visibility, delegates) comes
-    // back when it is switched off.
+    // owns both delegates — and so is the decision to switch; the columns
+    // come back as they were when it is switched off.
     void setCompactDelegates(QAbstractItemDelegate *name, QAbstractItemDelegate *status);
     void setCompact(bool on);
     bool compact() const { return m_compact; }
 
 private:
     bool hasChecks() const;
+    void applyColumns();
     void enterCompact();
     void leaveCompact();
-    // The design's widths, in the scaled pixels of the text size of the moment.
-    void applyCompactWidths();
 
     QTableView *m_table;
+    QAbstractItemDelegate *m_cells;                   // the design's cells, the table's own
     QAbstractItemDelegate *m_compactName = nullptr;   // the caller's, not owned
     QAbstractItemDelegate *m_compactStatus = nullptr; // likewise
-    QList<int> m_savedWidths;                         // the table's widths before compact
-    QList<QHeaderView::ResizeMode> m_savedModes;
+    QList<int> m_savedWidths;                         // the widths the user left the table at before compact
     bool m_compact = false;
-    int m_stretchColumn;
-    int m_stretchFloor;
+    WidthClass m_widthClass = WidthClass::Wide;
 };

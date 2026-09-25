@@ -10,14 +10,6 @@
 
 using namespace ui;
 
-namespace {
-// The design's footer (screens.js footer()), in 12 px-base pixels: 28 px with
-// its hairline, the status the window's margin in, and the keybindings button
-// a 24 px ghost square the margin from the right edge, 2 px under the hairline.
-constexpr int kButtonTop = 1;    // between the hairline and the button: y + 2 in the design
-constexpr int kButtonBottom = 2;
-} // namespace
-
 Footer::Footer(QWidget *parent)
     : QWidget(parent)
 {
@@ -28,7 +20,6 @@ Footer::Footer(QWidget *parent)
     rootLayout->setSpacing(0);
     rootLayout->addWidget(hairline(Qt::Horizontal, HairlineTone::Chrome));
     auto *footer = m_row = new QHBoxLayout;
-    footer->setSpacing(8);
     // Small regular dim text that elides a path too long for a narrow window
     // instead of cutting it off; the object name gives it its style.
     m_statusLabel = new ElidedLabel;
@@ -45,9 +36,23 @@ Footer::Footer(QWidget *parent)
     connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &Footer::applyTheme);
 }
 
+void Footer::setDensity(const Density &density)
+{
+    if (m_density == density)
+        return;
+    m_density = density;
+    applyTheme();
+}
+
+// The design's footer (screens.js footer()): 28 px, its hairline the top
+// pixel row; the status on the window's side margin, and the keybindings
+// button a 24 px ghost square flush with the other margin, centred in the 28.
 void Footer::applyTheme()
 {
-    m_row->setContentsMargins(windowMargin(), space(kButtonTop), windowMargin(), space(kButtonBottom));
+    const int margin = space(m_density.margin);
+    const int top = (space(box::footer) - space(box::row)) / 2 - 1; // under the hairline's row
+    m_row->setContentsMargins(margin, top, margin, space(box::footer) - 1 - top - space(box::row));
+    m_row->setSpacing(space(gap::item));
 }
 
 void Footer::showStatus(const QString &text, int ms)

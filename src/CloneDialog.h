@@ -6,15 +6,19 @@
 #include <functional>
 
 class AskPass;
+class QBoxLayout;
 class QFrame;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QListWidget;
 class QProgressBar;
 class QPushButton;
+class QSpacerItem;
 class QStackedWidget;
 class QTimer;
 class QToolButton;
+class QVBoxLayout;
 
 // The folder is a container: cloning creates <folder>/<editable repository name>.
 // An existing destination is never reused or removed.
@@ -76,6 +80,11 @@ private:
     QLineEdit *m_url, *m_folder, *m_search, *m_name;
     QListWidget *m_repositories;
     QLabel *m_heading, *m_account, *m_count, *m_placeholder, *m_destinationPrefix, *m_message;
+    QLabel *m_subtitle, *m_urlCaption, *m_folderCaption;
+    // The layouts whose gaps applyTheme() puts on the grid.
+    QVBoxLayout *m_urlLayout, *m_githubLayout, *m_placeholderLayout, *m_destinationLayout, *m_statusLayout;
+    QHBoxLayout *m_accountRow, *m_folderRow, *m_destinationRow, *m_buttonRow;
+    QSpacerItem *m_urlHintGap, *m_destinationGap; // an item gap under a captioned field
     QProgressBar *m_progress;
     QString m_repositoryPath, m_cloneTarget, m_suggestedName;
     // The hint the destination fields ask for, the last word from a command,

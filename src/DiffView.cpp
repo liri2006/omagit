@@ -19,12 +19,17 @@
 #include <QStyleOptionSlider>
 #include <QWheelEvent>
 
-static constexpr int kIconSize = 16;       // the change mark's cell in the margin
+// The design's diff (screens.js diffPane()), on the grid of Grid.h: each
+// side's file header a 24 px row, its hairline its last row and its text 8
+// in; the first code line 4 under it, the lines 16 at a 12 px base; a 20 px
+// mark column (± in a 16 px box, centred) and the line numbers right-aligned
+// 8 short of 52, the code 8 after that, at 60. The design measures from the
+// box's edge, which the view's 1 px frame is the first pixel of.
+static constexpr int kMarkColumn = 20;
+static constexpr int kMargin = 52;         // the mark column and the numbers
 static constexpr int kMarkGlyph = 14;      // the mark's glyph, in 12 px-base pixels of the diff font
-static constexpr int kHeaderPad = 6;
 static constexpr int kPaneGap = 4; // separator between the two panes
 static constexpr int kMinPaneText = 40;    // text a pane keeps beside its margin
-static constexpr int kTextPad = 4;         // gap between a margin and its text
 static constexpr int kColumnStep = 4;      // columns per arrow key / scroll step
 static constexpr int kScrollBarWidth = 16;
 static constexpr int kScrollBarHandleInset = 5; // leaves room for the ribbons
@@ -146,22 +151,48 @@ void DiffView::refreshTheme()
     viewport()->update();
 }
 
+// The design's 16 px line at the theme's own size, and in proportion to the
+// font under the user's zoom (never shorter than the font's own height).
 void DiffView::updateMetrics()
 {
     const QFontMetricsF fm(m_font);
     // Text advances are fractional; rounding each column accumulates drift.
     m_charWidth = qMax(qreal(1), fm.horizontalAdvance(QLatin1Char('M')));
-    m_lineHeight = qCeil(fm.height()) + 2;
+    const int base = qMax(1, OmarchyTheme::instance()->monoFont().pixelSize());
+    m_lineHeight = qMax(qCeil(fm.height()), qRound(ui::space(ui::box::line) * m_font.pixelSize() / double(base)));
 }
 
+// The header's 24, less the frame's top row it starts on.
 int DiffView::headerHeight() const
 {
-    return m_lineHeight + kHeaderPad * 2;
+    return qMax(1, ui::space(ui::box::row) - frameWidth());
 }
 
+// Where the first code line starts: 4 under the header.
+int DiffView::linesTop() const
+{
+    return headerHeight() + ui::space(ui::gap::cluster);
+}
+
+// The margin beside the code: the mark column and the numbers, 52 or as wide
+// as the numbers need, 8 short of its edge.
 int DiffView::marginWidth() const
 {
-    return kIconSize + 6 + qCeil(m_digits * m_charWidth) + 10;
+    return qMax(ui::space(kMargin),
+                ui::space(kMarkColumn) + qCeil(m_digits * m_charWidth) + ui::space(ui::pad::control));
+}
+
+// The design's distances inside a pane are measured from the box's edge; the
+// first pane's rect starts inside the view's frame, one pixel in from it.
+int DiffView::edgeOffset(int pane) const
+{
+    return pane == 0 ? frameWidth() : 0;
+}
+
+// The margin's width inside the pane's rect: the design's from the box's edge.
+int DiffView::paneMargin(int pane) const
+{
+    return marginWidth() - edgeOffset(pane);
 }
 
 DiffView::PaneSplit DiffView::paneSplitMetrics() const
@@ -172,15 +203,15 @@ DiffView::PaneSplit DiffView::paneSplitMetrics() const
 
 QRect DiffView::paneRect(int pane) const
 {
-    const int hh = headerHeight();
-    const int h = viewport()->height() - hh;
+    const int top = linesTop();
+    const int h = viewport()->height() - top;
     if (paneCount() <= 1)
-        return QRect(0, hh, viewport()->width(), h);
+        return QRect(0, top, viewport()->width(), h);
     const PaneSplit split = paneSplitMetrics();
     const int left = split.clamp(int(split.available * m_paneSplit));
     if (pane == 0)
-        return QRect(0, hh, left, h);
-    return QRect(left + kPaneGap, hh, split.available - left, h);
+        return QRect(0, top, left, h);
+    return QRect(left + kPaneGap, top, split.available - left, h);
 }
 
 bool DiffView::onDivider(const QPoint &point) const
@@ -402,7 +433,7 @@ void DiffView::updateScrollBars()
 {
     const int paneWidth = paneCount() == 2
         ? qMin(paneRect(0).width(), paneRect(1).width()) : paneRect(0).width();
-    const int textWidth = paneWidth - marginWidth() - 8;
+    const int textWidth = paneWidth - marginWidth() - ui::space(ui::gap::item);
     const int visibleCols = qMax(1, qFloor(textWidth / m_charWidth));
     const int maxColumn = m_doc.lines.isEmpty() ? 0 : qMax(0, m_maxCols + 2 - visibleCols);
     const int barHeight = maxColumn > 0 ? m_paneScrollBars[0]->sizeHint().height() : 0;
@@ -426,7 +457,7 @@ void DiffView::updateScrollBars()
     }
 
     const int rows = m_panes.isEmpty() ? 0 : m_panes[0].size();
-    const int visibleLines = qMax(1, (viewport()->height() - headerHeight()) / m_lineHeight);
+    const int visibleLines = qMax(1, (viewport()->height() - linesTop()) / m_lineHeight);
     verticalScrollBar()->setRange(0, qMax(0, rows - visibleLines));
     verticalScrollBar()->setPageStep(visibleLines);
     verticalScrollBar()->setSingleStep(1);
@@ -493,7 +524,11 @@ void DiffView::drawMargin(QPainter &p, int pane, int row, int y, const QRect &pr
         return;
     const DiffLine &l = m_doc.lines[li];
 
-    drawMarginIcon(p, QRect(pr.left() + 2, y + (m_lineHeight - kIconSize) / 2, kIconSize, kIconSize), l.state);
+    const int markBox = ui::space(ui::box::icon);
+    drawMarginIcon(p,
+                   QRect(pr.left() - edgeOffset(pane) + (ui::space(kMarkColumn) - markBox) / 2,
+                         y + (m_lineHeight - markBox) / 2, markBox, markBox),
+                   l.state);
 
     QString number;
     p.setFont(m_font);
@@ -512,7 +547,9 @@ void DiffView::drawMargin(QPainter &p, int pane, int row, int y, const QRect &pr
         number = l.newNumber > 0 ? QString::number(l.newNumber) : QString();
         p.setPen(l.state == DiffLine::Added ? t->text() : t->mutedText());
     }
-    const QRectF numRect(pr.left() + kIconSize + 6, y, m_digits * m_charWidth, m_lineHeight);
+    const int numbersLeft = pr.left() - edgeOffset(pane) + ui::space(kMarkColumn);
+    const QRectF numRect(numbersLeft, y, pr.left() + paneMargin(pane) - ui::space(ui::pad::control) - numbersLeft,
+                         m_lineHeight);
     p.drawText(numRect, Qt::AlignVCenter | Qt::AlignRight, number);
 }
 
@@ -629,7 +666,7 @@ void DiffView::drawWhitespaceMarkers(QPainter &p, const DiffLine &l, const LineL
 
 void DiffView::drawCell(QPainter &p, int pane, int row, int y, const QRect &pr)
 {
-    const int textX = pr.left() + marginWidth();
+    const int textX = pr.left() + paneMargin(pane);
     const QRect box(textX, y, pr.right() - textX + 1, m_lineHeight);
     const int li = lineAt(pane, row);
 
@@ -646,7 +683,7 @@ void DiffView::drawCell(QPainter &p, int pane, int row, int y, const QRect &pr)
     const int visibleCols = (pr.right() - textX) / m_charWidth + 3;
     Cell cell;
     cell.y = y;
-    cell.x0 = textX + kTextPad - horizontalScrollBar()->value() * m_charWidth;
+    cell.x0 = textX + ui::space(ui::gap::item) - horizontalScrollBar()->value() * m_charWidth;
     cell.firstCol = qMax(0, horizontalScrollBar()->value() - 1);
     cell.lastCol = qMin(int(layout.text.size()), cell.firstCol + visibleCols);
     cell.baseline = y + (m_lineHeight + p.fontMetrics().ascent() - p.fontMetrics().descent()) / 2;
@@ -682,11 +719,12 @@ void DiffView::paintEvent(QPaintEvent *)
             const QRect pr = paneRect(pane);
             p.save();
             p.setClipRect(QRect(pr.left(), 0, pr.width(), hh));
-            const QRect tr(pr.left() + 10, 0, pr.width() - 20, hh);
+            const int pad = ui::space(ui::pad::control);
+            const QRect tr(pr.left() - edgeOffset(pane) + pad, 0, pr.width() + edgeOffset(pane) - 2 * pad, hh);
             const QString label = pane == 0 ? m_leftLabel : m_rightLabel;
             p.setFont(font());
             p.setPen(t->mutedText());
-            const int labelW = p.fontMetrics().horizontalAdvance(label) + 12;
+            const int labelW = p.fontMetrics().horizontalAdvance(label) + ui::space(ui::gap::item);
             p.drawText(tr, Qt::AlignVCenter | Qt::AlignRight, label);
             p.setFont(bold);
             p.setPen(t->text());
@@ -695,11 +733,12 @@ void DiffView::paintEvent(QPaintEvent *)
             p.restore();
         }
     } else {
-        const QRect tr(10, 0, w - 20, hh);
+        const int pad = ui::space(ui::pad::control);
+        const QRect tr(pad - edgeOffset(0), 0, w + edgeOffset(0) - 2 * pad, hh);
         p.setFont(font());
         p.setPen(t->mutedText());
         const QString subtitle = m_subtitleShown ? m_subtitle : QString();
-        const int subW = subtitle.isEmpty() ? 0 : p.fontMetrics().horizontalAdvance(subtitle) + 12;
+        const int subW = subtitle.isEmpty() ? 0 : p.fontMetrics().horizontalAdvance(subtitle) + ui::space(ui::gap::item);
         if (!subtitle.isEmpty())
             p.drawText(tr, Qt::AlignVCenter | Qt::AlignRight, subtitle);
         p.setFont(bold);
@@ -723,12 +762,14 @@ void DiffView::paintEvent(QPaintEvent *)
     }
 
     const int first = verticalScrollBar()->value();
-    const int visible = (h - hh) / m_lineHeight + 2;
+    const int top = linesTop();
+    const int visible = (h - top) / m_lineHeight + 2;
     const int rows = rowCount();
-    const int mw = marginWidth();
+
 
     for (int pane = 0; pane < paneCount(); ++pane) {
         const QRect pr = paneRect(pane);
+        const int mw = paneMargin(pane);
 
         // Margin background + separator
         p.setClipRect(pr);
@@ -740,7 +781,7 @@ void DiffView::paintEvent(QPaintEvent *)
             const int row = first + k;
             if (row >= rows)
                 break;
-            const int y = hh + k * m_lineHeight;
+            const int y = top + k * m_lineHeight;
             p.setClipRect(QRect(pr.left() + mw, pr.top(), qMax(0, pr.width() - mw), pr.height()));
             drawCell(p, pane, row, y, pr);
             p.setClipRect(QRect(pr.left(), pr.top(), qMin(mw, pr.width()), pr.height()));
@@ -762,7 +803,8 @@ DiffView::Pos DiffView::posAt(const QPoint &pt, int forcePane) const
     }
     const QRect pr = paneRect(pos.pane);
     pos.row = qBound(0, verticalScrollBar()->value() + (pt.y() - pr.top()) / m_lineHeight, qMax(0, rows - 1));
-    const qreal x0 = pr.left() + marginWidth() + kTextPad - horizontalScrollBar()->value() * m_charWidth;
+    const qreal x0 = pr.left() + paneMargin(pos.pane) + ui::space(ui::gap::item)
+        - horizontalScrollBar()->value() * m_charWidth;
     pos.col = qMax(0, qFloor((pt.x() - x0) / m_charWidth + 0.5));
     pos.col = qMin(pos.col, int(layoutAt(pos.pane, pos.row).text.size()));
     return pos;
@@ -966,7 +1008,7 @@ void DiffView::selectAll()
 
 void DiffView::scrollToRow(int row)
 {
-    const int visible = qMax(1, (viewport()->height() - headerHeight()) / m_lineHeight);
+    const int visible = qMax(1, (viewport()->height() - linesTop()) / m_lineHeight);
     verticalScrollBar()->setValue(qMax(0, row - visible / 3));
 }
 

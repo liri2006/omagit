@@ -47,11 +47,13 @@ signals:
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void changeEvent(QEvent *event) override;
     void insertFromMimeData(const QMimeData *source) override;
 
 private:
     void placeButton();
+    void updateMargins();
     void scheduleHeightCheck();
     // Two boxes may edit one document (the commit page's and the Mini
     // layout's popover), and its layout wraps at one width only: the one the

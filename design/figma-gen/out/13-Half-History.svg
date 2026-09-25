@@ -2,63 +2,63 @@
 <rect x="0" y="0" width="945" height="1234" id="window" fill="#181c22"/>
 <g id="TopBar">
 <g id="RepoChip">
-<g id="icon/folderOpen" transform="translate(22,13) scale(0.5833)"><path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" fill="#e0e6ed"/></g>
-<text x="42" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">omagit</text>
-<g id="icon/chevron" transform="translate(93,14) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+<g id="icon/folderOpen" transform="translate(21,15) scale(0.5833)"><path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" fill="#e0e6ed"/></g>
+<text x="40" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">omagit</text>
+<g id="icon/chevron" transform="translate(87.75,16.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
 </g>
 <g id="BranchChip">
-<g id="icon/branch" transform="translate(127,13) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#4ecdc4"/></g>
-<text x="147" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
-<g id="icon/chevron" transform="translate(184,14) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+<g id="icon/branch" transform="translate(120,15) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#4ecdc4"/></g>
+<text x="139" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" id="label" xml:space="preserve">main</text>
+<g id="icon/chevron" transform="translate(172.75,16.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
 </g>
 <g id="BranchChip/label-accent">
-<text x="147" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">main</text>
+<text x="139" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">main</text>
 </g>
 <g id="Toggle/diff pane">
-<rect x="905" y="6" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
-<rect x="905.5" y="6.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
-<g id="icon/dockRight" transform="translate(912,13) scale(0.5833)"><path d="M20 4H4A2 2 0 0 0 2 6V18A2 2 0 0 0 4 20H20A2 2 0 0 0 22 18V6A2 2 0 0 0 20 4M15 18H4V6H15Z" fill="#4ecdc4"/></g>
+<rect x="905" y="8" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="905.5" y="8.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
+<g id="icon/dockRight" transform="translate(912,15) scale(0.5833)"><path d="M20 4H4A2 2 0 0 0 2 6V18A2 2 0 0 0 4 20H20A2 2 0 0 0 22 18V6A2 2 0 0 0 20 4M15 18H4V6H15Z" fill="#4ecdc4"/></g>
 </g>
 <g id="Toggle/mini">
-<g id="icon/mini" transform="translate(880,13) scale(0.5833)"><path d="M3,5V19H22V5H3M5,7H20V11H5V7M5,17V13H9V17H5M11,17V13H20V17H11Z" fill="#e0e6ed"/></g>
+<g id="icon/mini" transform="translate(880,15) scale(0.5833)"><path d="M3,5V19H22V5H3M5,7H20V11H5V7M5,17V13H9V17H5M11,17V13H20V17H11Z" fill="#e0e6ed"/></g>
 </g>
-<rect x="863" y="12" width="1" height="16" fill="#e0e6ed" fill-opacity="0.2"/>
+<rect x="865" y="14" width="1" height="16" fill="#e0e6ed" fill-opacity="0.2"/>
 <g id="More">
-<rect x="825" y="6" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="825.5" y="6.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/dots" transform="translate(832,13) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
+<rect x="829" y="8" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="829.5" y="8.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/dots" transform="translate(836,15) scale(0.5833)"><path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" fill="#e0e6ed"/></g>
 </g>
 <g id="Sync/Push">
-<rect x="785" y="6" width="34" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="785.5" y="6.5" width="33" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/push" transform="translate(795,13) scale(0.5833)"><path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" fill="#e0e6ed"/></g>
-<rect x="809" y="1" width="14" height="14" id="badge" fill="#4ecdc4"/>
-<text x="816" y="11.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">1</text>
+<rect x="789" y="8" width="32" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="789.5" y="8.5" width="31" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/push" transform="translate(798,15) scale(0.5833)"><path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" fill="#e0e6ed"/></g>
+<rect x="813" y="4" width="12" height="12" id="badge" fill="#4ecdc4"/>
+<text x="819" y="13.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">1</text>
 </g>
 <g id="Sync/Pull">
-<rect x="745" y="6" width="34" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="745.5" y="6.5" width="33" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/pull" transform="translate(755,13) scale(0.5833)"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" fill="#e0e6ed"/></g>
-<rect x="769" y="1" width="14" height="14" id="badge" fill="#4ecdc4"/>
-<text x="776" y="11.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">2</text>
+<rect x="749" y="8" width="32" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="749.5" y="8.5" width="31" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/pull" transform="translate(758,15) scale(0.5833)"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" fill="#e0e6ed"/></g>
+<rect x="773" y="4" width="12" height="12" id="badge" fill="#4ecdc4"/>
+<text x="779" y="13.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">2</text>
 </g>
 <g id="NavTabs">
-<rect x="369" y="6" width="208" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="377" y="8" width="192" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
 <g id="Segment/normal Changes">
-<g id="icon/commit" transform="translate(381,13) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#e0e6ed"/></g>
-<text x="401" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Changes</text>
-<rect x="457" y="13" width="14" height="14" fill="#e0e6ed" fill-opacity="0.14"/>
-<text x="464" y="23.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#e0e6ed" text-anchor="middle" xml:space="preserve">7</text>
+<g id="icon/commit" transform="translate(386,15) scale(0.5833)"><path d="M17,12C17,14.42 15.28,16.44 13,16.9V21H11V16.9C8.72,16.44 7,14.42 7,12C7,9.58 8.72,7.56 11,7.1V3H13V7.1C15.28,7.56 17,9.58 17,12M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" fill="#e0e6ed"/></g>
+<text x="405" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Changes</text>
+<rect x="459" y="14" width="16" height="16" fill="#e0e6ed" fill-opacity="0.14"/>
+<text x="467" y="25.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#e0e6ed" text-anchor="middle" xml:space="preserve">7</text>
 </g>
 <g id="Segment/selected History">
-<rect x="483" y="6" width="94" height="28" fill="#e0e6ed" fill-opacity="0.18"/>
-<g id="icon/history" transform="translate(495,13) scale(0.5833)"><path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" fill="#4ecdc4"/></g>
-<text x="515" y="24.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">History</text>
+<rect x="483" y="8" width="86" height="28" fill="#e0e6ed" fill-opacity="0.18"/>
+<g id="icon/history" transform="translate(492,15) scale(0.5833)"><path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" fill="#4ecdc4"/></g>
+<text x="511" y="26.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">History</text>
 </g>
-<rect x="483" y="6" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
-<rect x="369.5" y="6.5" width="207" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="483" y="8" width="1" height="28" fill="#e0e6ed" fill-opacity="0.4"/>
+<rect x="377.5" y="8.5" width="191" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<rect x="0" y="39" width="945" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
+<rect x="0" y="43" width="945" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
 </g>
 <g id="Footer">
 <rect x="0" y="1206" width="945" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
@@ -69,447 +69,453 @@
 </g>
 <g id="HistoryPage">
 <g id="Field/normal">
-<rect x="12" y="50" width="172" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="12.5" y="50.5" width="171" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/search" transform="translate(20,57) scale(0.5833)"><path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" fill="#8791a6"/></g>
-<text x="40" y="68.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" id="placeholder" xml:space="preserve">Filter</text>
+<rect x="12" y="52" width="174" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="12.5" y="52.5" width="173" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/search" transform="translate(21,59) scale(0.5833)"><path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" fill="#8791a6"/></g>
+<text x="40" y="70.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" id="placeholder" xml:space="preserve">Filter</text>
 </g>
 <g id="AllBranches">
-<rect x="192" y="50" width="126" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="192.5" y="50.5" width="125" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/branch" transform="translate(202,57) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#e0e6ed"/></g>
-<text x="222" y="68.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">All branches</text>
+<rect x="194" y="52" width="122" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="194.5" y="52.5" width="121" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/branch" transform="translate(203,59) scale(0.5833)"><path d="M13,14C9.64,14 8.54,15.35 8.18,16.24C9.25,16.7 10,17.76 10,19A3,3 0 0,1 7,22A3,3 0 0,1 4,19C4,17.69 4.83,16.58 6,16.17V7.83C4.83,7.42 4,6.31 4,5A3,3 0 0,1 7,2A3,3 0 0,1 10,5C10,6.31 9.17,7.42 8,7.83V13.12C8.88,12.47 10.16,12 12,12C14.67,12 15.56,10.66 15.85,9.77C14.77,9.32 14,8.25 14,7A3,3 0 0,1 17,4A3,3 0 0,1 20,7C20,8.34 19.12,9.5 17.91,9.86C17.65,11.29 16.68,14 13,14M7,18A1,1 0 0,0 6,19A1,1 0 0,0 7,20A1,1 0 0,0 8,19A1,1 0 0,0 7,18M7,4A1,1 0 0,0 6,5A1,1 0 0,0 7,6A1,1 0 0,0 8,5A1,1 0 0,0 7,4M17,6A1,1 0 0,0 16,7A1,1 0 0,0 17,8A1,1 0 0,0 18,7A1,1 0 0,0 17,6Z" fill="#e0e6ed"/></g>
+<text x="222" y="70.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">All branches</text>
 </g>
 <g id="Refresh">
-<rect x="324" y="50" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="324.5" y="50.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/refresh" transform="translate(331,57) scale(0.5833)"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" fill="#e0e6ed"/></g>
+<rect x="324" y="52" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="324.5" y="52.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/refresh" transform="translate(331,59) scale(0.5833)"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" fill="#e0e6ed"/></g>
 </g>
 <g id="CommitsTable">
-<rect x="12.5" y="86.5" width="339" height="807" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<rect x="12" y="112" width="340" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
-<rect x="48" y="87" width="1" height="25" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="58" y="102.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" xml:space="preserve">Message</text>
-<rect x="262" y="87" width="1" height="25" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="272" y="102.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" xml:space="preserve">Date</text>
+<rect x="12.5" y="84.5" width="339" height="817" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="12" y="107" width="340" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
+<rect x="48" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="56" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" xml:space="preserve">Message</text>
+<rect x="264" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="272" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" xml:space="preserve">Date</text>
 <g id="CommitRow/selected d444446">
-<rect x="13" y="113" width="338" height="28" fill="#e0e6ed" fill-opacity="0.08"/>
-<rect x="23.5" y="113" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="127" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<rect x="13" y="108" width="338" height="24" fill="#e0e6ed" fill-opacity="0.08"/>
+<rect x="23.5" y="108" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="120" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
 <g id="RefChip/head main">
-<rect x="58" y="119" width="34" height="16" fill="#4ecdc4"/>
-<text x="75" y="130.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">main</text>
+<rect x="56" y="112" width="32" height="16" fill="#4ecdc4"/>
+<text x="72" y="123.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">main</text>
 </g>
 <g id="RefChip/remote origin/main">
-<rect x="98" y="119" width="76" height="16" fill="#b388eb" fill-opacity="0.14"/>
-<rect x="98.5" y="119.5" width="75" height="15" fill="none" stroke="#b388eb" stroke-width="1" stroke-opacity="0.8"/>
-<text x="136" y="130.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#b388eb" text-anchor="middle" xml:space="preserve">origin/main</text>
+<rect x="92" y="112" width="74" height="16" fill="#b388eb" fill-opacity="0.14"/>
+<rect x="92.5" y="112.5" width="73" height="15" fill="none" stroke="#b388eb" stroke-width="1" stroke-opacity="0.8"/>
+<text x="129" y="123.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#b388eb" text-anchor="middle" xml:space="preserve">origin/main</text>
 </g>
-<text x="180" y="131.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Make the …</text>
-<text x="272" y="131.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-18</text>
+<text x="170" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Make the t…</text>
+<text x="272" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-18</text>
 </g>
 <g id="CommitRow/normal 6bd79ab">
-<rect x="23.5" y="141" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="155" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="159.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Refine clone dialog layou…</text>
-<text x="272" y="159.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-17</text>
+<rect x="23.5" y="132" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="144" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="148.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Refine clone dialog layout…</text>
+<text x="272" y="148.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-17</text>
 </g>
 <g id="CommitRow/normal 14d6d14">
-<rect x="23.5" y="169" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<rect x="35.5" y="169" width="2" height="28" fill="#b388eb" fill-opacity="0.9"/>
-<circle cx="24" cy="183" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<rect x="23.5" y="156" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<rect x="35.5" y="156" width="2" height="24" fill="#b388eb" fill-opacity="0.9"/>
+<circle cx="24" cy="168" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
 <g id="RefChip/tag v0.4">
-<rect x="58" y="175" width="34" height="16" fill="#82eeff" fill-opacity="0.14"/>
-<rect x="58.5" y="175.5" width="33" height="15" fill="none" stroke="#82eeff" stroke-width="1" stroke-opacity="0.8"/>
-<text x="75" y="186.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#82eeff" text-anchor="middle" xml:space="preserve">v0.4</text>
+<rect x="56" y="160" width="32" height="16" fill="#82eeff" fill-opacity="0.14"/>
+<rect x="56.5" y="160.5" width="31" height="15" fill="none" stroke="#82eeff" stroke-width="1" stroke-opacity="0.8"/>
+<text x="72" y="171.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#82eeff" text-anchor="middle" xml:space="preserve">v0.4</text>
 </g>
-<text x="98" y="187.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add repository cloni…</text>
-<text x="272" y="187.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-17</text>
+<text x="92" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add repository clonin…</text>
+<text x="272" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-17</text>
 </g>
 <g id="CommitRow/normal 2258b52">
-<rect x="23.5" y="197" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<rect x="35.5" y="197" width="2" height="28" fill="#b388eb" fill-opacity="0.9"/>
-<circle cx="36" cy="211" r="4" fill="#b388eb" stroke="#181c22" stroke-width="1.5"/>
+<rect x="23.5" y="180" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<rect x="35.5" y="180" width="2" height="24" fill="#b388eb" fill-opacity="0.9"/>
+<circle cx="36" cy="192" r="4" fill="#b388eb" stroke="#181c22" stroke-width="1.5"/>
 <g id="RefChip/local feature/askpass">
-<rect x="58" y="203" width="100" height="16" fill="#4ecdc4" fill-opacity="0.14"/>
-<rect x="58.5" y="203.5" width="99" height="15" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="0.8"/>
-<text x="108" y="214.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#4ecdc4" text-anchor="middle" xml:space="preserve">feature/askpass</text>
+<rect x="56" y="184" width="98" height="16" fill="#4ecdc4" fill-opacity="0.14"/>
+<rect x="56.5" y="184.5" width="97" height="15" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="0.8"/>
+<text x="105" y="195.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#4ecdc4" text-anchor="middle" xml:space="preserve">feature/askpass</text>
 </g>
-<text x="164" y="215.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add Codex-a…</text>
-<text x="272" y="215.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-16</text>
+<text x="158" y="196.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add Codex-as…</text>
+<text x="272" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-16</text>
 </g>
 <g id="CommitRow/normal 264ad70">
-<rect x="23.5" y="225" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<rect x="35.5" y="225" width="2" height="28" fill="#b388eb" fill-opacity="0.9"/>
-<circle cx="36" cy="239" r="4" fill="#b388eb" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="243.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add themed askpass login …</text>
-<text x="272" y="243.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-16</text>
+<rect x="23.5" y="204" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<rect x="35.5" y="204" width="2" height="24" fill="#b388eb" fill-opacity="0.9"/>
+<circle cx="36" cy="216" r="4" fill="#b388eb" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="220.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add themed askpass login s…</text>
+<text x="272" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-16</text>
 </g>
 <g id="CommitRow/normal 571c560">
-<rect x="23.5" y="253" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<rect x="35.5" y="253" width="2" height="28" fill="#b388eb" fill-opacity="0.9"/>
-<circle cx="24" cy="267" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="271.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Refine keybindings list s…</text>
-<text x="272" y="271.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-15</text>
+<rect x="23.5" y="228" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<rect x="35.5" y="228" width="2" height="24" fill="#b388eb" fill-opacity="0.9"/>
+<circle cx="24" cy="240" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="244.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Refine keybindings list sc…</text>
+<text x="272" y="244.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-15</text>
 </g>
 <g id="CommitRow/normal 9d101a1">
-<rect x="23.5" y="281" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="295" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="299.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add lazygit-style keybind…</text>
-<text x="272" y="299.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-15</text>
+<rect x="23.5" y="252" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="264" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add lazygit-style keybindi…</text>
+<text x="272" y="268.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-15</text>
 </g>
 <g id="CommitRow/normal 3fa02c9">
-<rect x="23.5" y="309" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="323" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="327.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Split MainWindow into Com…</text>
-<text x="272" y="327.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-10</text>
+<rect x="23.5" y="276" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="288" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="292.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Split MainWindow into Comm…</text>
+<text x="272" y="292.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-10</text>
 </g>
 <g id="CommitRow/normal b71e0d2">
-<rect x="23.5" y="337" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="351" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="355.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Grow the commit message b…</text>
-<text x="272" y="355.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-10</text>
+<rect x="23.5" y="300" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="312" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Grow the commit message bo…</text>
+<text x="272" y="316.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-10</text>
 </g>
 <g id="CommitRow/normal aa90c11">
-<rect x="23.5" y="365" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="379" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="383.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add merge view with merge…</text>
-<text x="272" y="383.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-07</text>
+<rect x="23.5" y="324" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="336" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="340.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add merge view with merge-…</text>
+<text x="272" y="340.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-07</text>
 </g>
 <g id="CommitRow/normal 0c4e77d">
-<rect x="23.5" y="393" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="407" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="411.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add fetch, pull and push …</text>
-<text x="272" y="411.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-06</text>
+<rect x="23.5" y="348" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="360" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Add fetch, pull and push w…</text>
+<text x="272" y="364.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-06</text>
 </g>
 <g id="CommitRow/normal 77b3d90">
-<rect x="23.5" y="421" width="2" height="28" fill="#4ecdc4" fill-opacity="0.9"/>
-<circle cx="24" cy="435" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
-<text x="58" y="439.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Initial import of the pro…</text>
-<text x="272" y="439.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-06</text>
+<rect x="23.5" y="372" width="2" height="24" fill="#4ecdc4" fill-opacity="0.9"/>
+<circle cx="24" cy="384" r="4" fill="#4ecdc4" stroke="#181c22" stroke-width="1.5"/>
+<text x="56" y="388.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Initial import of the proj…</text>
+<text x="272" y="388.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-06</text>
 </g>
-<rect x="345" y="114" width="4" height="233" id="Scrollbar" fill="#e0e6ed" fill-opacity="0.25"/>
+<rect x="345" y="110" width="4" height="237" id="Scrollbar" fill="#e0e6ed" fill-opacity="0.25"/>
 </g>
 <g id="CommitDetails">
-<rect x="12.5" y="904.5" width="339" height="149" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<text x="24" y="924.7" font-family="JetBrains Mono" font-size="13" font-weight="700" fill="#e0e6ed" xml:space="preserve">Make the toolbar tiling aware</text>
-<text x="24" y="946.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" xml:space="preserve">d444446</text>
-<text x="82" y="946.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras &lt;andras@example.org&gt;</text>
-<text x="272" y="946.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-18 10:55</text>
-<text x="24" y="964.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Parent 6bd79ab</text>
+<rect x="12.5" y="914.5" width="339" height="151" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="CopySha">
+<g id="icon/copy" transform="translate(325,927) scale(0.5833)"><path d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" fill="#e0e6ed"/></g>
+</g>
+<text x="24" y="938.7" font-family="JetBrains Mono" font-size="13" font-weight="700" fill="#e0e6ed" xml:space="preserve">Make the toolbar tiling aware</text>
+<text x="24" y="958.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" xml:space="preserve">d444446</text>
+<text x="82" y="958.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Andras &lt;andras@example.org&gt;</text>
+<text x="272" y="958.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">2026-09-18 10:55</text>
+<text x="24" y="978.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Parent 6bd79ab</text>
 <g id="RefChip/head main">
-<rect x="128" y="952" width="34" height="16" fill="#4ecdc4"/>
-<text x="145" y="963.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">main</text>
+<rect x="128" y="966" width="32" height="16" fill="#4ecdc4"/>
+<text x="144" y="977.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">main</text>
 </g>
 <g id="RefChip/remote origin/main">
-<rect x="168" y="952" width="76" height="16" fill="#b388eb" fill-opacity="0.14"/>
-<rect x="168.5" y="952.5" width="75" height="15" fill="none" stroke="#b388eb" stroke-width="1" stroke-opacity="0.8"/>
-<text x="206" y="963.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#b388eb" text-anchor="middle" xml:space="preserve">origin/main</text>
+<rect x="164" y="966" width="74" height="16" fill="#b388eb" fill-opacity="0.14"/>
+<rect x="164.5" y="966.5" width="73" height="15" fill="none" stroke="#b388eb" stroke-width="1" stroke-opacity="0.8"/>
+<text x="201" y="977.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#b388eb" text-anchor="middle" xml:space="preserve">origin/main</text>
 </g>
-<text x="24" y="986.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The toolbar folds its buttons in three</text>
-<text x="24" y="1003.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">steps now, and the whole window picks a</text>
-<text x="24" y="1020.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">layout from its width and height.</text>
-<g id="CopySha">
-<g id="icon/copy" transform="translate(327,915) scale(0.5833)"><path d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" fill="#e0e6ed"/></g>
-</g>
+<text x="24" y="1002.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The toolbar folds its buttons in three</text>
+<text x="24" y="1018.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">steps now, and the whole window picks a</text>
+<text x="24" y="1034.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">layout from its width and height.</text>
 </g>
 <g id="ChangesTable">
-<rect x="12.5" y="1064.5" width="339" height="109" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<rect x="12" y="1090" width="340" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
+<rect x="12.5" y="1078.5" width="339" height="95" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="12" y="1101" width="340" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
 <g id="CheckAll">
-<rect x="20" y="1070" width="14" height="14" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="20.5" y="1070.5" width="13" height="13" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="20" y="1082" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="20.5" y="1082.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<rect x="42" y="1065" width="1" height="25" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="52" y="1080.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Name</text>
-<rect x="212" y="1065" width="1" height="25" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="222" y="1080.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Path</text>
-<rect x="322" y="1065" width="1" height="25" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="337" y="1080.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">St</text>
+<rect x="44" y="1079" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="52" y="1093.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Name</text>
+<rect x="208" y="1079" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="216" y="1093.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Path</text>
+<rect x="320" y="1079" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="336" y="1093.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">St</text>
 <g id="Row/selected Toolbar.cpp">
-<rect x="13" y="1091" width="338" height="26" fill="#e0e6ed" fill-opacity="0.08"/>
+<rect x="13" y="1102" width="338" height="24" fill="#e0e6ed" fill-opacity="0.08"/>
 <g id="Checkbox/off">
-<rect x="20" y="1097" width="14" height="14" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="20.5" y="1097.5" width="13" height="13" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="20" y="1106" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="20.5" y="1106.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<text x="52" y="1108.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Toolbar.cpp</text>
-<text x="222" y="1108.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui</text>
+<text x="52" y="1118.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Toolbar.cpp</text>
+<text x="216" y="1118.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui</text>
 <g id="StatusPill/M">
-<rect x="329" y="1096" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
-<text x="337" y="1107.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
+<rect x="328" y="1106" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="336" y="1117.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
 </g>
 <g id="Row/normal Toolbar.h">
 <g id="Checkbox/off">
-<rect x="20" y="1123" width="14" height="14" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="20.5" y="1123.5" width="13" height="13" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="20" y="1130" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="20.5" y="1130.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<text x="52" y="1134.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Toolbar.h</text>
-<text x="222" y="1134.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui</text>
+<text x="52" y="1142.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Toolbar.h</text>
+<text x="216" y="1142.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui</text>
 <g id="StatusPill/M">
-<rect x="329" y="1122" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
-<text x="337" y="1133.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
+<rect x="328" y="1130" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="336" y="1141.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
 </g>
 </g>
-<text x="12" y="1194.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">12 commits</text>
+<text x="12" y="1190.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">12 commits</text>
 </g>
-<rect x="357" y="607" width="2" height="32" id="SplitterHandle" fill="#e0e6ed" fill-opacity="0.2"/>
+<rect x="357" y="609" width="2" height="32" id="SplitterHandle" fill="#e0e6ed" fill-opacity="0.2"/>
 <g id="DiffPane">
 <g id="PrevChange">
-<rect x="364.5" y="50.5" width="68" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.12"/>
-<g id="icon/up" transform="translate(374,57) scale(0.5833)"><path d="M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z" fill="#e0e6ed" fill-opacity="0.45"/></g>
-<text x="394" y="68.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" fill-opacity="0.45" xml:space="preserve">Prev</text>
+<rect x="364.5" y="52.5" width="64" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.12"/>
+<g id="icon/up" transform="translate(373,59) scale(0.5833)"><path d="M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z" fill="#e0e6ed" fill-opacity="0.45"/></g>
+<text x="392" y="70.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" fill-opacity="0.45" xml:space="preserve">Prev</text>
 </g>
 <g id="NextChange">
-<rect x="437" y="50" width="69" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="437.5" y="50.5" width="68" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/down" transform="translate(447,57) scale(0.5833)"><path d="M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z" fill="#e0e6ed"/></g>
-<text x="467" y="68.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">Next</text>
+<rect x="433" y="52" width="65" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="433.5" y="52.5" width="64" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/down" transform="translate(442,59) scale(0.5833)"><path d="M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z" fill="#e0e6ed"/></g>
+<text x="461" y="70.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" id="label" xml:space="preserve">Next</text>
 </g>
-<text x="516" y="68.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Change 1 of 2</text>
-<text x="612" y="68.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">·</text>
-<text x="624" y="68.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#6a85ff" xml:space="preserve">Modified</text>
-<text x="685" y="68.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" xml:space="preserve">+4</text>
-<text x="707" y="68.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−2</text>
+<text x="506" y="70.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">Change 1 of 2</text>
+<text x="600" y="70.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">·</text>
+<text x="615" y="70.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#6a85ff" xml:space="preserve">Modified</text>
+<text x="676" y="70.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" xml:space="preserve">+4</text>
+<text x="693" y="70.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−2</text>
 <g id="Syntax">
-<rect x="905" y="50" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
-<rect x="905.5" y="50.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
-<g id="icon/code" transform="translate(912,57) scale(0.5833)"><path d="M14.6,16.6L19.2,12L14.6,7.4L16,6L22,12L16,18L14.6,16.6M9.4,16.6L4.8,12L9.4,7.4L8,6L2,12L8,18L9.4,16.6Z" fill="#4ecdc4"/></g>
+<rect x="905" y="52" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="905.5" y="52.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
+<g id="icon/code" transform="translate(912,59) scale(0.5833)"><path d="M14.6,16.6L19.2,12L14.6,7.4L16,6L22,12L16,18L14.6,16.6M9.4,16.6L4.8,12L9.4,7.4L8,6L2,12L8,18L9.4,16.6Z" fill="#4ecdc4"/></g>
 </g>
 <g id="Whitespace">
-<rect x="873" y="50" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="873.5" y="50.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/pilcrow" transform="translate(880,57) scale(0.5833)"><path d="M10,11A4,4 0 0,1 6,7A4,4 0 0,1 10,3H18V5H16V21H14V5H12V21H10V11Z" fill="#e0e6ed"/></g>
+<rect x="873" y="52" width="28" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="873.5" y="52.5" width="27" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/pilcrow" transform="translate(880,59) scale(0.5833)"><path d="M10,11A4,4 0 0,1 6,7A4,4 0 0,1 10,3H18V5H16V21H14V5H12V21H10V11Z" fill="#e0e6ed"/></g>
 </g>
 <g id="ViewMode">
-<rect x="817" y="50" width="52" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="817.5" y="50.5" width="51" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<g id="icon/unified" transform="translate(827,57) scale(0.5833)"><path d="M3 5V19H21V5H3M19 7V9H5V7H19M19 11V13H5V11H19M5 17V15H19V17H5Z" fill="#e0e6ed"/></g>
-<g id="icon/chevron" transform="translate(849,58) scale(0.5000)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
+<rect x="821" y="52" width="48" height="28" id="fill" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="821.5" y="52.5" width="47" height="27" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<g id="icon/unified" transform="translate(830,59) scale(0.5833)"><path d="M3 5V19H21V5H3M19 7V9H5V7H19M19 11V13H5V11H19M5 17V15H19V17H5Z" fill="#e0e6ed"/></g>
+<g id="icon/chevron" transform="translate(849.75,60.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#e0e6ed" fill-opacity="0.7"/></g>
 </g>
-<rect x="364.5" y="86.5" width="568" height="1109" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<rect x="364" y="87" width="569" height="26" fill="#e0e6ed" fill-opacity="0.04"/>
-<text x="374" y="104.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" xml:space="preserve">src/ui/Toolbar.cpp</text>
-<text x="923" y="104.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">HEAD → Working tree</text>
-<rect x="364" y="113" width="569" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
-<text x="410" y="129.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">1</text>
-<text x="424" y="129.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
-<text x="488.8" y="129.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&quot;Toolbar.h&quot;</text>
-<text x="410" y="147.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">2</text>
-<text x="424" y="147.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
-<text x="488.8" y="147.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&quot;UiHelpers.h&quot;</text>
-<text x="410" y="165.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">3</text>
-<text x="410" y="183.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">4</text>
-<text x="424" y="183.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
-<text x="488.8" y="183.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QHBoxLayout&gt;</text>
-<text x="410" y="201.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">5</text>
-<text x="424" y="201.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
-<text x="488.8" y="201.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QResizeEvent&gt;</text>
-<text x="410" y="219.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">6</text>
-<text x="424" y="219.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
-<text x="488.8" y="219.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QToolButton&gt;</text>
-<text x="410" y="237.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">7</text>
-<text x="410" y="255.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">8</text>
-<text x="424" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">using</text>
-<text x="460" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
-<text x="467.2" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">namespace</text>
-<text x="532" y="255.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> ui;</text>
-<text x="410" y="273.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">9</text>
-<text x="410" y="291.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">10</text>
-<text x="424" y="291.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Toolbar::Toolbar(</text>
-<text x="546.4" y="291.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
-<text x="596.8" y="291.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *parent)</text>
-<text x="410" y="309.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">11</text>
-<text x="424" y="309.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    : </text>
-<text x="467.2" y="309.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
-<text x="517.6" y="309.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">(parent)</text>
-<text x="410" y="327.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">12</text>
-<text x="424" y="327.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
-<text x="410" y="345.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">13</text>
-<text x="424" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">auto</text>
-<text x="481.6" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *row = </text>
-<text x="539.2" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">new</text>
-<text x="560.8" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
-<text x="568" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QHBoxLayout</text>
-<text x="647.2" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">(</text>
-<text x="654.4" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
-<text x="683.2" y="345.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
-<text x="410" y="363.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">14</text>
-<text x="424" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    row-&gt;setContentsMargins(</text>
-<text x="625.6" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
-<text x="632.8" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
-<text x="647.2" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
-<text x="654.4" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
-<text x="668.8" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
-<text x="676" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
-<text x="690.4000000000001" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
-<text x="697.6" y="363.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
-<text x="410" y="381.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">15</text>
-<text x="424" y="381.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    row-&gt;setSpacing(kSpacing);</text>
-<text x="410" y="399.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">16</text>
-<text x="424" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more = </text>
-<text x="517.6" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">new</text>
-<text x="539.2" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> BadgeButton(</text>
-<text x="632.8" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
-<text x="661.6" y="399.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
-<text x="410" y="417.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">17</text>
-<text x="424" y="417.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;setText(icon(kDots));</text>
-<text x="410" y="435.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">18</text>
-<text x="424" y="435.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;hide();</text>
-<text x="410" y="453.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">19</text>
-<text x="424" y="453.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
-<text x="410" y="471.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">20</text>
-<text x="410" y="489.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">21</text>
-<text x="424" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
-<text x="452.8" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::addButton(</text>
-<text x="596.8" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QToolButton</text>
-<text x="676" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *button, </text>
-<text x="748" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
-<text x="784" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
-<text x="791.2" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QString</text>
-<text x="841.6" y="489.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;full,</text>
-<text x="410" y="507.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">22</text>
-<text x="424" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">                        </text>
-<text x="596.8" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
-<text x="632.8" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
-<text x="640" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QString</text>
-<text x="690.4000000000001" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;icon, </text>
-<text x="748" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
-<text x="784" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
-<text x="791.2" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QString</text>
-<text x="841.6" y="507.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;menu)</text>
-<text x="410" y="525.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">23</text>
-<text x="424" y="525.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
-<text x="410" y="543.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">24</text>
-<text x="424" y="543.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_items.append({button, nullptr, full, icon, menu});</text>
-<text x="410" y="561.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">25</text>
-<text x="424" y="561.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    layout()-&gt;addWidget(button);</text>
-<text x="410" y="579.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">26</text>
-<text x="424" y="579.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    measure();</text>
-<text x="410" y="597.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">27</text>
-<text x="424" y="597.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
-<text x="410" y="615.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">28</text>
-<text x="410" y="633.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">29</text>
-<text x="424" y="633.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
-<text x="452.8" y="633.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::resizeEvent(</text>
-<text x="611.2" y="633.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QResizeEvent</text>
-<text x="697.6" y="633.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *event)</text>
-<text x="410" y="651.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">30</text>
-<text x="424" y="651.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
-<text x="410" y="669.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">31</text>
-<text x="424" y="669.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="669.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
-<text x="503.2" y="669.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">::resizeEvent(event);</text>
-<text x="410" y="687.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">32</text>
-<text x="424" y="687.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    relayout();</text>
-<text x="410" y="705.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">33</text>
-<text x="424" y="705.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
-<text x="410" y="723.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">34</text>
-<text x="410" y="741.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">35</text>
-<text x="424" y="741.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">// Labels give way to icons, icons to the more menu.</text>
-<text x="410" y="759.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">36</text>
-<text x="424" y="759.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
-<text x="452.8" y="759.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::relayout()</text>
-<text x="410" y="777.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">37</text>
-<text x="424" y="777.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
-<text x="410" y="795.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">38</text>
-<text x="424" y="795.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="795.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
-<text x="488.8" y="795.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
-<text x="496" y="795.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">int</text>
-<text x="517.6" y="795.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> width = </text>
-<text x="582.4" y="795.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
-<text x="611.2" y="795.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">-&gt;width();</text>
-<rect x="365" y="800" width="567" height="18" fill="#ff7b92" fill-opacity="0.16"/>
-<g id="icon/minus" transform="translate(367,802) scale(0.5833)"><path d="M19,13H5V11H19V13Z" fill="#ff7b92"/></g>
-<text x="410" y="813.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">39</text>
-<rect x="452.8" y="801" width="28.8" height="16" fill="#ff7b92" fill-opacity="0.35"/>
-<rect x="575.2" y="801" width="36" height="16" fill="#ff7b92" fill-opacity="0.35"/>
-<text x="424" y="813.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="813.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">bool</text>
-<text x="481.6" y="813.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> full = fits(width, </text>
-<text x="625.6" y="813.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">true</text>
-<text x="654.4" y="813.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
-<rect x="365" y="818" width="567" height="18" fill="#4ecdc4" fill-opacity="0.16"/>
-<g id="icon/plus" transform="translate(367,820) scale(0.5833)"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" fill="#4ecdc4"/></g>
-<text x="410" y="831.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">39</text>
-<rect x="452.8" y="819" width="36" height="16" fill="#4ecdc4" fill-opacity="0.35"/>
-<rect x="575.2" y="819" width="79.19999999999999" height="16" fill="#4ecdc4" fill-opacity="0.35"/>
-<rect x="712" y="819" width="57.60000000000002" height="16" fill="#4ecdc4" fill-opacity="0.35"/>
-<text x="424" y="831.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="831.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
-<text x="488.8" y="831.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
-<text x="496" y="831.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Level</text>
-<text x="532" y="831.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> level = levelFor(width, height());</text>
-<text x="410" y="849.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">40</text>
-<text x="424" y="849.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="849.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">for</text>
-<text x="474.4" y="849.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> (</text>
-<text x="488.8" y="849.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Item</text>
-<text x="517.6" y="849.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;item : m_items)</text>
-<rect x="365" y="854" width="567" height="18" fill="#ff7b92" fill-opacity="0.16"/>
-<g id="icon/minus" transform="translate(367,856) scale(0.5833)"><path d="M19,13H5V11H19V13Z" fill="#ff7b92"/></g>
-<text x="410" y="867.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">41</text>
-<rect x="640" y="855" width="28.80000000000001" height="16" fill="#ff7b92" fill-opacity="0.35"/>
-<text x="424" y="867.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">        item.button-&gt;setText(full ? item.full : item.icon);</text>
-<rect x="365" y="872" width="567" height="18" fill="#4ecdc4" fill-opacity="0.16"/>
-<g id="icon/plus" transform="translate(367,874) scale(0.5833)"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" fill="#4ecdc4"/></g>
-<text x="410" y="885.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">41</text>
-<rect x="640" y="873" width="115.19999999999999" height="16" fill="#4ecdc4" fill-opacity="0.35"/>
-<text x="424" y="885.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">        item.button-&gt;setText(textFor(item, level));</text>
-<rect x="365" y="890" width="567" height="18" fill="#4ecdc4" fill-opacity="0.16"/>
-<g id="icon/plus" transform="translate(367,892) scale(0.5833)"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" fill="#4ecdc4"/></g>
-<text x="410" y="903.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">42</text>
-<text x="424" y="903.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;setVisible(level == </text>
-<text x="654.4" y="903.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Level</text>
-<text x="690.4000000000001" y="903.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">::Overflow);</text>
-<text x="410" y="921.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">42</text>
-<text x="424" y="921.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    updateMoreMark();</text>
-<text x="410" y="939.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">43</text>
-<text x="424" y="939.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
-<text x="410" y="957.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">44</text>
-<text x="410" y="975.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">45</text>
-<text x="424" y="975.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QSize</text>
-<text x="460" y="975.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::sizeHint() </text>
-<text x="611.2" y="975.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
-<text x="410" y="993.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">46</text>
-<text x="424" y="993.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
-<text x="410" y="1011.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">47</text>
-<text x="424" y="1011.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="1011.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">return</text>
-<text x="496" y="1011.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> {m_items.size() * </text>
-<text x="632.8" y="1011.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">80</text>
-<text x="647.2" y="1011.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, m_height};</text>
-<text x="410" y="1029.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">48</text>
-<text x="424" y="1029.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
-<text x="410" y="1047.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">49</text>
-<text x="410" y="1065.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">50</text>
-<text x="424" y="1065.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QSize</text>
-<text x="460" y="1065.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::minimumSizeHint() </text>
-<text x="661.6" y="1065.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
-<text x="410" y="1083.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">51</text>
-<text x="424" y="1083.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
-<text x="410" y="1101.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">52</text>
-<text x="424" y="1101.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
-<text x="452.8" y="1101.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">return</text>
-<text x="496" y="1101.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> {m_leading ? m_leading-&gt;width() : </text>
-<text x="748" y="1101.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
-<text x="755.2" y="1101.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, m_height};</text>
-<text x="410" y="1119.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">53</text>
-<text x="424" y="1119.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
-<text x="410" y="1137.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">54</text>
-<text x="410" y="1155.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">55</text>
-<text x="424" y="1155.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
-<text x="452.8" y="1155.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::applyTheme()</text>
-<text x="410" y="1173.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">56</text>
-<text x="424" y="1173.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
-<rect x="927" y="800" width="3" height="18" fill="#ff7b92"/>
-<rect x="927" y="818" width="3" height="18" fill="#4ecdc4"/>
-<rect x="927" y="854" width="3" height="18" fill="#ff7b92"/>
-<rect x="927" y="872" width="3" height="18" fill="#4ecdc4"/>
-<rect x="927" y="890" width="3" height="18" fill="#4ecdc4"/>
-<rect x="919" y="116" width="4" height="646" id="Scrollbar" fill="#e0e6ed" fill-opacity="0.25"/>
+<rect x="364.5" y="84.5" width="568" height="1113" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="364" y="85" width="569" height="23" fill="#e0e6ed" fill-opacity="0.04"/>
+<text x="372" y="100.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#e0e6ed" xml:space="preserve">src/ui/Toolbar.cpp</text>
+<text x="925" y="100.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">HEAD → Working tree</text>
+<rect x="364" y="107" width="569" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
+<text x="408" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">1</text>
+<text x="424" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="488.8" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&quot;Toolbar.h&quot;</text>
+<text x="408" y="140.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">2</text>
+<text x="424" y="140.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="488.8" y="140.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&quot;UiHelpers.h&quot;</text>
+<text x="408" y="156.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">3</text>
+<text x="408" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">4</text>
+<text x="424" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="488.8" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QHBoxLayout&gt;</text>
+<text x="408" y="188.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">5</text>
+<text x="424" y="188.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="488.8" y="188.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QResizeEvent&gt;</text>
+<text x="408" y="204.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">6</text>
+<text x="424" y="204.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">#include </text>
+<text x="488.8" y="204.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">&lt;QToolButton&gt;</text>
+<text x="408" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">7</text>
+<text x="408" y="236.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">8</text>
+<text x="424" y="236.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">using</text>
+<text x="460" y="236.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="467.2" y="236.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">namespace</text>
+<text x="532" y="236.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> ui;</text>
+<text x="408" y="252.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">9</text>
+<text x="408" y="268.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">10</text>
+<text x="424" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Toolbar::Toolbar(</text>
+<text x="546.4" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
+<text x="596.8" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *parent)</text>
+<text x="408" y="284.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">11</text>
+<text x="424" y="284.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    : </text>
+<text x="467.2" y="284.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
+<text x="517.6" y="284.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">(parent)</text>
+<text x="408" y="300.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">12</text>
+<text x="424" y="300.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="408" y="316.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">13</text>
+<text x="424" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">auto</text>
+<text x="481.6" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *row = </text>
+<text x="539.2" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">new</text>
+<text x="560.8" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="568" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QHBoxLayout</text>
+<text x="647.2" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">(</text>
+<text x="654.4" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
+<text x="683.2" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
+<text x="408" y="332.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">14</text>
+<text x="424" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    row-&gt;setContentsMargins(</text>
+<text x="625.6" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="632.8" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
+<text x="647.2" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="654.4" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
+<text x="668.8" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="676" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, </text>
+<text x="690.4000000000001" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="697.6" y="332.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
+<text x="408" y="348.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">15</text>
+<text x="424" y="348.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    row-&gt;setSpacing(kSpacing);</text>
+<text x="408" y="364.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">16</text>
+<text x="424" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more = </text>
+<text x="517.6" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">new</text>
+<text x="539.2" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> BadgeButton(</text>
+<text x="632.8" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
+<text x="661.6" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
+<text x="408" y="380.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">17</text>
+<text x="424" y="380.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;setText(icon(kDots));</text>
+<text x="408" y="396.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">18</text>
+<text x="424" y="396.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;hide();</text>
+<text x="408" y="412.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">19</text>
+<text x="424" y="412.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<text x="408" y="428.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">20</text>
+<text x="408" y="444.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">21</text>
+<text x="424" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
+<text x="452.8" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::addButton(</text>
+<text x="596.8" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QToolButton</text>
+<text x="676" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *button, </text>
+<text x="748" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="784" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="791.2" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QString</text>
+<text x="841.6" y="444.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;full,</text>
+<text x="408" y="460.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">22</text>
+<text x="424" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">                        </text>
+<text x="596.8" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="632.8" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="640" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QString</text>
+<text x="690.4000000000001" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;icon, </text>
+<text x="748" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="784" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="791.2" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QString</text>
+<text x="841.6" y="460.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;menu)</text>
+<text x="408" y="476.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">23</text>
+<text x="424" y="476.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="408" y="492.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">24</text>
+<text x="424" y="492.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_items.append({button, nullptr, full, icon, menu});</text>
+<text x="408" y="508.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">25</text>
+<text x="424" y="508.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    layout()-&gt;addWidget(button);</text>
+<text x="408" y="524.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">26</text>
+<text x="424" y="524.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    measure();</text>
+<text x="408" y="540.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">27</text>
+<text x="424" y="540.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<text x="408" y="556.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">28</text>
+<text x="408" y="572.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">29</text>
+<text x="424" y="572.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
+<text x="452.8" y="572.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::resizeEvent(</text>
+<text x="611.2" y="572.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QResizeEvent</text>
+<text x="697.6" y="572.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> *event)</text>
+<text x="408" y="588.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">30</text>
+<text x="424" y="588.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="408" y="604.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">31</text>
+<text x="424" y="604.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="604.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QWidget</text>
+<text x="503.2" y="604.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">::resizeEvent(event);</text>
+<text x="408" y="620.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">32</text>
+<text x="424" y="620.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    relayout();</text>
+<text x="408" y="636.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">33</text>
+<text x="424" y="636.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<text x="408" y="652.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">34</text>
+<text x="408" y="668.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">35</text>
+<text x="424" y="668.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">// Labels give way to icons, icons to the more menu.</text>
+<text x="408" y="684.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">36</text>
+<text x="424" y="684.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
+<text x="452.8" y="684.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::relayout()</text>
+<text x="408" y="700.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">37</text>
+<text x="424" y="700.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="408" y="716.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">38</text>
+<text x="424" y="716.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="716.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="488.8" y="716.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="496" y="716.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">int</text>
+<text x="517.6" y="716.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> width = </text>
+<text x="582.4" y="716.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">this</text>
+<text x="611.2" y="716.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">-&gt;width();</text>
+<rect x="365" y="720" width="567" height="16" fill="#ff7b92" fill-opacity="0.16"/>
+<g id="icon/minus" transform="translate(367,721) scale(0.5833)"><path d="M19,13H5V11H19V13Z" fill="#ff7b92"/></g>
+<text x="408" y="732.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">39</text>
+<rect x="452.8" y="721" width="28.8" height="14" fill="#ff7b92" fill-opacity="0.35"/>
+<rect x="575.2" y="721" width="36" height="14" fill="#ff7b92" fill-opacity="0.35"/>
+<text x="424" y="732.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="732.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">bool</text>
+<text x="481.6" y="732.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> full = fits(width, </text>
+<text x="625.6" y="732.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">true</text>
+<text x="654.4" y="732.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">);</text>
+<rect x="365" y="736" width="567" height="16" fill="#4ecdc4" fill-opacity="0.16"/>
+<g id="icon/plus" transform="translate(367,737) scale(0.5833)"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" fill="#4ecdc4"/></g>
+<text x="408" y="748.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">39</text>
+<rect x="452.8" y="737" width="36" height="14" fill="#4ecdc4" fill-opacity="0.35"/>
+<rect x="575.2" y="737" width="79.19999999999999" height="14" fill="#4ecdc4" fill-opacity="0.35"/>
+<rect x="712" y="737" width="57.60000000000002" height="14" fill="#4ecdc4" fill-opacity="0.35"/>
+<text x="424" y="748.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="748.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="488.8" y="748.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> </text>
+<text x="496" y="748.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Level</text>
+<text x="532" y="748.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> level = levelFor(width, height());</text>
+<text x="408" y="764.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">40</text>
+<text x="424" y="764.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="764.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">for</text>
+<text x="474.4" y="764.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> (</text>
+<text x="488.8" y="764.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Item</text>
+<text x="517.6" y="764.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> &amp;item : m_items)</text>
+<rect x="365" y="768" width="567" height="16" fill="#ff7b92" fill-opacity="0.16"/>
+<g id="icon/minus" transform="translate(367,769) scale(0.5833)"><path d="M19,13H5V11H19V13Z" fill="#ff7b92"/></g>
+<text x="408" y="780.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">41</text>
+<rect x="640" y="769" width="28.80000000000001" height="14" fill="#ff7b92" fill-opacity="0.35"/>
+<text x="424" y="780.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">        item.button-&gt;setText(full ? item.full : item.icon);</text>
+<rect x="365" y="784" width="567" height="16" fill="#4ecdc4" fill-opacity="0.16"/>
+<g id="icon/plus" transform="translate(367,785) scale(0.5833)"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" fill="#4ecdc4"/></g>
+<text x="408" y="796.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">41</text>
+<rect x="640" y="785" width="115.19999999999999" height="14" fill="#4ecdc4" fill-opacity="0.35"/>
+<text x="424" y="796.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">        item.button-&gt;setText(textFor(item, level));</text>
+<rect x="365" y="800" width="567" height="16" fill="#4ecdc4" fill-opacity="0.16"/>
+<g id="icon/plus" transform="translate(367,801) scale(0.5833)"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" fill="#4ecdc4"/></g>
+<text x="408" y="812.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">42</text>
+<text x="424" y="812.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    m_more-&gt;setVisible(level == </text>
+<text x="654.4" y="812.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">Level</text>
+<text x="690.4000000000001" y="812.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">::Overflow);</text>
+<text x="408" y="828.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">42</text>
+<text x="424" y="828.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    updateMoreMark();</text>
+<text x="408" y="844.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">43</text>
+<text x="424" y="844.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<text x="408" y="860.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">44</text>
+<text x="408" y="876.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">45</text>
+<text x="424" y="876.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QSize</text>
+<text x="460" y="876.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::sizeHint() </text>
+<text x="611.2" y="876.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="408" y="892.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">46</text>
+<text x="424" y="892.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="408" y="908.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">47</text>
+<text x="424" y="908.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="908.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">return</text>
+<text x="496" y="908.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> {m_items.size() * </text>
+<text x="632.8" y="908.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">80</text>
+<text x="647.2" y="908.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, m_height};</text>
+<text x="408" y="924.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">48</text>
+<text x="424" y="924.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<text x="408" y="940.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">49</text>
+<text x="408" y="956.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">50</text>
+<text x="424" y="956.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">QSize</text>
+<text x="460" y="956.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::minimumSizeHint() </text>
+<text x="661.6" y="956.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">const</text>
+<text x="408" y="972.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">51</text>
+<text x="424" y="972.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="408" y="988.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">52</text>
+<text x="424" y="988.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    </text>
+<text x="452.8" y="988.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">return</text>
+<text x="496" y="988.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> {m_leading ? m_leading-&gt;width() : </text>
+<text x="748" y="988.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#82eeff" xml:space="preserve">0</text>
+<text x="755.2" y="988.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">, m_height};</text>
+<text x="408" y="1004.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">53</text>
+<text x="424" y="1004.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<text x="408" y="1020.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">54</text>
+<text x="408" y="1036.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">55</text>
+<text x="424" y="1036.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">void</text>
+<text x="452.8" y="1036.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve"> Toolbar::applyTheme()</text>
+<text x="408" y="1052.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">56</text>
+<text x="424" y="1052.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">{</text>
+<text x="408" y="1068.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">57</text>
+<text x="424" y="1068.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    measure();</text>
+<text x="408" y="1084.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">58</text>
+<text x="424" y="1084.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">    relayout();</text>
+<text x="408" y="1100.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">59</text>
+<text x="424" y="1100.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">}</text>
+<rect x="927" y="720" width="3" height="16" fill="#ff7b92"/>
+<rect x="927" y="736" width="3" height="16" fill="#4ecdc4"/>
+<rect x="927" y="768" width="3" height="16" fill="#ff7b92"/>
+<rect x="927" y="784" width="3" height="16" fill="#4ecdc4"/>
+<rect x="927" y="800" width="3" height="16" fill="#4ecdc4"/>
+<rect x="919" y="112" width="4" height="649" id="Scrollbar" fill="#e0e6ed" fill-opacity="0.25"/>
 </g>
 </svg>

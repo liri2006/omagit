@@ -60,6 +60,15 @@ console.log(frames.length + ' frames');
 const SH = require('./sheets.js');
 K.setTheme('dark');
 emit(SH.cover(), 'Cover'); emit(SH.foundations(), 'Foundations'); emit(SH.components(), 'Components'); emit(SH.layoutRules(), 'Layout rules');
+// Proposals (2026-09-25): going past the history search's 10,000-match cap.
+emit(SH.searchProposals(), 'Screens · Half & Quarter');
+[['A', 'Count-row action'], ['B', 'Filter-row toggle'], ['C', 'In-field toggle'], ['D', 'Search options menu']].forEach(([p, name]) => {
+  const search = on => ({ value: 'fix', proposal: p, on });
+  const menu = p === 'D' ? { overlay: 'searchOptions' } : {};
+  emit(S.screen({ id: `${p} · ${name} · Half · capped`, W: 945, H: 1234, page: 'history', search: { ...search(false), menu: p === 'D' }, ...menu }), 'Screens · Half & Quarter');
+  emit(S.screen({ id: `${p} · ${name} · Half · full search on`, W: 945, H: 1234, page: 'history', search: search(true) }), 'Screens · Half & Quarter');
+  emit(S.screen({ id: `${p} · ${name} · Eighth · capped`, W: 470, H: 612, page: 'history', search: { ...search(false), menu: p === 'D' }, ...menu }), 'Screens · Half & Quarter');
+});
 fs.writeFileSync(OUT + '/frames.json', JSON.stringify(frames, null, 1));
 fs.writeFileSync(OUT + '/manifest.json', JSON.stringify(manifest));
 console.log(frames.length + ' frames total');

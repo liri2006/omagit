@@ -7,7 +7,7 @@
 class QPainter;
 
 // The chip a branch, a remote branch or a tag wears beside a commit (kit.js
-// refChip()): 16 px tall, its label in the bold 10 px caption with 5 px on
+// refChip()): 16 px tall, its label in the bold 10 px caption with 4 px on
 // either side. The checked-out branch (or a detached HEAD) is a solid accent
 // chip; any other local branch is tinted in the accent, a remote one in
 // magenta, a tag in yellow. The commit list's rows and the details card

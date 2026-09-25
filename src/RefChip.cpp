@@ -7,9 +7,8 @@
 #include <QtMath>
 
 namespace {
-// kit.js refChip(): the label's advance and 10 px, 16 px tall; the tinted
-// kinds are their hue at 14 % with a border of it at 80 %.
-constexpr int kChipHeight = 16, kChipPad = 10;
+// kit.js refChip(): the tinted kinds are their hue at 14 % with a border of
+// it at 80 %.
 constexpr qreal kTintFill = 0.14, kTintBorder = 0.8;
 
 // The kit's chip label: the caption's bold 10 px, without the letter spacing
@@ -39,12 +38,12 @@ QColor chipHue(const RefLabel &label)
 int refChipWidth(const RefLabel &label)
 {
     // Rounded up, so the label is never elided by a fraction of a pixel.
-    return qCeil(QFontMetricsF(chipFont()).horizontalAdvance(label.name)) + ui::space(kChipPad);
+    return qCeil(QFontMetricsF(chipFont()).horizontalAdvance(label.name)) + 2 * ui::space(ui::pad::pill);
 }
 
 int refChipHeight()
 {
-    return ui::space(kChipHeight);
+    return ui::space(ui::box::pill);
 }
 
 void paintRefChip(QPainter *painter, const QPoint &topLeft, const RefLabel &label)

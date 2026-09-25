@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GitRepo.h"
+#include "Grid.h"
 #include "PaneLayout.h"
 
 #include <QWidget>
@@ -13,7 +14,6 @@ class QAbstractItemView;
 class QHBoxLayout;
 class QLabel;
 class QLineEdit;
-class QSortFilterProxyModel;
 class QSpacerItem;
 class QSplitter;
 class QStyledItemDelegate;
@@ -53,13 +53,16 @@ public:
     // its own, the files table having no room.
     void setStacked(bool on);
     // The window's classes, which only ever size things: the columns of the
-    // two tables by the width class; shallow, no details card and no files
-    // table; extra small, no remote chips in the commit list's rows. Nothing
-    // of it is saved.
-    void setWindowClass(WidthClass width, bool shallow, bool extraSmall);
+    // two tables by the width class; the block gap between the sections by
+    // the height class and, shallow, no details card and no files table;
+    // extra small, no remote chips in the commit list's rows. Nothing of it
+    // is saved.
+    void setWindowClass(WidthClass width, HeightClass height, bool extraSmall);
 
     Commit currentCommit(bool *ok) const;
-    // The file selected in the files list of the current commit.
+    // The file selected in the files list of the current commit; while a
+    // refresh's search brings that commit back (no row current yet), of the
+    // commit the files it keeps showing belong to.
     bool currentFile(Commit *commit, FileChange *change) const;
     // What the diff pane should say when currentFile() is false.
     QString emptyMessage() const;
@@ -83,28 +86,38 @@ signals:
 private slots:
     void onCommitChanged();
     void onFilterChanged();
+    void onSearchChanged();
     void loadMore();
     void showContextMenu(const QPoint &pos);
 
 private:
     void updateFooter();
-    // The count row's height and the count's place in it, with Load more
-    // shown or not.
+    // The count row's height and the count's place in it.
     void alignCountRow();
     void selectFirstCommit();
+    // The card and the files empty, `message` in their place and the diff
+    // pane's; showNoMatch() says why while filtering.
+    void showNoCommit(const QString &message);
+    void showNoMatch();
+    void rememberSearchCommit();
+    // The end of what a refresh put aside to bring back (m_keepShown and
+    // the rest): the commit is back, or will not be, or the user moved on.
+    void dropRestoration();
+    // The two lists' offsets back where the refresh found them, once the
+    // commit is back and the list as long as it was (or the search is done).
+    void restoreOffsets();
     // The graph column sized to the lanes in use, Message takes the rest.
     void fitColumns();
     // All branches' face for the presentation of the moment.
     void applyAllRefsForm();
-    // The columns of the width class of the moment, in scaled pixels.
+    // The commit list's columns of the width class of the moment, in scaled
+    // pixels (the files table's are its setup's).
     void applyCommitColumns();
-    void applyFilesColumns();
     // Which of the card and the files table show, and their heights.
     void applySections();
 
     GitRepo *m_repo;
     HistoryModel *m_model;
-    QSortFilterProxyModel *m_proxy;
     QTableView *m_table;
     QStyledItemDelegate *m_commitDelegate;
     QLineEdit *m_filter;
@@ -117,16 +130,33 @@ private:
     ChangesModel *m_files;
     QTableView *m_filesTable;
     ChangesTableSetup *m_filesSetup;
-    QStyledItemDelegate *m_filesDelegate;
-    QLabel *m_countLabel;       // the count under the sections, Load more beside it
-    QToolButton *m_moreButton;
+    QLabel *m_countLabel;       // the count under the sections
     QString m_emptyMessage;
     QString m_pendingHash; // commit to select after a reload
     QString m_pendingFile; // ... and the file to select in it
+    QString m_searchHash;  // the commit a filter's search selects once it turns up
+    QString m_currentHash; // the list's current commit as onCommitChanged() last had it; none after a reset
+    // A refresh that starts the search over brings the list back as it was:
+    // the commit that was current (m_searchHash) with its file
+    // (m_pendingFile), then the offsets of the commit list and the files
+    // table once as many rows as there were are in again. What the user
+    // does meanwhile is theirs: a file they pick is the one the commit comes
+    // back with, and a table they scroll (or whose file they pick) keeps
+    // the offset they leave it at — the commit coming back does not scroll
+    // the list to it, and a second refresh that starts over puts it back
+    // there.
+    bool m_keepShown = false;     // the commit is not back yet: the card, the files and the diff stay as they are
+    Commit m_keptCommit;          // ... that commit, the files' while no row is current (currentFile())
+    bool m_restoring = false;     // a refresh's list is coming back: the offsets below are still to go back
+    int m_restoreRows = 0;        // the rows the list had
+    int m_commitsOffset = -1;     // -1: none to put back, the user's
+    int m_filesOffset = -1;
+    bool m_puttingBack = false;   // the list is put back (the commit, its file, the offsets): not the user
     bool m_reloading = false; // the model reset momentarily leaves no commit current
     bool m_stacked = false;
     WidthClass m_widthClass = WidthClass::Wide;
     bool m_shallow = false;
+    int m_block = ui::kRegularDensity.block; // design px, by the window's height class
     bool m_extraSmall = false;
     bool m_sizedByHand = false; // the user dragged a handle of the splitter this session
 };

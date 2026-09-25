@@ -28,12 +28,14 @@ namespace {
 // text size. The design measures its padding from the card's outer edge, so
 // the layout's margins are that padding less the frame.
 constexpr int kFrame = 2;
-// The design's pixels: the card at most 360 wide, 8 clear of the rail, the
-// message box at least 84 tall; the padding (10 around, 4 above the header),
-// the editor's top 32 below the card's, and the gaps down to the actions.
-constexpr int kMaxWidth = 360, kRailGap = 8, kEditorMin = 84;
-constexpr int kPad = 10, kTopPad = 4, kEditorTop = 32;
-constexpr int kHintGap = 10, kHintHeight = 16, kRuleGap = 10, kActionGap = 12;
+// The design's card (screens.js commitPopover()), on the grid of Grid.h: a
+// popover's 12 of padding; the MESSAGE row 24, its cog 4 in from the content
+// edge; 8, the message box; 8, the 16 px hint line; 12, a hairline, 12; the
+// 28 px action row, Commit the primary action. Sizes the design gives the
+// card alone: at most 360 wide, the message box at least 80 tall. It stands
+// an item gap right of the rail's tile.
+constexpr int kMaxWidth = 360, kEditorMin = 80;
+constexpr int kRuleGap = 12; // screens.js SEP: on either side of a card's hairline
 } // namespace
 
 CommitPopover::CommitPopover(CommitPage *page, QWidget *host)
@@ -49,7 +51,7 @@ CommitPopover::CommitPopover(CommitPage *page, QWidget *host)
     m_layout = new QVBoxLayout(this);
     m_layout->setSpacing(0); // every gap below is a spacer of the design's own
 
-    auto *header = sectionHeaderRow(sectionLabel(tr("Message")));
+    auto *header = m_header = sectionHeaderRow(sectionLabel(tr("Message")));
     header->addStretch();
     m_agentButton = iconButton(kCog, tr("⚙"), CommitPage::agentButtonTip());
     // The page's settings, hanging from this cog: the window opens them.
@@ -103,8 +105,9 @@ CommitPopover::CommitPopover(CommitPage *page, QWidget *host)
     });
     m_actions->addWidget(m_amend, 1);
     m_actions->addStretch();
-    m_commitButton = new QPushButton;
+    m_commitButton = new KitPushButton;
     m_commitButton->setDefault(true);
+    setPrimary(m_commitButton); // 16 in, the card's primary action
     m_commitButton->setCursor(Qt::PointingHandCursor);
     connect(m_commitButton, &QPushButton::clicked, this, &CommitPopover::commit);
     m_actions->addWidget(m_commitButton);
@@ -150,17 +153,15 @@ void CommitPopover::setCompanion(QWidget *companion)
 void CommitPopover::applyTheme()
 {
     const OmarchyTheme *theme = OmarchyTheme::instance();
-    m_layout->setContentsMargins(space(kPad) - kFrame, space(kTopPad) - kFrame, space(kPad) - kFrame,
-                                 space(kPad) - kFrame);
-    // The editor's top is space(32) below the card's top edge, exactly: the
-    // gap under the header takes whatever the three rounded parts above it
-    // leave, instead of being rounded on its own.
-    m_editorGap->changeSize(0, qMax(0, space(kEditorTop) - space(kTopPad) - headerRowHeight()), QSizePolicy::Minimum,
-                            QSizePolicy::Fixed);
-    m_hintGap->changeSize(0, space(kHintGap), QSizePolicy::Minimum, QSizePolicy::Fixed);
+    const int pad = space(pad::popover) - kFrame;
+    m_layout->setContentsMargins(pad, pad, pad, pad);
+    m_header->setContentsMargins(0, 0, space(gap::icon), 0);
+    m_editorGap->changeSize(0, space(gap::header), QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_hintGap->changeSize(0, space(gap::item), QSizePolicy::Minimum, QSizePolicy::Fixed);
+    // The hairline is the first row of the 12 under it.
     m_ruleGap->changeSize(0, space(kRuleGap), QSizePolicy::Minimum, QSizePolicy::Fixed);
-    m_actionGap->changeSize(0, space(kActionGap), QSizePolicy::Minimum, QSizePolicy::Fixed);
-    m_actions->setSpacing(sectionGap());
+    m_actionGap->changeSize(0, space(kRuleGap) - 1, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_actions->setSpacing(space(gap::group));
     m_editor->setFont(theme->uiFont());
     m_editor->setMinimumHeight(space(kEditorMin));
     // The corner button is measured for the glyph it wears, so it wears the
@@ -173,7 +174,7 @@ void CommitPopover::applyTheme()
     m_hint->setFont(theme->uiFont());
     m_hint->style()->unpolish(m_hint);
     m_hint->style()->polish(m_hint);
-    m_hint->setFixedHeight(space(kHintHeight));
+    m_hint->setFixedHeight(space(box::line));
     m_layout->invalidate();
     elideHint();
     if (isVisible()) {
@@ -271,7 +272,10 @@ void CommitPopover::updateAmendLabel()
     const QMargins margins = m_layout->contentsMargins();
     const int inner = width() - 2 * kFrame - margins.left() - margins.right();
     const int wide = chrome + fm.horizontalAdvance(full) + m_actions->spacing() + m_commitButton->sizeHint().width();
-    m_amend->setText(inner >= wide ? full : tr("Amend"));
+    // The design's card holds the long label beside Commit with nothing to
+    // spare, its text widths rounded; Commit rounds its label's up, which may
+    // cost the row the one pixel the label's last glyph has free after its ink.
+    m_amend->setText(inner + 1 >= wide ? full : tr("Amend"));
     m_amend->setMaximumWidth(m_amend->sizeHint().width());
 }
 
@@ -287,9 +291,9 @@ void CommitPopover::scheduleLayout()
     });
 }
 
-// The card beside the rail, 8 px clear of it and at most 360 wide, as far as
+// The card beside the rail, 8 clear of it and at most 360 wide, as far as
 // the window's right margin allows; its message box as tall as the text at
-// that width, between 84 px and a third of the window; its bottom on the
+// that width, between 80 and a third of the window; its bottom on the
 // tile's bottom, so a longer message moves the top up.
 void CommitPopover::place()
 {
@@ -297,11 +301,11 @@ void CommitPopover::place()
     if (!m_rail || !host || m_placing)
         return;
     m_placing = true;
-    const int margin = windowMargin();
+    const int margin = windowMargin(host);
     const QRect rail = m_rail->geometry();
     QWidget *tile = m_rail->commitTile();
     const QRect tileRect(tile->mapTo(host, QPoint(0, 0)), tile->size());
-    const int left = rail.x() + rail.width() + space(kRailGap);
+    const int left = rail.x() + rail.width() + space(gap::item);
     const int width = qMax(1, qMin(space(kMaxWidth), host->width() - margin - left));
 
     // The width first, so the text is wrapped at the width it is measured at.
