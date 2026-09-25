@@ -79,9 +79,14 @@ public:
     void applyTheme();
     // The window's density: the row keeps its side margin.
     void setDensity(const ui::Density &density);
+    // Whether the sync buttons may wear their labels at all: the design spells
+    // them out in a wide window only (screens.js topBar(), xl), icons below it
+    // however much room is left. A bar outside a window goes by its width.
+    void setSyncLabels(bool allowed);
 
     // 0 spells everything out, 6 is the narrowest form (2 while stacked); what
-    // the current width fits (see the tables in TopBar.cpp).
+    // the current width fits (see the tables in TopBar.cpp), from 1 on while
+    // the sync labels are not allowed.
     int foldLevel() const { return m_level; }
 
     QSize sizeHint() const override;
@@ -189,4 +194,5 @@ private:
     ui::Density m_density = ui::kRegularDensity;
     int m_level = 0;
     bool m_stacked = false;
+    bool m_syncLabels = true;
 };

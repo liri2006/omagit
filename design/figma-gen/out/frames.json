@@ -425,5 +425,47 @@
   "page": "Screens · Half & Quarter",
   "w": 470,
   "h": 612
+ },
+ {
+  "file": "62-Extra-narrow-Changes-tab.svg",
+  "id": "Extra narrow · Changes tab",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "63-Extra-narrow-Diff-tab.svg",
+  "id": "Extra narrow · Diff tab",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "64-Extra-narrow-History-tab.svg",
+  "id": "Extra narrow · History tab",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "65-Extra-narrow-Branch-menu.svg",
+  "id": "Extra narrow · Branch menu",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "66-Extra-narrow-Sync-menu.svg",
+  "id": "Extra narrow · Sync menu",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "67-Extra-narrow-shallow-340x493.svg",
+  "id": "Extra narrow shallow · 340x493",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 493
  }
 ]

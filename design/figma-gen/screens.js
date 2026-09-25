@@ -139,7 +139,7 @@ function tokens(line) {
 // ------------------------------------------------------------ top bar
 // Repo + branch context on the left, sync + layout on the right.
 function topBar(c, W, lv, o = {}) {
-  const t = T(), d = o.d || REGULAR, h = TOP_BAR, y = BAR; let x = d.margin;
+  const t = T(), d = o.d || REGULAR, y = BAR; let x = d.margin, h = TOP_BAR;
   c.group('TopBar', () => {
     // repo chip: label + chevron when there is room, a bare folder icon when stacked (never hidden)
     const w = button(c, { x, y, variant: 'ghost', icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv), id: 'RepoChip' });
@@ -176,12 +176,23 @@ function topBar(c, W, lv, o = {}) {
     }
     // page tabs: a view toggle centred in the window, like a toolbar mode switch.
     // It keeps a group gap clear of the repo/branch group and the sync group: nudged aside first, labels → icons second.
+    // Extra narrow (stacked, and even the icons would touch a group, ≈ < 420): it takes a row of its own under
+    // the controls, the bar's width, its segments stretched and labelled again (icons if a label does not fit a
+    // segment), so the branch keeps its name and nothing overlaps.
     {
-      const lo = x + GAP.group, hi = rx - GAP.group;
-      let items = navItems(lv, o.page || 'changes', true), w = measureSegmented(items);
-      if (w > hi - lo) { items = navItems(lv, o.page || 'changes', false); w = measureSegmented(items); }
-      const sx = Math.max(lo, Math.min(Math.round(W / 2 - w / 2), hi - w));
-      segmented(c, { x: sx, y, id: 'NavTabs', items });
+      const page = o.page || 'changes', lo = x + GAP.group, hi = rx - GAP.group;
+      let items = navItems(lv, page, true), w = measureSegmented(items);
+      if (w > hi - lo) { items = navItems(lv, page, false); w = measureSegmented(items); }
+      if (w > hi - lo && stacked(lv)) {
+        const rw = W - 2 * d.margin, each = Math.floor(rw / 3);
+        items = navItems(lv, page, true);
+        if (items.some(it => measureSegmented([it]) > each)) items = navItems(lv, page, false);
+        segmented(c, { x: d.margin, y: y + BOX.control + BAR, w: rw, stretch: true, id: 'NavTabs', items });
+        h = TOP_BAR + BOX.control + BAR; // 8 + 28 + 8 + 28 + 8 = 80
+      } else {
+        const sx = Math.max(lo, Math.min(Math.round(W / 2 - w / 2), hi - w));
+        segmented(c, { x: sx, y, id: 'NavTabs', items });
+      }
     }
     hairline(c, 0, h - 1, W, { fo: 0.12 });
   });
@@ -548,8 +559,10 @@ function diffPane(c, x, y, w, h, lv, o = {}) {
     const drawSide = (sx, sw, side, title, rows) => {
       // header (inside the border's top pixel; its hairline is its last row)
       fillBox(c, sx, by + 1, sw, hh - 1, 0.04);
-      text(c, sx + P, by + hh / 2, 'src/ui/Toolbar.cpp', { weight: 700 });
-      text(c, sx + sw - P, by + hh / 2, title, { fill: t.dim, anchor: 'end', size: SIZE.small });
+      const path = 'src/ui/Toolbar.cpp';
+      text(c, sx + P, by + hh / 2, path, { weight: 700 });
+      // the side's title (HEAD, Working tree) gives way when it would come within a group gap of the path
+      if (P + tw(path) + GAP.group + tw(title, SIZE.small) + P <= sw) text(c, sx + sw - P, by + hh / 2, title, { fill: t.dim, anchor: 'end', size: SIZE.small });
       hairline(c, sx, by + hh - 1, sw, { fo: 0.2 });
       const top = by + hh + GAP.cluster; let ry = top;
       const maxRows = Math.floor((by + bh - 1 - top) / rh);
@@ -910,8 +923,9 @@ function screen(o) {
       diffPane(c, m + leftW + m, bodyY, W - m * 3 - leftW, bodyH, lv, o);
     }
   }
-  // overlays: menus hang 4 under the top bar and clamp to the window's margins
-  const menuY = TOP_BAR + GAP.cluster, clampW = dw => Math.min(dw, W - 2 * m);
+  // overlays: menus hang 4 under the top bar and clamp to the window's margins; under a two-row
+  // bar (extra narrow) they hang 4 under their button's row, over the tabs, not a row away from it
+  const menuY = (top > TOP_BAR ? BAR + BOX.control : TOP_BAR) + GAP.cluster, clampW = dw => Math.min(dw, W - 2 * m);
   if (o.overlay === 'branch') {
     const bx = m + measureButton({ icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv) }) + GAP.cluster;
     menuCard(c, { x: bx, y: menuY, w: Math.min(300, W - m - bx), id: 'BranchMenu', items: [

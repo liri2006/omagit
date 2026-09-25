@@ -204,8 +204,11 @@ function button(c, o) {
   if (o.busy) { textFill = T.accent; }
   if (fo) fillBox(c, x, y, w, h, fo, { fill, id: 'fill' });
   if (so) border(c, x, y, w, h, { stroke, so, id: 'border' });
-  // Icon-only buttons centre the box whatever the width (24 and 28 squares: 4 and 6 around it).
-  let cx = o.icon && !o.label && !o.chevron ? x + (w - box) / 2 : x + px;
+  // Icon-only buttons centre the box whatever the width (24 and 28 squares: 4 and 6 around it);
+  // a primary one stretched wider than it asks (Commit in the stacked bar, Generate now) centres
+  // its content as one, the others keep it at the left.
+  const slack = variant === 'primary' && o.label ? w - measureButton({ ...o, w: 0 }) : 0;
+  let cx = o.icon && !o.label && !o.chevron ? x + (w - box) / 2 : x + px + Math.max(0, Math.floor(slack / 2));
   if (o.icon) { icon(c, o.icon, cx, y + (h - box) / 2, box, { fill: o.iconFill || textFill, opacity: textOp }); cx += box + (o.label ? GAP.icon : 0); }
   if (o.label) { text(c, cx, y + h / 2, o.label, { size, weight: st.bold ? 700 : (o.weight || 400), fill: textFill, opacity: textOp, id: 'label' }); cx += tw(o.label, size); }
   if (o.chevron) icon(c, 'chevron', x + w - px - BOX.chevron, y + (h - BOX.chevron) / 2, BOX.chevron, { fill: textFill, opacity: textOp ?? 0.7 });

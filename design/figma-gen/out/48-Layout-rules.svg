@@ -61,50 +61,66 @@
 <text x="1180" y="354.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">rail + unified</text>
 <text x="1360" y="354.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">⋯ · Commit (stretch)</text>
 <rect x="40" y="396" width="1440" height="1" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="40" y="425.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading Height classes" xml:space="preserve">Height classes</text>
-<text x="40" y="458.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H ≥ 1000 (tall)</text>
-<text x="220" y="458.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">as normal, with the roomier vertical spacing: blocks and sections 12 apart</text>
-<text x="40" y="482.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H ≥ 560</text>
-<text x="220" y="482.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">normal: footer with status + keys, message box 96 / 80 / 64 by width class (5 / 4 / 3 lines), options row; blocks and sections 8 apart</text>
-<text x="40" y="506.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H &lt; 560 (shallow)</text>
-<text x="220" y="506.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">footer hidden (status becomes a transient line in the action bar), message box one line (a 28 field) that grows on focus up to 40 % of the pane, options fold into ⋯; blocks and sections 4 apart</text>
-<text x="40" y="530.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H &lt; 400</text>
-<text x="220" y="530.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">history details collapse to one line</text>
-<text x="40" y="571.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading Folding order (what gives way first)" xml:space="preserve">Folding order (what gives way first)</text>
-<text x="40" y="604.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">1. Button labels → icons (sync group, diff toolbar), never truncated mid-word</text>
-<text x="40" y="624.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">2. Fetch, Merge → ⋯ menu; Whitespace, Syntax → diff ⋯ menu</text>
-<text x="40" y="644.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">3. Table columns: Size → +− → Status → Path (path joins the name as a dim suffix)</text>
-<text x="40" y="664.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">4. Split diff → unified (pane &lt; 720)</text>
-<text x="40" y="684.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">5. Two panes → tabs (window &lt; 700); Docked / Mini toggles vanish, the rail lives in the Diff tab</text>
-<text x="40" y="704.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">6. Pull, Push → one sync dropdown carrying both counts; view toggle labels → icons when it would touch either group</text>
-<text x="40" y="724.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">7. Repo chip → icon (34 px; it never folds away, it is the anchor that says which project this is)</text>
-<text x="40" y="744.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">8. Footer → hidden (shallow); options → ⋯; commit button stretches</text>
-<text x="40" y="781.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading Always true" xml:space="preserve">Always true</text>
-<text x="40" y="814.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Commit (Ctrl+Enter) is visible and reachable at every size: bottom-right (or full width) of the left section; in the Mini layout and the Diff tab it is the rail's bottom tile, which opens the commit popover.</text>
-<text x="40" y="834.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Repo and branch are in the top-left, the view toggle is centred, sync is in the top-right. Keybindings (Ctrl+K) reach everything the mouse can.</text>
-<text x="40" y="854.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Menus and dialogs clamp to the window: width = min(design width, window − 2 × margin), never off-screen. Side margins and pane gaps are 16 on XL, 12 on L / M, 8 on S / XS.</text>
-<text x="40" y="874.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Selection stays put across refresh, resize and layout changes; the selected file follows into the Diff tab and the rail.</text>
+<text x="40" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="700" fill="#4ecdc4" xml:space="preserve">XS · extra</text>
+<text x="40" y="430.0" font-family="JetBrains Mono" font-size="11" font-weight="700" fill="#4ecdc4" xml:space="preserve">narrow</text>
+<text x="150" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">&lt; ≈ 420, measured</text>
+<text x="300" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">single column, tabs</text>
+<text x="500" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">repo icon · branch, full name | ↓2 ↑1 ▾ ·</text>
+<text x="500" y="430.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">⋯; the toggle on a row of its own below</text>
+<text x="500" y="446.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">(bar 80)</text>
+<text x="800" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">full width, stretched,</text>
+<text x="800" y="430.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">labels + count again</text>
+<text x="1000" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">name + dim path, St</text>
+<text x="1180" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">rail + unified; HEAD →</text>
+<text x="1180" y="430.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">Working tree gives way to</text>
+<text x="1180" y="446.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">the path</text>
+<text x="1360" y="414.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">⋯ · Commit (stretch)</text>
+<rect x="40" y="456" width="1440" height="1" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="40" y="485.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading Height classes" xml:space="preserve">Height classes</text>
+<text x="40" y="518.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H ≥ 1000 (tall)</text>
+<text x="220" y="518.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">as normal, with the roomier vertical spacing: blocks and sections 12 apart</text>
+<text x="40" y="542.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H ≥ 560</text>
+<text x="220" y="542.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">normal: footer with status + keys, message box 96 / 80 / 64 by width class (5 / 4 / 3 lines), options row; blocks and sections 8 apart</text>
+<text x="40" y="566.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H &lt; 560 (shallow)</text>
+<text x="220" y="566.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">footer hidden (status becomes a transient line in the action bar), message box one line (a 28 field) that grows on focus up to 40 % of the pane, options fold into ⋯; blocks and sections 4 apart</text>
+<text x="40" y="590.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H &lt; 400</text>
+<text x="220" y="590.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">history details collapse to one line</text>
+<text x="40" y="631.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading Folding order (what gives way first)" xml:space="preserve">Folding order (what gives way first)</text>
+<text x="40" y="664.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">1. Button labels → icons (sync group, diff toolbar), never truncated mid-word</text>
+<text x="40" y="684.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">2. Fetch, Merge → ⋯ menu; Whitespace, Syntax → diff ⋯ menu</text>
+<text x="40" y="704.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">3. Table columns: Size → +− → Status → Path (path joins the name as a dim suffix)</text>
+<text x="40" y="724.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">4. Split diff → unified (pane &lt; 720)</text>
+<text x="40" y="744.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">5. Two panes → tabs (window &lt; 700); Docked / Mini toggles vanish, the rail lives in the Diff tab</text>
+<text x="40" y="764.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">6. Pull, Push → one sync dropdown carrying both counts; view toggle labels → icons when it would touch either group</text>
+<text x="40" y="784.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">7. Repo chip → icon (34 px; it never folds away, it is the anchor that says which project this is)</text>
+<text x="40" y="804.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">8. Footer → hidden (shallow); options → ⋯; commit button stretches</text>
+<text x="40" y="824.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">9. View toggle → a full-width row of its own under the bar, labels back (its icons would touch a group)</text>
+<text x="40" y="861.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading Always true" xml:space="preserve">Always true</text>
+<text x="40" y="894.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Commit (Ctrl+Enter) is visible and reachable at every size: bottom-right (or full width) of the left section; in the Mini layout and the Diff tab it is the rail's bottom tile, which opens the commit popover.</text>
+<text x="40" y="914.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Repo and branch are in the top-left, the view toggle is centred (extra narrow: the full-width row under them), sync is in the top-right. Keybindings (Ctrl+K) reach everything the mouse can.</text>
+<text x="40" y="934.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Menus and dialogs clamp to the window: width = min(design width, window − 2 × margin), never off-screen. Side margins and pane gaps are 16 on XL, 12 on L / M, 8 on S / XS.</text>
+<text x="40" y="954.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">·  Selection stays put across refresh, resize and layout changes; the selected file follows into the Diff tab and the rail.</text>
 <g id="Diagram/XL / L / M">
-<rect x="1000.5" y="560.5" width="299" height="179" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<rect x="1000" y="560" width="300" height="18" fill="#e0e6ed" fill-opacity="0.08"/>
-<text x="1006" y="571.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">repo · branch   toggle   sync</text>
-<rect x="1008.5" y="586.5" width="99" height="145" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="0.8"/>
-<rect x="1116.5" y="586.5" width="175" height="145" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<text x="1014" y="603.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#e0e6ed" xml:space="preserve">changes</text>
-<text x="1122" y="603.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#e0e6ed" xml:space="preserve">diff</text>
-<rect x="1008" y="710" width="100" height="20" fill="#4ecdc4" fill-opacity="0.18"/>
-<text x="1014" y="723.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#4ecdc4" xml:space="preserve">commit</text>
-<text x="1000" y="760.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">XL / L / M</text>
+<rect x="1000.5" y="610.5" width="299" height="179" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="1000" y="610" width="300" height="18" fill="#e0e6ed" fill-opacity="0.08"/>
+<text x="1006" y="621.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">repo · branch   toggle   sync</text>
+<rect x="1008.5" y="636.5" width="99" height="145" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="0.8"/>
+<rect x="1116.5" y="636.5" width="175" height="145" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<text x="1014" y="653.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#e0e6ed" xml:space="preserve">changes</text>
+<text x="1122" y="653.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#e0e6ed" xml:space="preserve">diff</text>
+<rect x="1008" y="760" width="100" height="20" fill="#4ecdc4" fill-opacity="0.18"/>
+<text x="1014" y="773.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#4ecdc4" xml:space="preserve">commit</text>
+<text x="1000" y="810.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">XL / L / M</text>
 </g>
 <g id="Diagram/S / XS">
-<rect x="1340.5" y="560.5" width="129" height="179" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-<rect x="1340" y="560" width="130" height="18" fill="#e0e6ed" fill-opacity="0.08"/>
-<text x="1346" y="571.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">repo·br  tog  sync</text>
-<rect x="1348" y="586" width="114" height="14" fill="#e0e6ed" fill-opacity="0.18"/>
-<text x="1352" y="595.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#e0e6ed" xml:space="preserve">chg | diff | hist</text>
-<rect x="1348.5" y="606.5" width="113" height="125" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="0.8"/>
-<rect x="1348" y="710" width="114" height="20" fill="#4ecdc4" fill-opacity="0.18"/>
-<text x="1354" y="723.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#4ecdc4" xml:space="preserve">commit</text>
-<text x="1340" y="760.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">S / XS</text>
+<rect x="1340.5" y="610.5" width="129" height="179" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+<rect x="1340" y="610" width="130" height="18" fill="#e0e6ed" fill-opacity="0.08"/>
+<text x="1346" y="621.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#8791a6" xml:space="preserve">repo·br  tog  sync</text>
+<rect x="1348" y="636" width="114" height="14" fill="#e0e6ed" fill-opacity="0.18"/>
+<text x="1352" y="645.9" font-family="JetBrains Mono" font-size="8" font-weight="400" fill="#e0e6ed" xml:space="preserve">chg | diff | hist</text>
+<rect x="1348.5" y="656.5" width="113" height="125" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="0.8"/>
+<rect x="1348" y="760" width="114" height="20" fill="#4ecdc4" fill-opacity="0.18"/>
+<text x="1354" y="773.2" font-family="JetBrains Mono" font-size="9" font-weight="400" fill="#4ecdc4" xml:space="preserve">commit</text>
+<text x="1340" y="810.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">S / XS</text>
 </g>
 </svg>

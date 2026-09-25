@@ -69,6 +69,14 @@ emit(SH.searchProposals(), 'Screens · Half & Quarter');
   emit(S.screen({ id: `${p} · ${name} · Half · full search on`, W: 945, H: 1234, page: 'history', search: search(true) }), 'Screens · Half & Quarter');
   emit(S.screen({ id: `${p} · ${name} · Eighth · capped`, W: 470, H: 612, page: 'history', search: { ...search(false), menu: p === 'D' }, ...menu }), 'Screens · Half & Quarter');
 });
+// Extra narrow (2026-09-25): the stacked bar cannot hold the view toggle (≈ < 420), so it takes its own row.
+// Appended here so the numbering of the frames above stays put.
+emit(S.screen({ id: 'Extra narrow · Changes tab', W: 340, H: 612, page: 'changes' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow · Diff tab', W: 340, H: 612, page: 'diff' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow · History tab', W: 340, H: 612, page: 'history' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow · Branch menu', W: 340, H: 612, page: 'changes', overlay: 'branch' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow · Sync menu', W: 340, H: 612, page: 'changes', overlay: 'sync' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow shallow · 340x493', W: 340, H: 493, page: 'changes' }), 'Screens · Narrow');
 fs.writeFileSync(OUT + '/frames.json', JSON.stringify(frames, null, 1));
 fs.writeFileSync(OUT + '/manifest.json', JSON.stringify(manifest));
 console.log(frames.length + ' frames total');

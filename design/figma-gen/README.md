@@ -26,6 +26,11 @@ Generates the design frames for the Omagit Figma file
   table header cell and Amend in the action bar next to Commit.
   The changes list has three views (`filesView`: table, compact, lazygit-style
   tree via `fileTree`), switched by three icon buttons on the CHANGES row.
+  Extra narrow (stacked, and the toggle's icons would touch the branch or the
+  sync group, ≈ < 420): the toggle takes a full-width row of its own under the
+  controls (an 80 px bar), labelled again, and the menus hang under the
+  controls row, over it; the diff header drops its HEAD → Working tree title
+  where it would touch the path.
   CHANGES is the top section and MESSAGE the bottom one, over the action bar;
   the agent popover hangs under its cog, or stands over it where the frame
   has no room below (`agentPopoverHeight`).

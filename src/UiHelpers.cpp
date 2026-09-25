@@ -539,18 +539,27 @@ QSize kitSize(const QWidget *button, const QString &text)
 // its ink in the box, the label 4 after it; the chevron's 12 px box `pad` from
 // the right edge, the glyph at 12/16 of the others' size, in the plain
 // foreground at 70 % whatever colour the label wears. A button wider than it
-// asks keeps its content at the left, as the design's.
-void paintKitFace(QPainter &p, const QWidget *button, const QString &text, const QColor &pen)
+// asks keeps its content at the left, as the design's, unless `centred`: then
+// the content is centred as one.
+void paintKitFace(QPainter &p, const QWidget *button, const QString &text, const QColor &pen, bool centred = false)
 {
     if (text.isEmpty())
         return;
     p.setFont(button->font());
     p.setPen(pen);
-    const int width = button->width(), height = button->height();
+    int width = button->width();
+    const int height = button->height();
     const KitParts parts = kitParts(text);
     if (kitSquare(button, parts)) {
         drawCentred(p, parts.glyph.isEmpty() ? parts.label : parts.glyph, QRectF(button->rect()));
         return;
+    }
+    if (centred) {
+        const int slack = width - kitSize(button, text).width();
+        if (slack > 0) {
+            p.translate(slack / 2, 0);
+            width -= slack;
+        }
     }
     const int pad = kitPad(button);
     int x = pad;
@@ -620,7 +629,8 @@ QSize KitPushButton::minimumSizeHint() const
 
 // The bevel is the style's, for the state of the moment; the pen the
 // stylesheet's for a push button: the accent on the default one, the
-// disabled pen of the palette on a disabled one.
+// disabled pen of the palette on a disabled one. Stretched, its content is
+// centred.
 void KitPushButton::paintEvent(QPaintEvent *)
 {
     QStylePainter p(this);
@@ -632,7 +642,7 @@ void KitPushButton::paintEvent(QPaintEvent *)
     const QColor pen = !isEnabled() ? palette().color(QPalette::Disabled, QPalette::ButtonText)
         : isDefault()               ? OmarchyTheme::instance()->accent()
                                     : palette().color(QPalette::Active, QPalette::ButtonText);
-    paintKitFace(p, this, text(), pen);
+    paintKitFace(p, this, text(), pen, true);
 }
 
 QToolButton *dropdownButton(const QString &objectName)

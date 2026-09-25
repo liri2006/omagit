@@ -184,7 +184,7 @@ protected:
 // A push button with a KitButton's face: the one behind the Enter key of a
 // surface (Commit, Merge, Generate now) keeps QPushButton's default-button
 // behaviour and its stylesheet chrome, and lays out its glyph and label the
-// kit's way. Stretched wider than it asks, its content stays at the left.
+// kit's way. Stretched wider than it asks, its content is centred.
 class KitPushButton : public QPushButton
 {
     Q_OBJECT

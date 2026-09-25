@@ -792,6 +792,7 @@ void MainWindow::applyDensity()
     m_bodyLayout->setSpacing(margin);
     m_splitter->setHandleWidth(margin);
     m_topBar->setDensity(m_density);
+    m_topBar->setSyncLabels(m_widthClass == WidthClass::Wide);
     m_footer->setDensity(m_density);
 }
 

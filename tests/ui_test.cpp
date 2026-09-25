@@ -3703,8 +3703,8 @@ esac
             return seen;
         };
 
-        // Wide: no dropdown, no More at level 0, no options.
-        QCOMPARE(f.bar()->foldLevel(), 0);
+        // Unstacked: no dropdown, the four as icons and no More, no options.
+        QCOMPARE(f.bar()->foldLevel(), 1);
         QVERIFY(!opens("showSyncMenu"));
         QVERIFY(!opens("showMoreMenu"));
         QVERIFY(!opens("showOptionsMenu"));
@@ -3718,6 +3718,34 @@ esac
         settle();
         QVERIFY(!opens("showOptionsMenu"));
         QCOMPARE(opens("showSyncMenu"), f.bar()->syncDropdown()->menu());
+    }
+
+    // The sync buttons spell out their labels in a wide window only (the
+    // design's xl): below it they are icons, however much room the row has.
+    void theSyncButtonsWearLabelsInAWideWindowOnly()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(1400), 800); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        TopBar *bar = f.bar();
+        QCOMPARE(bar->foldLevel(), 0);
+        QVERIFY(bar->pullButton()->text().contains(QStringLiteral("Pull")));
+
+        // One pixel under wide, the row would still fit them.
+        f.window->resize(ui::space(1400) - 1, 800);
+        settle();
+        QVERIFY(bar->width() >= bar->sizeHint().width());
+        QCOMPARE(bar->foldLevel(), 1);
+        for (QToolButton *b : {bar->pullButton(), bar->pushButton(), bar->fetchButton(), bar->mergeButton()}) {
+            QVERIFY(b->isVisible());
+            QVERIFY(!b->text().contains(b->accessibleName()));
+        }
+        QVERIFY(!bar->moreButton()->isVisible());
+
+        f.window->resize(ui::space(1400), 800);
+        settle();
+        QCOMPARE(bar->foldLevel(), 0);
     }
 
     // A menu that would run off the window opens where it stays inside it:

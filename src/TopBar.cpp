@@ -39,7 +39,8 @@ constexpr int kBranchFloor = 72;  // the least of the branch name the ordinary r
 constexpr int kSyncMenuWidth = 260, kMoreMenuWidth = 240; // screens.js: the SyncMenu and MoreMenu cards
 
 // How the row folds, from everything spelled out to the narrowest form. The
-// first level that fits the width wins.
+// first level that fits the width wins; level 0 only in a wide window
+// (setSyncLabels()).
 //
 //   0  repo label   tab labels   Pull Push Fetch Merge, labelled
 //   1  repo label   tab labels   the four as icons
@@ -545,6 +546,14 @@ void TopBar::setDensity(const Density &density)
     updateGeometry();
 }
 
+void TopBar::setSyncLabels(bool allowed)
+{
+    if (m_syncLabels == allowed)
+        return;
+    m_syncLabels = allowed;
+    relayout();
+}
+
 // The window's side margin, which the row keeps and the hairline does not.
 void TopBar::applyMargins()
 {
@@ -686,8 +695,10 @@ void TopBar::relayout()
 {
     const int width = m_row->width();
     const int count = levelCount();
+    // Level 0 is the only one wearing the sync labels; stacked, there are none.
+    const int first = !m_stacked && !m_syncLabels ? 1 : 0;
     m_level = count - 1;
-    for (int i = 0; i < count - 1; ++i) {
+    for (int i = first; i < count - 1; ++i) {
         if (totalWidth(i, m_metrics.branchLabel) <= width) {
             m_level = i;
             break;
