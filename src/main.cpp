@@ -13,6 +13,7 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QKeySequence>
+#include <QMenu>
 #include <qpa/qwindowsysteminterface.h>
 #include <QPainter>
 #include <QRegularExpression>
@@ -262,7 +263,13 @@ int main(int argc, char *argv[])
             QPixmap shot = window.grab();
             // A dialog (the merge view) and a dropdown are windows of their own: paint them on top.
             QPainter p(&shot);
-            for (QWidget *w : {QApplication::activeModalWidget(), QApplication::activePopupWidget()})
+            // A submenu is the active popup over the menu it came from, which is still open.
+            QList<QWidget *> popups;
+            for (QWidget *w = QApplication::activePopupWidget(); w; w = qobject_cast<QMenu *>(w->parentWidget()))
+                if (w->isVisible())
+                    popups.prepend(w);
+            popups.prepend(QApplication::activeModalWidget());
+            for (QWidget *w : std::as_const(popups))
                 if (w && w != &window)
                     p.drawPixmap(w->mapToGlobal(QPoint(0, 0)) - window.mapToGlobal(QPoint(0, 0)), w->grab());
             shot.save(file);

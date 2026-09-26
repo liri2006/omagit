@@ -201,9 +201,14 @@ history with a branch graph, and plugs into the Nautilus context menu as
   layout toggles hide. **More** is there at every stacked width, and on any row it also
   carries Refresh, Open repository…, Clone… and Keybindings after whatever sync buttons are
   folded into it. The commit page's action bar folds too: an **options** `…` at the left
-  (Check all / Uncheck all, Show unversioned files, Amend last commit, Generate message or
-  Stop generating) and Commit across the rest of the row. While nobody has picked a files
-  view, the list is compact when stacked and the table otherwise, without saving either.
+  (Amend last commit, opening upwards) and Commit across the rest of the row. While nobody
+  has picked a files view, the list is compact when stacked and the table otherwise,
+  without saving either. At the narrowest widths (a 340 px tile), where even the tab glyphs
+  would crowd the branch name, the tabs take a full-width row of their own under the
+  controls and the sync dropdown shrinks to a borderless `↓2 ↑1` without its chevron; the
+  page's CHANGES and MESSAGE header rows fold away too, and their controls lead the More
+  menu on the Changes tab: a **Files view** submenu (Compact list, Tree, Table), Show
+  unversioned files, and Agent settings…, which hangs the agent card from More.
   The diff is unified while stacked, at the line it was on; Ctrl+T still switches there,
   without saving, and the remembered view comes back as the window widens.
 - Looks like an Omarchy system program: the UI follows the shell's control kit (square
@@ -243,8 +248,9 @@ omagit [path]            # any directory or file inside a repository (default: c
 `--history` opens the history view, `--amend` starts with *Amend last commit* ticked,
 `--mini` starts in the Mini layout (in a window under the stacking width, the Diff tab), `--full` with the diff pane hidden, and `--no-fetch` leaves the network alone.
 `--mini --screenshot-menu commit` pictures the Mini layout with its commit popover open;
-`--screenshot-menu agent` the agent settings under the page's cog, and with `--mini` under
-the commit popover's cog (the popover opens too).
+`--screenshot-menu agent` the agent settings under the page's cog (under More where the
+header rows are folded away), and with `--mini` under the commit popover's cog (the popover
+opens too).
 
 The footer's info button or **Ctrl+K** opens the keybindings panel, styled after Omarchy's
 own Super+K menu: type to filter, ↑/↓ move the cursor, **Enter** runs the highlighted

@@ -515,7 +515,12 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     m_messageSplitter->setStretchFactor(1, 0);
     connect(m_messageSplitter, &QSplitter::splitterMoved, this, [this] {
         m_messageSizedByHand = true;
-        QSettings().setValue(settings::kWindowCommitSplitter, m_messageSplitter->saveState());
+        QSettings conf;
+        conf.setValue(settings::kWindowCommitSplitter, m_messageSplitter->saveState());
+        if (m_headerRowsHidden)
+            conf.setValue(settings::kWindowCommitSplitterFolded, true);
+        else
+            conf.remove(settings::kWindowCommitSplitterFolded);
     });
     connect(m_message, &MessageEdit::contentHeightChanged, this, &CommitPage::fitMessage);
     layout->addWidget(m_messageSplitter, 1);
@@ -525,8 +530,21 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     // state saved while the message stood over the list has its sizes the
     // wrong way round, so it is dropped rather than read.
     m_messageSplitter->setSizes({changes->sizeHint().height(), restingMessageHeight() + messageHeaderHeight()});
-    QSettings().remove(settings::kWindowCommitMessageSplitter);
-    m_messageSplitter->restoreState(QSettings().value(settings::kWindowCommitSplitter).toByteArray());
+    QSettings conf;
+    conf.remove(settings::kWindowCommitMessageSplitter);
+    // Saved without the MESSAGE row: the box's height is what was chosen. It
+    // is restored with the rows folded away, so restoreState() holds the
+    // pane to the box's own minimum rather than to the row's and the box's
+    // (a short box would come back taller), and the row then goes back on
+    // top of it the way it always does. A state that does not restore moves
+    // nothing (the two calls cancel out), and the flag goes with it.
+    const bool folded = conf.value(settings::kWindowCommitSplitterFolded).toBool();
+    if (folded)
+        setHeaderRowsHidden(true);
+    if (!m_messageSplitter->restoreState(conf.value(settings::kWindowCommitSplitter).toByteArray()))
+        conf.remove(settings::kWindowCommitSplitterFolded);
+    if (folded)
+        setHeaderRowsHidden(false); // the window folds them again if it is that narrow
     // The handle is all that stands between the two sections, so it carries
     // the block gap between them — after restoreState(), which brings the
     // handle width of whatever text size saved the state back with it.
@@ -600,10 +618,11 @@ QMargins CommitPage::headerRowMargins()
     return QMargins(0, 0, space(gap::icon), 0);
 }
 
-// What the message's pane holds over the box: the MESSAGE row and its gap.
-int CommitPage::messageHeaderHeight()
+// What the message's pane holds over the box: the MESSAGE row and its gap,
+// or nothing while the header rows are hidden.
+int CommitPage::messageHeaderHeight() const
 {
-    return space(box::row) + space(gap::header);
+    return m_headerRowsHidden ? 0 : space(box::row) + space(gap::header);
 }
 
 // MESSAGE, with the agent settings at the far right, over the message box,
@@ -622,7 +641,10 @@ QWidget *CommitPage::buildMessageSection()
     m_agentButton = iconButton(kCog, tr("⚙"), agentButtonTip());
     connect(m_agentButton, &QToolButton::clicked, this, [this] { requestAgentSettings(m_agentButton); });
     messageRow->addWidget(m_agentButton, 0, Qt::AlignVCenter);
-    sectionLayout->addLayout(messageRow);
+    // In a widget of its own, which setHeaderRowsHidden() hides whole.
+    m_messageHeader = new QWidget;
+    m_messageHeader->setLayout(messageRow);
+    sectionLayout->addWidget(m_messageHeader);
 
     m_message = new MessageEdit;
     m_message->setPlaceholderText(tr("Commit message"));
@@ -696,7 +718,9 @@ QWidget *CommitPage::buildChangesSection()
     m_proxy = proxy;
 
     changesRow->addLayout(buildChangesTools());
-    changesLayout->addLayout(changesRow);
+    m_changesHeader = new QWidget;
+    m_changesHeader->setLayout(changesRow);
+    changesLayout->addWidget(m_changesHeader);
 
     m_table = new ChangesTable;
     m_table->setObjectName(QStringLiteral("changesTable"));
@@ -890,7 +914,7 @@ QLayout *CommitPage::buildActionBar()
     m_optionsMenu->setToolTipsVisible(true);
     m_optionsButton->setMenu(m_optionsMenu);
     connect(m_optionsMenu, &QMenu::aboutToShow, this, &CommitPage::fillOptionsMenu);
-    keepMenuInWindow(m_optionsMenu, m_optionsButton); // the row is at the window's bottom
+    keepMenuInWindow(m_optionsMenu, m_optionsButton, nullptr, true); // the row is at the window's bottom
     m_optionsButton->hide(); // until the window stacks
     m_actionBar->addWidget(m_optionsButton);
     m_amend = new QCheckBox(tr("Amend last commit"));
@@ -1330,25 +1354,65 @@ void CommitPage::applyActionBarForm()
     updateAmendLabel();
 }
 
-// What the stacked row keeps behind "…": the page's own controls, read as
-// they are at the moment the menu opens, each entry taking the path the
-// control itself takes.
+// What the stacked row keeps behind "…": Amend, read as it is at the moment
+// the menu opens, the entry taking the path the checkbox itself takes.
 void CommitPage::fillOptionsMenu()
 {
     m_optionsMenu->clear();
     m_optionsMenu->setFixedWidth(popupWidth(window(), kOptionsMenuWidth));
-    QAction *unversioned = m_optionsMenu->addAction(icon(kEye) + tr("Show unversioned files"));
-    unversioned->setCheckable(true);
-    unversioned->setChecked(m_unversioned->isChecked());
-    unversioned->setToolTip(m_unversioned->toolTip());
-    connect(unversioned, &QAction::triggered, m_unversioned, &QAbstractButton::click);
-
     QAction *amend = m_optionsMenu->addAction(icon(kUndo, QStringLiteral("A  ")) + tr("Amend last commit"));
     amend->setCheckable(true);
     amend->setChecked(m_amend->isChecked());
     amend->setEnabled(m_amend->isEnabled());
     amend->setToolTip(m_amend->toolTip());
     connect(amend, &QAction::triggered, m_amend, &QAbstractButton::click);
+}
+
+// The rows go and the list and the box move up into their room; the box
+// keeps its height, the list takes what the MESSAGE row had.
+void CommitPage::setHeaderRowsHidden(bool hidden)
+{
+    if (m_headerRowsHidden == hidden)
+        return;
+    const int header = space(box::row) + space(gap::header);
+    m_headerRowsHidden = hidden;
+    m_changesHeader->setVisible(!hidden);
+    m_messageHeader->setVisible(!hidden);
+    const QList<int> sizes = m_messageSplitter->sizes();
+    if (sizes.size() == 2 && sizes.at(0) + sizes.at(1) > 0) {
+        const int moved = hidden ? header : -qMin(header, qMax(0, sizes.at(0) - 1));
+        m_messageSplitter->setSizes({sizes.at(0) + moved, sizes.at(1) - moved});
+    }
+}
+
+// The header rows' controls as menu entries, read as they are at the moment
+// the menu opens, each taking the path its button takes: the three files
+// views in a submenu of their own, then the eye. Refresh is the bar's own
+// entry already, and the cog's is the window's to add (it knows where the
+// settings hang from).
+void CommitPage::addHeaderOptions(QMenu *menu)
+{
+    const QList<QToolButton *> views{m_compactButton, m_treeButton, m_tableButton};
+    const uint glyphs[] = {kFormatListBulleted, kFileTree, kTable};
+    const int current = int(m_filesView);
+    auto *submenu = new TickMenu(menu);
+    submenu->setTitle(icon(glyphs[current]) + tr("Files view"));
+    submenu->setToolTipsVisible(true);
+    keepSubmenuInWindow(submenu, this);
+    for (int i = 0; i < views.size(); ++i) {
+        QToolButton *button = views.at(i);
+        QAction *view = submenu->addAction(icon(glyphs[i]) + button->accessibleName());
+        view->setCheckable(true);
+        view->setChecked(button->isChecked());
+        connect(view, &QAction::triggered, button, &QAbstractButton::click);
+    }
+    menu->addMenu(submenu);
+
+    QAction *unversioned = menu->addAction(icon(kEye) + tr("Show unversioned files"));
+    unversioned->setCheckable(true);
+    unversioned->setChecked(m_unversioned->isChecked());
+    unversioned->setToolTip(m_unversioned->toolTip());
+    connect(unversioned, &QAction::triggered, m_unversioned, &QAbstractButton::click);
 }
 
 FileChange CommitPage::currentChange(bool *ok) const

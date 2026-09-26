@@ -25,6 +25,9 @@ constexpr auto kWindowDiffPane = QLatin1StringView("window/diffPane");
 constexpr auto kWindowLeftWidth = QLatin1StringView("window/leftWidth");
 // State of the commit page's changes-over-message splitter (QByteArray).
 constexpr auto kWindowCommitSplitter = QLatin1StringView("window/commitSplitter");
+// Set when that state was saved with the page's header rows folded away
+// (bool, absent otherwise): its message pane has no MESSAGE row in it then.
+constexpr auto kWindowCommitSplitterFolded = QLatin1StringView("window/commitSplitterFolded");
 // The same splitter's state from when the message stood over the changes; its
 // sizes are the wrong way round now, so it is only ever removed.
 constexpr auto kWindowCommitMessageSplitter = QLatin1StringView("window/commitMessageSplitter");

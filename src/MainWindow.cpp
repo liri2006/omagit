@@ -332,6 +332,20 @@ void MainWindow::buildUi()
             m_agentPopover->popup(anchor);
     });
 
+    // ---- The narrowest presentation: the bar on two rows takes the page's
+    // header rows in, their controls moving to its More menu, the agent
+    // settings with them (hanging from More, as the menu does).
+    connect(m_topBar, &TopBar::twoRowsChanged, m_commitPage, &CommitPage::setHeaderRowsHidden);
+    m_commitPage->setHeaderRowsHidden(m_topBar->isTwoRows());
+    connect(m_topBar, &TopBar::fillingMoreMenu, this, [this](QMenu *menu) {
+        if (!m_commitPage->headerRowsHidden() || m_mode != CommitMode || railShowing())
+            return;
+        m_commitPage->addHeaderOptions(menu);
+        QAction *agent = menu->addAction(icon(kCog) + tr("Agent settings…"));
+        agent->setToolTip(CommitPage::agentButtonTip());
+        connect(agent, &QAction::triggered, this, &MainWindow::showAgentMenu);
+    });
+
     // ---- The New branch card: an overlay under the branch chip, where the
     // new branch shows up. Made, the window says so; a name that is taken
     // offers the branch it names instead.
@@ -1631,6 +1645,8 @@ void MainWindow::showAgentMenu()
     if (railShowing()) {
         showCommitPopover();
         m_agentPopover->popup(m_commitPopover->agentButton());
+    } else if (m_commitPage->headerRowsHidden()) {
+        m_agentPopover->popup(m_topBar->moreButton()); // the cog's row is gone; its entry is More's
     } else {
         m_agentPopover->popup(m_commitPage->agentButton());
     }

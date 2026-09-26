@@ -135,6 +135,14 @@ public:
     // between the page's parts (4, 8, 12 by the height class) and, shallow,
     // the action bar's stacked form at any width. Nothing of it is saved.
     void setWindowClass(WidthClass width, HeightClass height);
+    // The window's narrowest presentation (the top bar on two rows): the
+    // CHANGES and MESSAGE header rows go, their controls moving to the top
+    // bar's More menu (addHeaderOptions()). Nothing of it is saved.
+    void setHeaderRowsHidden(bool hidden);
+    bool headerRowsHidden() const { return m_headerRowsHidden; }
+    // The header rows' controls as entries at the end of `menu`: a Files
+    // view submenu and Show unversioned files.
+    void addHeaderOptions(QMenu *menu);
 
     // The three files-view buttons, for the tests and for anyone who wants to
     // press one without going through the accessible names.
@@ -248,7 +256,7 @@ private:
     void fillOptionsMenu();
     void applyBlockGap();
     static QMargins headerRowMargins();
-    static int messageHeaderHeight();
+    int messageHeaderHeight() const;
     void setGenerating(bool on);
     // The one place the generate button's face changes, so the text and the
     // tooltip are both current whenever commitControlsChanged() goes out.
@@ -288,6 +296,9 @@ private:
     QLayout *m_messageLayout;     // MESSAGE: its header row over the box, the same gap apart
     QHBoxLayout *m_changesRow;    // the CHANGES and MESSAGE header rows, their buttons
     QHBoxLayout *m_messageRow;    // kept 4 inside the page's right edge
+    QWidget *m_changesHeader;     // ...each in a widget of its own, hidden whole
+    QWidget *m_messageHeader;     // by setHeaderRowsHidden()
+    bool m_headerRowsHidden = false;
     QHBoxLayout *m_actionBar;     // the bottom row, a block gap under the message
     QSpacerItem *m_actionStretch = nullptr; // between Amend and Commit on the ordinary row
     QToolButton *m_optionsButton = nullptr; // stacked only

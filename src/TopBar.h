@@ -33,8 +33,9 @@ class QVBoxLayout;
 // then, where even the glyphs would crowd the branch name, the tabs take a
 // row of their own under the controls, as wide as the row, with their labels
 // back wherever every segment has the room for its own. The bar's height
-// follows its width there (heightForWidth()), and its popups hang from the
-// first row (ui::popupTop()).
+// follows its width there (heightForWidth()), its popups hang from the
+// first row (ui::popupTop()), and the sync dropdown is a borderless
+// miniature without its chevron.
 class TopBar : public QWidget
 {
     Q_OBJECT
@@ -93,6 +94,9 @@ public:
     // tabs on a row of their own); what the current width fits (see the
     // tables in TopBar.cpp), from 1 on while the sync labels are not allowed.
     int foldLevel() const { return m_level; }
+    // Stacked with the tabs on a row of their own: the window's narrowest
+    // presentation, which twoRowsChanged() announces as the width moves.
+    bool isTwoRows() const { return m_twoRows; }
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -105,6 +109,11 @@ signals:
     void openRepositoryRequested();
     void cloneRequested();
     void keybindingsRequested();
+    // The bar went to two rows or came back to one.
+    void twoRowsChanged(bool on);
+    // The more menu is being filled: entries added to `menu` here stand
+    // first, a separator over the bar's own.
+    void fillingMoreMenu(QMenu *menu);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -211,4 +220,5 @@ private:
     int m_level = 0;
     bool m_stacked = false;
     bool m_syncLabels = true;
+    bool m_twoRows = false; // what twoRowsChanged() last said
 };

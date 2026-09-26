@@ -68,6 +68,7 @@
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QScopeGuard>
+#include <QScreen>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSignalSpy>
@@ -849,6 +850,15 @@ QStringList menuTexts(const QList<QAction *> &actions)
     QStringList out;
     for (const QAction *a : actions)
         out << (a->isSeparator() ? QStringLiteral("-") : a->text());
+    return out;
+}
+
+// Whether each of those entries is checked.
+QList<bool> checkedStates(const QList<QAction *> &actions)
+{
+    QList<bool> out;
+    for (const QAction *a : actions)
+        out << a->isChecked();
     return out;
 }
 
@@ -3075,10 +3085,13 @@ esac
             QVERIFY(bar->syncDropdown()->isVisible());
             QVERIFY(bar->moreButton()->isVisible());
             QCOMPARE(bar->diffTab()->isVisible(), true);
-            // The dropdown is the design's 96 px whatever its hint, the first
-            // row's height, 8 under the bar's top; More is the design's bare
-            // 28 px square, in the icon form.
-            QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(96));
+            // The dropdown is the design's 96 px whatever its hint (on two
+            // rows its borderless 64 px miniature), the first row's height, 8
+            // under the bar's top; More is the design's bare 28 px square, in
+            // the icon form.
+            QCOMPARE(bar->isTwoRows(), level == 2);
+            QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(level == 2 ? 64 : 96));
+            QCOMPARE(bar->syncDropdown()->property("ghost").toBool(), level == 2);
             QCOMPARE(f.rectOf(bar->syncDropdown()).height(), ui::space(ui::box::control));
             QCOMPARE(f.rectOf(bar->syncDropdown()).y(), ui::space(ui::kBar));
             QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(ui::box::control));
@@ -3471,6 +3484,119 @@ esac
             g_theme->apply(*qApp);
             QVERIFY(OmarchyTheme::instance() == g_theme.get());
         }
+    }
+
+    // On two rows the dropdown is its borderless miniature, at the design's
+    // text size: Pull's count against its arrow's box (4 + 16 in), Push's at
+    // 4 + 16 + 8 + 8 + 16, each in the accent while it counts anything; the
+    // busy dots walking in those fields, a busy Pull moving Push's along;
+    // nothing past Push's count, where the full form has its chevron; and no
+    // border at rest, where the full form has one.
+    void theSyncDropdownsMiniatureFollowsTheDesign()
+    {
+        // The desktop's theme back for whatever runs next, however this ends.
+        const auto restoreTheme = qScopeGuard([] {
+            g_theme.reset(new OmarchyTheme);
+            g_theme->apply(*qApp);
+        });
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+        ScopedEnv scratchHome("HOME", home.path().toUtf8());
+        OmarchyTheme theme;
+        QCOMPARE(theme.fontBase(), 12);
+        theme.apply(*qApp);
+
+        BarFixture f = topBar();
+        TopBar *bar = f.bar;
+        bar->setStacked(true);
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        const int twoRows = f.widthForLevel(2);
+        QVERIFY(twoRows > 0);
+        QCOMPARE(f.levelAt(twoRows), 2);
+        settle();
+        BadgeButton *sync = bar->syncDropdown();
+        QVERIFY(bar->isTwoRows());
+        QVERIFY(sync->property("ghost").toBool());
+        QCOMPARE(sync->width(), ui::space(64));
+        const QColor accent = theme.accent(), border = theme.normalBorder();
+        const auto shot = [sync] { return sync->grab().toImage(); };
+        // A field's columns, in the design's pixels.
+        const auto field = [&shot](int from, int to) {
+            const QImage all = shot();
+            return all.copy(ui::space(from), 0, ui::space(to) - ui::space(from), all.height());
+        };
+        const auto paintsIn = [](const QImage &image, const QColor &colour, int from, int to) {
+            return imagePaints(image, colour, ui::space(from), ui::space(to));
+        };
+
+        // Pull's count alone in the accent, then Push's too, each in its field.
+        bar->pullButton()->setCount(3);
+        QImage mini = shot();
+        QVERIFY(paintsIn(mini, accent, 20, 28));
+        QVERIFY(!imagePaints(mini, accent, 0, ui::space(20)));
+        QVERIFY(!imagePaints(mini, accent, ui::space(28)));
+        bar->pushButton()->setCount(1);
+        mini = shot();
+        QCOMPARE(mini.width(), ui::space(64));
+        QVERIFY(paintsIn(mini, accent, 20, 28));
+        QVERIFY(!paintsIn(mini, accent, 28, 52));
+        QVERIFY(paintsIn(mini, accent, 52, 60));
+        // Past Push's count, the bare ground: no chevron, and no border at
+        // either edge.
+        const QRgb ground = mini.pixel(0, 0);
+        for (int x = ui::space(60); x < mini.width(); ++x)
+            for (int y = 0; y < mini.height(); ++y)
+                QVERIFY2(mini.pixel(x, y) == ground, qPrintable(QStringLiteral("%1,%2").arg(x).arg(y)));
+        QVERIFY(!imagePaints(mini, border, 0, 1));
+        QVERIFY(!imagePaints(mini, border, mini.width() - 1, mini.width()));
+
+        // A busy Pull: its dots walk in its 16 px box, and Push's count,
+        // moved along by the 8 more they take, holds still in the accent.
+        bar->pullButton()->setBusy(true);
+        QCOMPARE(sync->width(), ui::space(72));
+        const auto pullDots = [&field] { return field(20, 36); };
+        QImage pullBusy = pullDots();
+        const QImage pushMoved = field(60, 68);
+        QVERIFY(imagePaints(pushMoved, accent));
+        QVERIFY(!paintsIn(shot(), accent, 36, 60));
+        QTRY_VERIFY_WITH_TIMEOUT(pullDots() != pullBusy, 2000);
+        QCOMPARE(field(60, 68), pushMoved);
+        bar->pullButton()->setBusy(false);
+        QCOMPARE(shot(), mini);
+
+        // A busy Push: its dots in its own box, 52 in; Pull's count still.
+        bar->pushButton()->setBusy(true);
+        QCOMPARE(sync->width(), ui::space(72));
+        const auto pushDots = [&field] { return field(52, 68); };
+        const QImage pushBusy = pushDots(), pullStill = field(20, 28);
+        QVERIFY(imagePaints(pullStill, accent));
+        QTRY_VERIFY_WITH_TIMEOUT(pushDots() != pushBusy, 2000);
+        QCOMPARE(field(20, 28), pullStill);
+
+        // Both: Push's dots walk in their box moved along, 60 in.
+        bar->pullButton()->setBusy(true);
+        QCOMPARE(sync->width(), ui::space(80));
+        const auto movedDots = [&field] { return field(60, 76); };
+        pullBusy = pullDots();
+        const QImage movedBusy = movedDots();
+        QTRY_VERIFY_WITH_TIMEOUT(pullDots() != pullBusy && movedDots() != movedBusy, 2000);
+        bar->pullButton()->setBusy(false);
+        bar->pushButton()->setBusy(false);
+        QCOMPARE(shot(), mini);
+
+        // One row: the full form, its border at both edges.
+        QCOMPARE(f.levelAt(bar->sizeHint().width()), 0);
+        QVERIFY(!bar->isTwoRows());
+        QVERIFY(!sync->property("ghost").toBool());
+        const QImage full = shot();
+        QCOMPARE(full.width(), ui::space(96));
+        QVERIFY(imagePaints(full, border, 0, 1));
+        QVERIFY(imagePaints(full, border, full.width() - 1, full.width()));
+        // Two rows again, and the border goes with them.
+        QCOMPARE(f.levelAt(twoRows), 2);
+        QCOMPARE(shot(), mini);
     }
 
     // The dropdown's menu: the four sync buttons, spelled out, doing what the
@@ -4105,6 +4231,48 @@ esac
                                 .arg(menu->geometry().right()).arg(window.right())));
         menu->close();
         QTRY_VERIFY(!menu->isVisible());
+    }
+
+    // The options menu opens 4 over its button (screens.js: the OptionsMenu
+    // card) even where its one entry would fit under it: a window with its
+    // footer, at the design's text size, on a screen with the room.
+    void theOptionsMenuOpensOverItsButton()
+    {
+        // The desktop's theme back for whatever runs next, however this ends.
+        const auto restoreTheme = qScopeGuard([] {
+            g_theme.reset(new OmarchyTheme);
+            g_theme->apply(*qApp);
+        });
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+        ScopedEnv scratchHome("HOME", home.path().toUtf8());
+        OmarchyTheme theme;
+        QCOMPARE(theme.fontBase(), 12);
+        theme.apply(*qApp);
+
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        QVERIFY(f.window->isStacked());
+        auto *footer = f.window->findChild<Footer *>();
+        QVERIFY(footer && footer->isVisible());
+        QToolButton *options = f.page()->optionsButton();
+        QVERIFY(options->isVisible());
+        QMenu *menu = options->menu();
+        QTimer::singleShot(0, menu, [menu] { menu->close(); });
+        options->showMenu();
+        QCOMPARE(menu->actions().size(), 1);
+        const QRect button(options->mapToGlobal(QPoint(0, 0)), options->size());
+        const QRect window(f.window->mapToGlobal(QPoint(0, 0)), f.window->size());
+        // Under the button it would have had the room, in the window and on
+        // the screen alike.
+        const int under = button.y() + button.height() + menu->height();
+        QVERIFY(under <= window.y() + window.height());
+        QVERIFY(under <= options->screen()->availableGeometry().y() + options->screen()->availableGeometry().height());
+        QCOMPARE(menu->y() + menu->height() + ui::space(ui::gap::cluster), button.y());
     }
 
     // --- The diff pane's toolbar ---------------------------------------------
@@ -4779,6 +4947,177 @@ esac
         QVERIFY(OmarchyTheme::instance() == g_theme.get());
     }
 
+    // Two rows are the window's narrowest presentation: the page's CHANGES
+    // and MESSAGE rows fold away from the first frame, the list and the box
+    // moving up into their room (the box keeping its height), and their
+    // controls lead the More menu on the Changes tab — the Files view
+    // submenu, the eye, and the agent settings, which then hang from More.
+    // The Diff and History tabs, and a window with the rows, add nothing.
+    void theExtraNarrowWindowFoldsThePagesHeaderRows()
+    {
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(340, 612); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        MainWindow *w = f.window.get();
+        TopBar *bar = f.bar();
+        CommitPage *page = f.page();
+        QVERIFY(bar->isTwoRows());
+        QVERIFY(page->headerRowsHidden()); // before anything settled
+        settle();
+        QCOMPARE(w->width(), 340);
+        QVERIFY(bar->isTwoRows());
+        QVERIFY(page->headerRowsHidden());
+        const QList<QToolButton *> controls{page->agentButton(), page->compactButton(), page->treeButton(),
+                                            page->tableButton(), page->unversionedButton()};
+        for (QToolButton *b : controls)
+            QVERIFY2(!b->isVisible(), qPrintable(b->accessibleName()));
+        QCOMPARE(page->activeListView()->mapTo(page, QPoint(0, 0)).y(), 0);
+
+        // The rows back and away again, by hand: the box holds its height.
+        const int box = f.pageEditor()->height();
+        page->setHeaderRowsHidden(false);
+        settle();
+        for (QToolButton *b : controls)
+            QVERIFY2(b->isVisible(), qPrintable(b->accessibleName()));
+        QCOMPARE(page->activeListView()->mapTo(page, QPoint(0, 0)).y(),
+                 ui::space(ui::box::row) + ui::space(ui::gap::header));
+        QCOMPARE(f.pageEditor()->height(), box);
+        page->setHeaderRowsHidden(true);
+        settle();
+        QCOMPARE(f.pageEditor()->height(), box);
+        QCOMPARE(page->activeListView()->mapTo(page, QPoint(0, 0)).y(), 0);
+
+        // More on the Changes tab: the page's entries, then the bar's own.
+        QMenu *menu = bar->moreButton()->menu();
+        QList<QAction *> actions = filledMenu(menu);
+        const QStringList texts = menuTexts(actions);
+        QVERIFY2(texts.size() > 5, qPrintable(texts.join(QLatin1Char('|'))));
+        QVERIFY2(texts.at(0).endsWith(QStringLiteral("Files view")), qPrintable(texts.at(0)));
+        QVERIFY(actions.at(0)->menu());
+        QCOMPARE(actions.at(0)->menu()->actions().size(), 3);
+        QCOMPARE(texts.mid(1, 4), QStringList({ui::icon(ui::kEye) + QStringLiteral("Show unversioned files"),
+                                               ui::icon(ui::kCog) + QStringLiteral("Agent settings…"),
+                                               QStringLiteral("-"), ui::icon(ui::kRefresh) + QStringLiteral("Refresh")}));
+        QVERIFY(actions.at(1)->isChecked());
+        QCOMPARE(actions.at(2)->toolTip(), CommitPage::agentButtonTip());
+        // A second fill leaves no submenu of the first behind.
+        filledMenu(menu);
+        QCOMPARE(menu->findChildren<QMenu *>(Qt::FindDirectChildrenOnly).size(), 1);
+
+        // The agent settings hang from More, 4 under row 1, over the tabs; the
+        // entry opens them again rather than closing them.
+        filledMenu(menu).at(2)->trigger();
+        settle();
+        AgentPopover *card = f.agentCard();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->anchor(), bar->moreButton());
+        const QPoint more = bar->moreButton()->mapTo(f.host(), QPoint(0, bar->moreButton()->height()));
+        QCOMPARE(card->y(), more.y() + ui::space(ui::gap::cluster));
+        filledMenu(menu).at(2)->trigger();
+        settle();
+        QVERIFY(card->isVisible());
+        card->dismiss();
+
+        // The Diff and History tabs keep More to the bar's own entries.
+        for (QToolButton *tab : {bar->diffTab(), bar->historyTab()}) {
+            tab->click();
+            settle();
+            QCOMPARE(filledMenu(menu).first()->text(), ui::icon(ui::kRefresh) + QStringLiteral("Refresh"));
+        }
+        bar->changesTab()->click();
+        settle();
+        QVERIFY(filledMenu(menu).first()->menu());
+
+        // A wide window has the rows, and More none of their entries.
+        w->resize(1000, 612);
+        settle();
+        QVERIFY(!bar->isTwoRows());
+        QVERIFY(!page->headerRowsHidden());
+        for (QToolButton *b : controls)
+            QVERIFY2(b->isVisible(), qPrintable(b->accessibleName()));
+        QCOMPARE(filledMenu(menu).first()->text(), ui::icon(ui::kRefresh) + QStringLiteral("Refresh"));
+        w->resize(340, 612);
+        settle();
+        QVERIFY(bar->isTwoRows());
+        QVERIFY(page->headerRowsHidden());
+        QVERIFY(!page->agentButton()->isVisible());
+    }
+
+    // The Files view submenu keeps to the window as More does: at 340
+    // neither side of More has the room for it, so it opens over More,
+    // inside the window's margins; where the window has the room beside
+    // More, it opens there. At the design's text size.
+    void theFilesViewSubmenuKeepsInsideTheWindow()
+    {
+        // The desktop's theme back for whatever runs next, however this ends.
+        const auto restoreTheme = qScopeGuard([] {
+            g_theme.reset(new OmarchyTheme);
+            g_theme->apply(*qApp);
+        });
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+        ScopedEnv scratchHome("HOME", home.path().toUtf8());
+        OmarchyTheme theme;
+        QCOMPARE(theme.fontBase(), 12);
+        theme.apply(*qApp);
+
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(340, 612); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        MainWindow *w = f.window.get();
+        QCOMPARE(w->width(), 340);
+        QVERIFY(f.page()->headerRowsHidden());
+        QToolButton *more = f.bar()->moreButton();
+        // More open and its first entry made the current one, which pops the
+        // submenu up as the pointer resting on it does; both are read while
+        // they are open.
+        QRect menu, submenu;
+        const auto open = [more, &menu, &submenu] {
+            menu = submenu = QRect();
+            QMenu *moreMenu = more->menu();
+            QTimer::singleShot(0, moreMenu, [moreMenu, &menu, &submenu] {
+                QAction *views = moreMenu->actions().value(0);
+                if (views && views->menu()) {
+                    moreMenu->setActiveAction(views);
+                    if (views->menu()->isVisible())
+                        submenu = views->menu()->geometry();
+                    views->menu()->close();
+                }
+                menu = moreMenu->geometry();
+                moreMenu->close();
+            });
+            more->showMenu();
+        };
+        const int margin = ui::windowMargin(w);
+        const auto windowRect = [w] { return QRect(w->mapToGlobal(QPoint(0, 0)), w->size()); };
+
+        open();
+        QVERIFY(!submenu.isNull());
+        QRect window = windowRect();
+        QVERIFY(menu.x() - submenu.width() < window.x() + margin);
+        QVERIFY(menu.x() + menu.width() + submenu.width() > window.x() + window.width() - margin);
+        QVERIFY2(submenu.x() >= window.x() + margin, qPrintable(QString::number(submenu.x())));
+        QVERIFY2(submenu.x() + submenu.width() <= window.x() + window.width() - margin,
+                 qPrintable(QString::number(submenu.x() + submenu.width())));
+
+        // Wider, with the rows folded away by hand: the room is left of More.
+        w->resize(560, 612);
+        settle();
+        QVERIFY(w->isStacked());
+        QVERIFY(!f.bar()->isTwoRows());
+        f.page()->setHeaderRowsHidden(true);
+        settle();
+        open();
+        QVERIFY(!submenu.isNull());
+        window = windowRect();
+        QVERIFY(menu.x() + menu.width() + submenu.width() > window.x() + window.width() - margin);
+        QVERIFY(menu.x() - submenu.width() >= window.x() + margin);
+        QCOMPARE(submenu.x() + submenu.width(), menu.x());
+    }
+
     // The row count follows what the first row has to hold, not only the
     // width: a longer branch name, or a dropdown widened by a three-digit
     // count, takes the tabs to a row of their own in a window that keeps its
@@ -4848,11 +5187,13 @@ esac
                 // There, Pull's 99+ widens the dropdown past what the row has
                 // left; a single digit gives it back. The window has no remote
                 // to count against, so the count goes on Pull, which the
-                // dropdown follows.
+                // dropdown follows. On two rows it is its miniature, which the
+                // count widens too.
                 const int dropdown = bar->syncDropdown()->width();
                 bar->pullButton()->setCount(100);
                 rows(2);
-                QVERIFY(bar->syncDropdown()->width() > dropdown);
+                QVERIFY(bar->syncDropdown()->width() > ui::space(64));
+                QVERIFY(bar->syncDropdown()->width() < dropdown);
                 bar->pullButton()->setCount(3);
                 rows(1);
                 QCOMPARE(bar->syncDropdown()->width(), dropdown);
@@ -6831,8 +7172,96 @@ esac
         QCOMPARE(amend->text(), amendLabel);
     }
 
-    // The options menu says what the page's controls say at the moment it
-    // opens.
+    // A handle dragged with the header rows folded away is saved as the
+    // box's height: a page opened with the rows gives the box that height,
+    // and keeps it when they fold away again — down to the box's own
+    // minimum, and between it and the MESSAGE row plus that minimum, which
+    // the rows would clamp it to were they there when the state comes back.
+    // A drag with the rows saves an ordinary state. The flag with no state,
+    // or with one that does not read, moves nothing and goes.
+    void theMessageHeightSavedFoldedComesBackTheSame()
+    {
+        QSettings().remove(settings::kWindowCommitSplitter);
+        QSettings().remove(settings::kWindowCommitSplitterFolded);
+        const auto open = [](CommitFixture &f) {
+            f.page->resize(500, 800);
+            f.page->show();
+            return QTest::qWaitForWindowExposed(f.page.get());
+        };
+        // The box's height with nothing saved.
+        int resting = 0;
+        {
+            CommitFixture f = commitFixture();
+            QVERIFY(f.page);
+            QVERIFY(open(f));
+            settle();
+            resting = f.page->findChild<MessageEdit *>()->height();
+        }
+        for (const int design : {200, 28, 44}) {
+            const int dragged = ui::space(design);
+            const auto where = [dragged](int box) {
+                return QStringLiteral("dragged to %1, the box %2").arg(dragged).arg(box).toUtf8();
+            };
+            {
+                CommitFixture f = commitFixture();
+                QVERIFY(f.page);
+                QVERIFY(open(f));
+                settle();
+                f.page->setHeaderRowsHidden(true);
+                settle();
+                auto *splitter = f.page->findChild<QSplitter *>(QStringLiteral("commitMessageSplitter"));
+                QVERIFY(splitter);
+                const int total = splitter->sizes().at(0) + splitter->sizes().at(1);
+                splitter->setSizes({total - dragged, dragged});
+                emit splitter->splitterMoved(total - dragged, 1);
+                settle();
+                QVERIFY(QSettings().value(settings::kWindowCommitSplitterFolded).toBool());
+                const int box = f.page->findChild<MessageEdit *>()->height();
+                QVERIFY2(box == dragged, where(box).constData());
+            }
+            {
+                CommitFixture f = commitFixture();
+                QVERIFY(f.page);
+                QVERIFY(open(f));
+                settle();
+                MessageEdit *message = f.page->findChild<MessageEdit *>();
+                QVERIFY(!f.page->headerRowsHidden());
+                QVERIFY2(message->height() == dragged, where(message->height()).constData());
+                f.page->setHeaderRowsHidden(true);
+                settle();
+                QVERIFY2(message->height() == dragged, where(message->height()).constData());
+                f.page->setHeaderRowsHidden(false);
+                settle();
+                QVERIFY2(message->height() == dragged, where(message->height()).constData());
+                auto *splitter = f.page->findChild<QSplitter *>(QStringLiteral("commitMessageSplitter"));
+                emit splitter->splitterMoved(splitter->sizes().at(0), 1);
+                QVERIFY(QSettings().contains(settings::kWindowCommitSplitter));
+                QVERIFY(!QSettings().contains(settings::kWindowCommitSplitterFolded));
+            }
+        }
+
+        // The flag alone, and the flag over a state that does not read.
+        for (const QByteArray &state : {QByteArray(), QByteArrayLiteral("garbage")}) {
+            QSettings conf;
+            conf.remove(settings::kWindowCommitSplitter);
+            if (!state.isEmpty())
+                conf.setValue(settings::kWindowCommitSplitter, state);
+            conf.setValue(settings::kWindowCommitSplitterFolded, true);
+            conf.sync();
+            CommitFixture f = commitFixture();
+            QVERIFY(f.page);
+            QVERIFY(!QSettings().contains(settings::kWindowCommitSplitterFolded));
+            QVERIFY(open(f));
+            settle();
+            QVERIFY(!f.page->headerRowsHidden());
+            QCOMPARE(f.page->findChild<MessageEdit *>()->height(), resting);
+        }
+        QSettings().remove(settings::kWindowCommitSplitter);
+    }
+
+    // The options menu says what Amend says at the moment it opens, and
+    // nothing else: the eye stays in the CHANGES row (or, with the rows
+    // folded away, in the top bar's More menu).
     void theOptionsMenuMirrorsThePage()
     {
         CommitFixture f = commitFixture();
@@ -6843,17 +7272,9 @@ esac
 
         QList<QAction *> actions = filledMenu(menu);
         QCOMPARE(menuTexts(actions),
-                 QStringList({ui::icon(ui::kEye) + QStringLiteral("Show unversioned files"),
-                              ui::icon(ui::kUndo, QStringLiteral("A  ")) + QStringLiteral("Amend last commit")}));
-        QVERIFY(actions.at(0)->isCheckable() && actions.at(0)->isChecked());
-        QCOMPARE(actions.at(0)->toolTip(), f.eye()->toolTip());
-        QVERIFY(actions.at(1)->isCheckable() && !actions.at(1)->isChecked());
-        QVERIFY(actions.at(1)->isEnabled());
-
-        // The unversioned files hidden.
-        f.eye()->click();
-        actions = filledMenu(menu);
-        QVERIFY(!actions.at(0)->isChecked());
+                 QStringList({ui::icon(ui::kUndo, QStringLiteral("A  ")) + QStringLiteral("Amend last commit")}));
+        QVERIFY(actions.at(0)->isCheckable() && !actions.at(0)->isChecked());
+        QVERIFY(actions.at(0)->isEnabled());
 
         // A merge in progress: no amending.
         MergeState merge;
@@ -6861,9 +7282,9 @@ esac
         merge.source = QStringLiteral("feature");
         page->setMergeState(merge, f.repo->headCommit());
         actions = filledMenu(menu);
-        QVERIFY(!actions.at(1)->isEnabled());
-        QCOMPARE(actions.at(1)->toolTip(), QStringLiteral("Not while a merge is in progress"));
-        QCOMPARE(actions.at(1)->toolTip(), f.amend()->toolTip());
+        QVERIFY(!actions.at(0)->isEnabled());
+        QCOMPARE(actions.at(0)->toolTip(), QStringLiteral("Not while a merge is in progress"));
+        QCOMPARE(actions.at(0)->toolTip(), f.amend()->toolTip());
     }
 
     // Each entry takes the path its control takes.
@@ -6875,19 +7296,57 @@ esac
         page->setStacked(true);
         QMenu *menu = page->optionsButton()->menu();
 
-        filledMenu(menu).at(0)->trigger();
-        QVERIFY(!f.eye()->isChecked());
-        QCOMPARE(page->proxy()->rowCount(), 2);
-        filledMenu(menu).at(0)->trigger();
-        QVERIFY(f.eye()->isChecked());
-
         QSignalSpy amended(page, &CommitPage::amendToggled);
-        filledMenu(menu).at(1)->trigger();
+        filledMenu(menu).at(0)->trigger();
         QVERIFY(f.amend()->isChecked());
         QCOMPARE(amended.count(), 1);
-        QVERIFY(filledMenu(menu).at(1)->isChecked());
-        filledMenu(menu).at(1)->trigger();
+        QVERIFY(filledMenu(menu).at(0)->isChecked());
+        filledMenu(menu).at(0)->trigger();
         QVERIFY(!f.amend()->isChecked());
+    }
+
+    // The header rows' controls as menu entries: a Files view submenu with
+    // the three presentations, the current one ticked and wearing its glyph,
+    // and the eye, each read as the buttons are and taking their path.
+    void theHeaderOptionsMirrorAndActThroughThePage()
+    {
+        QSettings().remove(settings::kWindowFilesView);
+        CommitFixture f = commitFixture();
+        QVERIFY(f.page);
+        CommitPage *page = f.page.get();
+        page->setFilesView(CommitPage::FilesView::Table, false);
+        QMenu menu;
+        page->addHeaderOptions(&menu);
+        QList<QAction *> actions = menu.actions();
+        QCOMPARE(menuTexts(actions), QStringList({ui::icon(ui::kTable) + QStringLiteral("Files view"),
+                                                  ui::icon(ui::kEye) + QStringLiteral("Show unversioned files")}));
+        QMenu *views = actions.at(0)->menu();
+        QVERIFY(views);
+        QVERIFY(qobject_cast<TickMenu *>(views));
+        QCOMPARE(menuTexts(views->actions()),
+                 QStringList({ui::icon(ui::kFormatListBulleted) + QStringLiteral("Compact list"),
+                              ui::icon(ui::kFileTree) + QStringLiteral("Tree"), ui::icon(ui::kTable) + QStringLiteral("Table")}));
+        QCOMPARE(checkedStates(views->actions()), QList<bool>({false, false, true}));
+        QVERIFY(actions.at(1)->isCheckable() && actions.at(1)->isChecked());
+        QCOMPARE(actions.at(1)->toolTip(), f.eye()->toolTip());
+
+        // Tree, through its button: the choice is saved as a click saves it.
+        views->actions().at(1)->trigger();
+        QCOMPARE(page->filesView(), CommitPage::FilesView::Tree);
+        QVERIFY(page->treeButton()->isChecked());
+        QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("tree"));
+        // The eye, through its button: the unversioned files go.
+        actions.at(1)->trigger();
+        QVERIFY(!f.eye()->isChecked());
+        QCOMPARE(page->proxy()->rowCount(), 2);
+
+        // Filled again, it says so.
+        QMenu again;
+        page->addHeaderOptions(&again);
+        QCOMPARE(again.actions().at(0)->text(), ui::icon(ui::kFileTree) + QStringLiteral("Files view"));
+        QCOMPARE(checkedStates(again.actions().at(0)->menu()->actions()), QList<bool>({false, true, false}));
+        QVERIFY(!again.actions().at(1)->isChecked());
+        QSettings().remove(settings::kWindowFilesView);
     }
 
     // Nobody has picked a files view: the stacked width lists the files
@@ -7157,7 +7616,8 @@ esac
                                         fresh.bar->minimumSizeHint().width()}) {
                     QCOMPARE(live.levelAt(width), fresh.levelAt(width));
                     QCOMPARE(stackedRow(live), stackedRow(fresh));
-                    QCOMPARE(live.rectOf(live.bar->syncDropdown()).width(), ui::space(96));
+                    // The design's 96, or on two rows its 64 px miniature.
+                    QCOMPARE(live.rectOf(live.bar->syncDropdown()).width(), ui::space(live.bar->isTwoRows() ? 64 : 96));
                 }
                 live.levelAt(live.bar->sizeHint().width());
             };
@@ -8994,12 +9454,22 @@ esac
 
         // Narrow: as wide as the margins allow, from the left margin. The top
         // bar keeps the window wider than that; a minimum of the test's own
-        // lets it be squeezed anyway.
+        // lets it be squeezed anyway. So narrow a window has its bar on two
+        // rows and the page's header rows folded away: the card went with the
+        // cog, and opens again from More, which carries the cog's entry.
         f.window->setMinimumSize(1, 1);
         f.window->resize(300, 1234);
         settle();
+        QVERIFY(f.page()->headerRowsHidden());
+        QVERIFY(!card->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showAgentMenu"));
+        settle();
+        QVERIFY(card->isVisible());
+        QToolButton *more = f.bar()->moreButton();
+        QCOMPARE(card->anchor(), more);
         QTRY_COMPARE(card->width(), qMin(ui::space(360), host->width() - margins().left() - margins().right()));
-        QCOMPARE(card->x(), qMax(margins().left(), qMin(cogRect().right() + 1 + ui::space(ui::gap::icon), host->width() - margins().right())
+        QCOMPARE(card->x(), qMax(margins().left(), qMin(rectIn(more, host).right() + 1 + ui::space(ui::gap::icon),
+                                                        host->width() - margins().right())
                                                     - card->width()));
         QVERIFY(host->width() < 360 + margins().left() + margins().right());
         QCOMPARE(card->x(), margins().left());

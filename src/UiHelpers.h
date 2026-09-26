@@ -273,8 +273,13 @@ QAction *addMenuHeader(QMenu *menu, const QString &text);
 // does at the edges of the screen, at the edges of the tile the user reads
 // it against. With a `bar`, a menu opening downwards hangs from the bar
 // rather than from the button: popupTop() under it, like the design's
-// top-bar popups.
-void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar = nullptr);
+// top-bar popups. `above` opens it upwards wherever the window has the room
+// over the button, however little it holds (a row at the window's bottom).
+void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar = nullptr, bool above = false);
+// A submenu of such a menu, in the window of `inWindow`: beside its menu,
+// on the other side where the window has no room for it, and over the menu,
+// the window's margin in, where neither side has.
+void keepSubmenuInWindow(QMenu *submenu, QWidget *inWindow);
 
 // Where a popup of the top bar starts, in global coordinates: 4 px under the
 // bar's bottom edge (screens.js screen(): menus at y = TOP_BAR + 4), or 4

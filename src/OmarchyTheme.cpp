@@ -593,8 +593,9 @@ QString OmarchyTheme::buildStyleSheet() const
         {QStringLiteral("sepinset"), px(space(4))},
         {QStringLiteral("sepbottom"), px(space(8) - space(4) - frame)},
         {QStringLiteral("menucheck"), px(space(gap::icon))},
-        // TickMenu paints its tick in a 16 px box 8 from the item's right edge,
-        // inside this padding, the text ending 4 before the box.
+        // TickMenu paints its tick, or a submenu's chevron, in a 16 px box 8
+        // from the item's right edge, inside this padding, the text ending 4
+        // before the box.
         {QStringLiteral("tickpad"), px(space(pad::control) + TickMenu::tickReserve())},
         // The branch menu's names where a menu row's label starts, after the
         // glyph BranchMenu paints in the row's icon box: 8 + 16 + 4.
@@ -797,6 +798,10 @@ QToolButton#branchButton, QToolButton#repoButton { background: transparent; bord
 QToolButton#branchButton { color: %acc%; font-weight: bold; }
 QToolButton#branchButton:hover, QToolButton#repoButton:hover { background: %fill8%; border-color: %bd25%; }
 QToolButton#branchButton:pressed, QToolButton#repoButton:pressed { background: %fill22%; border-color: %bd25%; }
+/* The two-row bar's sync dropdown: a miniature without chrome until hovered. */
+QToolButton#syncDropdown[ghost="true"] { background: transparent; border: 1px solid transparent; }
+QToolButton#syncDropdown[ghost="true"]:hover { background: %fill8%; border-color: %bd25%; }
+QToolButton#syncDropdown[ghost="true"]:pressed { background: %fill22%; border-color: %bd25%; }
 QMenu { background: %bg%; border: 2px solid %acc%; border-radius: 0; padding: %menupad%px; }
 QMenu::item { padding: %menuitemtop%px %menuitempad%px %menuitembottom%px %menuitempad%px; border-radius: 0; }
 QMenu::item:selected { background: %fill8%; color: %acc%; }
@@ -809,6 +814,7 @@ QMenu::indicator:checked { background: %acc%; border-color: %acc%; image: url(:/
 TickMenu::item { padding-right: %tickpad%px; }
 TickMenu::item:checked { color: %acc%; }
 TickMenu::indicator { width: 0; height: 0; margin: 0; border: none; background: none; image: none; }
+TickMenu::right-arrow { width: 0; height: 0; image: none; }
 BranchMenu::item { padding-left: %glyphpad%px; }
 /* The search prompt of a popup wears the menu's own look: no box, because the
    popup's accent frame already says where the keyboard is, and a dim

@@ -13,6 +13,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QResizeEvent>
+#include <QStyle>
 #include <QTimerEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -128,7 +129,11 @@ private:
 // The dropdown's inline content (screens.js syncDropdown()): [8][↓ 16][4]
 // [count in 8][8][↑ 16][4][count in 8][4][chevron 12][8], 96 wide. A count's
 // 8 is the least it gets: a wider one pushes whatever follows it along.
-constexpr int kSyncDropdown = 96;
+// On two rows it is a borderless miniature of itself: [4][↓ 16][count in 8]
+// [8][↑ 16][count in 8][4], 64 wide, the counts against their arrows' boxes
+// and no chevron.
+constexpr int kSyncDropdown = 96, kSyncMini = 64;
+constexpr int kMiniPad = 4;
 constexpr int kCountSlot = 8;
 constexpr int kBusyStepMs = 350; // BadgeButton's walking dots, at their cadence
 
@@ -156,8 +161,21 @@ public:
         update();
     }
 
-    // The design's width, or more when a count or the mark needs the room.
-    int preferredWidth() const { return m_preferredWidth; }
+    // The miniature (two rows) or the full form, and the width either of
+    // them wants: the design's, or more when a count needs the room. The bar
+    // weighs its levels against both, whichever is on.
+    void setMini(bool on)
+    {
+        if (m_mini == on)
+            return;
+        m_mini = on;
+        setProperty("ghost", on); // the stylesheet's borderless form
+        style()->unpolish(this);
+        style()->polish(this);
+        update();
+    }
+    bool isMini() const { return m_mini; }
+    int preferredWidth(bool mini) const { return mini ? m_miniWidth : m_preferredWidth; }
 
 signals:
     void widthChanged();
@@ -178,11 +196,13 @@ protected:
             p.setPen(colour);
             p.drawText(QRectF(x, 0, box, h).center() - inkRect(font, text).center(), text);
         };
-        const Fields f = fields();
-        glyph(space(pad::control), space(box::icon), t->uiFont(), downText(), t->text());
+        const Fields f = fields(m_mini);
+        glyph(f.down, space(box::icon), t->uiFont(), downText(), t->text());
         paintCount(&p, f.pull, m_pull);
         glyph(f.up, space(box::icon), t->uiFont(), upText(), t->text());
         paintCount(&p, f.push, m_push);
+        if (m_mini)
+            return;
         // The chevron as KitButton draws its own: at 12/16 of the glyphs' size.
         QFont small = t->uiFont();
         small.setPixelSize(qMax(1, qRound(small.pixelSize() * box::chevron / double(box::icon))));
@@ -204,7 +224,7 @@ protected:
 private:
     // Where the fields start, and where the content ends.
     struct Fields {
-        int pull, up, push, chevron, end;
+        int down, pull, up, push, chevron, end;
     };
 
     static QString downText() { return ui::icon(kArrowDown, QStringLiteral("↓")).trimmed(); }
@@ -230,26 +250,33 @@ private:
         return qMax(space(kCountSlot), QFontMetrics(countFont(true)).horizontalAdvance(countText(source->count())));
     }
 
-    Fields fields() const
+    Fields fields(bool mini) const
     {
         Fields f;
-        f.pull = space(pad::control) + space(box::icon) + space(gap::icon);
+        f.down = space(mini ? kMiniPad : pad::control);
+        f.pull = f.down + space(box::icon) + (mini ? 0 : space(gap::icon));
         f.up = f.pull + countWidth(m_pull) + space(gap::item);
-        f.push = f.up + space(box::icon) + space(gap::icon);
+        f.push = f.up + space(box::icon) + (mini ? 0 : space(gap::icon));
+        if (mini) {
+            f.chevron = f.end = f.push + countWidth(m_push);
+            return f;
+        }
         f.chevron = f.push + countWidth(m_push) + space(gap::icon);
         f.end = f.chevron + space(box::chevron);
         return f;
     }
 
     // Recomputed whenever a count, a busy state, the mark or the theme
-    // changes; the bar relays itself out when the answer does. Merge's mark
+    // changes; the bar relays itself out when an answer does. Merge's mark
     // hangs over the corner like a badge, clear of the chevron's box.
     void updateWidth()
     {
-        const int w = qMax(space(kSyncDropdown), fields().end + space(pad::control));
-        if (w == m_preferredWidth)
+        const int full = qMax(space(kSyncDropdown), fields(false).end + space(pad::control));
+        const int mini = qMax(space(kSyncMini), fields(true).end + space(kMiniPad));
+        if (full == m_preferredWidth && mini == m_miniWidth)
             return;
-        m_preferredWidth = w;
+        m_preferredWidth = full;
+        m_miniWidth = mini;
         emit widthChanged();
     }
 
@@ -305,13 +332,20 @@ private:
     int m_busyTimer = 0;
     int m_busyPhase = 0;
     int m_preferredWidth = 0;
+    int m_miniWidth = 0;
+    bool m_mini = false;
 };
 
-// The bar keeps the dropdown as its base class; this is the one place that
-// asks it for more.
-int dropdownWidth(const BadgeButton *dropdown)
+// The bar keeps the dropdown as its base class; these are the places that
+// ask it for more.
+int dropdownWidth(const BadgeButton *dropdown, bool mini)
 {
-    return static_cast<const SyncDropdown *>(dropdown)->preferredWidth();
+    return static_cast<const SyncDropdown *>(dropdown)->preferredWidth(mini);
+}
+
+void setDropdownMini(BadgeButton *dropdown, bool mini)
+{
+    static_cast<SyncDropdown *>(dropdown)->setMini(mini);
 }
 
 } // namespace
@@ -399,6 +433,7 @@ TopBar::TopBar(QWidget *parent)
     // carries a count badge of its own: it paints the two counts inline.
     auto *dropdown = new SyncDropdown(m_pull, m_push, m_merge);
     m_syncDropdown = dropdown;
+    m_syncDropdown->setObjectName(QStringLiteral("syncDropdown"));
     m_syncDropdown->setParent(m_row);
     m_syncDropdown->setCursor(Qt::PointingHandCursor);
     m_syncDropdown->setFocusPolicy(Qt::NoFocus);
@@ -677,7 +712,7 @@ int TopBar::rightGroupWidth(int level) const
     // Stacked: the dropdown and More, whatever the level; More is the bare
     // square there, as nothing folds into it that could hang a badge on it.
     if (m_stacked)
-        return dropdownWidth(m_syncDropdown) + space(gap::item) + m_metrics.more;
+        return dropdownWidth(m_syncDropdown, twoRows(level)) + space(gap::item) + m_metrics.more;
     const Fold &fold = kFolds[level];
     int w = 0;
     for (int i = 0; i < m_syncControls.size(); ++i) {
@@ -772,6 +807,10 @@ void TopBar::relayout()
     // On two rows the popups hang from the first, over the tabs.
     setPopupEdge(this, twoRows(m_level) ? m_row->y() + m_metrics.height : -1);
     m_badges->update(); // the buttons may have moved without a badge changing
+    if (twoRows(m_level) != m_twoRows) {
+        m_twoRows = twoRows(m_level);
+        emit twoRowsChanged(m_twoRows);
+    }
 }
 
 // The presentation of every control at `level`, the displayed text included:
@@ -797,6 +836,7 @@ void TopBar::apply(int level, int branchLabelWidth)
         for (const SyncControl &c : std::as_const(m_syncControls))
             c.button->setVisible(false);
         m_more->setVisible(true);
+        setDropdownMini(m_syncDropdown, twoRows(level));
         m_syncDropdown->setVisible(true);
         m_divider->setVisible(false);
         m_layoutButton->setVisible(false);
@@ -850,7 +890,7 @@ void TopBar::place(int level, int branchLabelWidth)
     const int rightStart = x;
     if (m_stacked) {
         // As tall as the first row: the design's dropdown is its height.
-        const int dropdown = dropdownWidth(m_syncDropdown);
+        const int dropdown = dropdownWidth(m_syncDropdown, twoRows(level));
         m_syncDropdown->setGeometry(x, 0, dropdown, height);
         m_syncDropdown->show();
         x += dropdown + space(gap::item);
@@ -932,7 +972,13 @@ void TopBar::addSyncEntry(QMenu *menu, const SyncControl &c, const QString &labe
 void TopBar::fillMoreMenu()
 {
     m_moreMenu->clear();
+    // clear() leaves the submenus the last fill made behind, as children.
+    qDeleteAll(m_moreMenu->findChildren<QMenu *>(Qt::FindDirectChildrenOnly));
     m_moreMenu->setFixedWidth(popupWidth(window(), kMoreMenuWidth));
+    // Whatever the window moved in here at this width comes first.
+    emit fillingMoreMenu(m_moreMenu);
+    if (!m_moreMenu->actions().isEmpty())
+        m_moreMenu->addSeparator();
     for (const SyncControl &c : std::as_const(m_syncControls)) {
         if (m_foldedSync.contains(c.button))
             addSyncEntry(m_moreMenu, c, c.label);

@@ -681,8 +681,8 @@ namespace {
 class MenuInWindow : public QObject
 {
 public:
-    MenuInWindow(QMenu *menu, QWidget *button, QWidget *bar)
-        : QObject(menu), m_button(button), m_bar(bar)
+    MenuInWindow(QMenu *menu, QWidget *button, QWidget *bar, bool above)
+        : QObject(menu), m_button(button), m_bar(bar), m_above(above)
     {
         menu->installEventFilter(this);
     }
@@ -705,7 +705,7 @@ protected:
             pos.setX(qMax(area.x(), area.x() + area.width() - windowMargin(window) - menu->width()));
         // Upwards, 4 over the button (screens.js: the OptionsMenu card).
         const int above = button.y() - space(gap::cluster) - menu->height();
-        if (pos.y() + menu->height() > area.y() + area.height() && above >= area.y())
+        if ((m_above || pos.y() + menu->height() > area.y() + area.height()) && above >= area.y())
             pos.setY(above);
         if (pos != menu->pos())
             menu->move(pos);
@@ -715,13 +715,65 @@ protected:
 private:
     QWidget *m_button;
     QPointer<QWidget> m_bar;
+    bool m_above;
+};
+
+// Qt's own rule for a submenu at the screen's edges — beside its menu, on
+// the other side where it does not fit, over the menu where neither side
+// has the room — with the window for the screen.
+class SubmenuInWindow : public QObject
+{
+public:
+    SubmenuInWindow(QMenu *submenu, QWidget *inWindow)
+        : QObject(submenu), m_inWindow(inWindow)
+    {
+        submenu->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::Show)
+            return false;
+        auto *menu = static_cast<QMenu *>(watched);
+        auto *parent = qobject_cast<QMenu *>(menu->parentWidget());
+        if (!parent || !m_inWindow)
+            return false;
+        const QWidget *window = m_inWindow->window();
+        const int margin = windowMargin(window);
+        const QRect area(window->mapToGlobal(QPoint(0, 0)), window->size());
+        const QRect beside(parent->mapToGlobal(QPoint(0, 0)), parent->size());
+        const int left = area.x() + margin, right = area.x() + area.width() - margin;
+        QPoint pos = menu->pos();
+        if (pos.x() + menu->width() > right || pos.x() < left) {
+            if (beside.x() + beside.width() + menu->width() <= right)
+                pos.setX(beside.x() + beside.width());
+            else if (beside.x() - menu->width() >= left)
+                pos.setX(beside.x() - menu->width());
+            else
+                pos.setX(left);
+        }
+        if (pos.y() + menu->height() > area.y() + area.height() - margin)
+            pos.setY(qMax(area.y(), area.y() + area.height() - margin - menu->height()));
+        if (pos != menu->pos())
+            menu->move(pos);
+        return false;
+    }
+
+private:
+    QPointer<QWidget> m_inWindow;
 };
 
 } // namespace
 
-void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar)
+void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar, bool above)
 {
-    new MenuInWindow(menu, button, bar);
+    new MenuInWindow(menu, button, bar, above);
+}
+
+void keepSubmenuInWindow(QMenu *submenu, QWidget *inWindow)
+{
+    new SubmenuInWindow(submenu, inWindow);
 }
 
 int popupTop(const QWidget *bar)
