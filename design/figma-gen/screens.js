@@ -141,6 +141,14 @@ function tokens(line) {
 // Repo + branch context on the left, sync + layout on the right.
 function topBar(c, W, lv, o = {}) {
   const t = T(), d = o.d || REGULAR, y = BAR; let x = d.margin, h = TOP_BAR;
+  const page = o.page || 'changes';
+  // The page tabs' form for the room between the groups (lo..hi): labels, then icons, then — stacked,
+  // where even the icons would touch a group — a row of their own under the controls.
+  const navForm = (lo, hi) => {
+    let items = navItems(lv, page, true), w = measureSegmented(items);
+    if (w > hi - lo) { items = navItems(lv, page, false); w = measureSegmented(items); }
+    return { items, w, own: w > hi - lo && stacked(lv) };
+  };
   c.group('TopBar', () => {
     // repo chip: label + chevron when there is room, a bare folder icon when stacked (never hidden)
     const w = button(c, { x, y, variant: 'ghost', icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv), id: 'RepoChip' });
@@ -159,7 +167,9 @@ function topBar(c, W, lv, o = {}) {
       rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, variant: 'ghost', icon: 'dockRight', state: o.diffHidden ? 'normal' : 'selected', id: 'Toggle/diff pane' });
       rx -= GAP.cluster + BOX.control; button(c, { x: rx, y, w: BOX.control, variant: 'ghost', icon: 'mini', state: o.mini ? 'selected' : 'normal', id: 'Toggle/mini' });
       rx -= GAP.group / 2; vline(c, rx, y + (BOX.control - BOX.divider) / 2, BOX.divider, { fo: 0.2 }); rx -= GAP.group / 2;
-      if (lv === 'm') { rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, icon: 'dots', id: 'More' }); rx -= GAP.item; }
+      // More: Fetch and Merge fold into it on M; a shallow window keeps it at every width, as the home of
+      // the CHANGES and MESSAGE rows' controls (the page folds those rows away)
+      if (lv === 'm' || o.shallow) { rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, icon: 'dots', id: 'More' }); rx -= GAP.item; }
       const labels = lv === 'xl';
       const items = lv === 'm' ? [['push', 'Push', 1], ['pull', 'Pull', 2]] : [['merge', 'Merge'], ['fetch', 'Fetch'], ['push', 'Push', 1], ['pull', 'Pull', 2]];
       // item gaps (8) leave room for the badges hanging 4 past each button's right edge
@@ -170,10 +180,12 @@ function topBar(c, W, lv, o = {}) {
       });
     } else {
       rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, icon: 'dots', id: 'More' }); rx -= GAP.item;
-      // one sync dropdown carrying both counts
+      // one sync dropdown carrying both counts; the one-row forms are weighed with the full one, and on
+      // two rows it is a borderless 64 px miniature without its chevron
+      const mini = navForm(x + GAP.group, rx - SYNC_W - GAP.group).own, sw = mini ? SYNC_MINI_W : SYNC_W;
+      c.record({ k: 'SyncDropdown', id: 'SyncDropdown', x: rx - sw, y, w: sw, h: BOX.control, down: 2, up: 1, mini });
+      syncDropdown(c, rx - sw, y, 2, 1, mini);
       rx -= SYNC_W;
-      c.record({ k: 'SyncDropdown', id: 'SyncDropdown', x: rx, y, w: SYNC_W, h: BOX.control, down: 2, up: 1 });
-      syncDropdown(c, rx, y, 2, 1);
     }
     // page tabs: a view toggle centred in the window, like a toolbar mode switch.
     // It keeps a group gap clear of the repo/branch group and the sync group: nudged aside first, labels → icons second.
@@ -181,10 +193,9 @@ function topBar(c, W, lv, o = {}) {
     // the controls, the bar's width, its segments stretched and labelled again (icons if a label does not fit a
     // segment), so the branch keeps its name and nothing overlaps.
     {
-      const page = o.page || 'changes', lo = x + GAP.group, hi = rx - GAP.group;
-      let items = navItems(lv, page, true), w = measureSegmented(items);
-      if (w > hi - lo) { items = navItems(lv, page, false); w = measureSegmented(items); }
-      if (w > hi - lo && stacked(lv)) {
+      const lo = x + GAP.group, hi = rx - GAP.group;
+      let { items, w, own } = navForm(lo, hi);
+      if (own) {
         const rw = W - 2 * d.margin, each = Math.floor(rw / 3);
         items = navItems(lv, page, true);
         if (items.some(it => measureSegmented([it]) > each)) items = navItems(lv, page, false);
@@ -201,10 +212,17 @@ function topBar(c, W, lv, o = {}) {
 }
 
 // The stacked top bar's sync dropdown: [8][↓ 16][4][2][8][↑ 16][4][1][4][chevron 12][8], a digit in an 8 slot.
-const SYNC_W = 96;
-function syncDropdown(c, x, y, down, up) {
+// On two rows (extra narrow) its miniature: no fill, no border, no chevron, the counts against their
+// arrows' boxes — [4][↓ 16][2][8][↑ 16][1][4], 64 wide.
+const SYNC_W = 96, SYNC_MINI_W = 64;
+function syncDropdown(c, x, y, down, up, mini) {
   const t = T(), mid = y + BOX.control / 2, iy = y + (BOX.control - BOX.icon) / 2;
-  c.group('SyncDropdown', () => {
+  c.group('SyncDropdown', () => { // one name for both forms: replace-instances.js finds the placement by it
+    if (mini) {
+      icon(c, 'down', x + 4, iy); text(c, x + 20, mid, String(down), { weight: 700, fill: t.accent });
+      icon(c, 'up', x + 36, iy); text(c, x + 52, mid, String(up), { weight: 700, fill: t.accent });
+      return;
+    }
     fillBox(c, x, y, SYNC_W, BOX.control, 0.04); border(c, x, y, SYNC_W, BOX.control, { stroke: t.fg, so: 0.4 });
     icon(c, 'down', x + 8, iy); text(c, x + 28, mid, String(down), { weight: 700, fill: t.accent });
     icon(c, 'up', x + 44, iy); text(c, x + 64, mid, String(up), { weight: 700, fill: t.accent });
@@ -237,6 +255,18 @@ function changesPage(c, x, y, w, h, lv, o = {}) {
     const HR = BOX.row, HGAP = GAP.header, SGAP = d.block;
     // the message box: 5, 4, 3 lines of 16 inside 8 px padding; one line (a field) when shallow
     const mh = shallow ? BOX.control : lv === 'xl' ? 96 : lv === 'l' ? 80 : 64;
+    // Folded (a two-row bar or a shallow window): no header rows. The list starts at the pane's top and
+    // the box stands a block gap under it; the rows' controls are the top bar's More menu's first entries
+    // (Files view ›, Show unversioned files, Agent settings…), Refresh is More's own.
+    if (o.folded) {
+      const tableH = h - SGAP - mh - d.block - BOX.control;
+      changesTable(c, x, cy, w, tableH, lv, o);
+      cy += tableH + SGAP;
+      messageBox(c, x, cy, w, mh, o, shallow);
+      cy += mh + d.block;
+      actionBar(c, x, cy, w, lv, o);
+      return;
+    }
     // CHANGES header: the title carries the checked / total count (it used to be
     // a separate "n / m selected" label, which crowded the row on narrow panes)
     const files = o.rows || FILES, checked = files.filter(f => f.checked).length;
@@ -283,6 +313,7 @@ function messageBox(c, x, y, w, h, o, oneLine) {
 }
 
 const FILE_VIEWS = [['compact', 'list'], ['tree', 'tree'], ['table', 'table']];
+const FILE_VIEW_NAMES = { compact: 'Compact list', tree: 'Tree', table: 'Table' };
 const filesView = (lv, o) => o.filesView || (stacked(lv) ? 'compact' : 'table');
 // lazygit-style tree: directories first (each level nested), then the files of
 // that level; o.collapsed lists directory paths shown folded.
@@ -781,8 +812,12 @@ function menuCard(c, o) {
       let ix = x + pad + P;
       if (it.icon) { icon(c, it.icon, ix, cy + iy, BOX.icon, { fill: it.hover ? t.accent : t.fg, opacity: it.disabled ? 0.45 : 1 }); ix += BOX.icon + GAP.icon; }
       text(c, ix, cy + rh / 2, it.label, { fill: it.hover ? t.accent : t.fg, opacity: it.disabled ? 0.45 : 1 });
-      if (it.hint) text(c, x + w - pad - P - (it.checked ? BOX.icon + GAP.icon : 0), cy + rh / 2, it.hint, { fill: t.dim, anchor: 'end', size: SIZE.small });
+      // the hint gives way where it would come within an item gap of the label (a menu clamped to a narrow window)
+      const hintRight = x + w - pad - P - (it.checked || it.submenu ? BOX.icon + GAP.icon : 0);
+      if (it.hint && hintRight - tw(it.hint, SIZE.small) - (ix + tw(it.label)) >= GAP.item) text(c, hintRight, cy + rh / 2, it.hint, { fill: t.dim, anchor: 'end', size: SIZE.small });
       if (it.checked) icon(c, 'check', x + w - pad - P - BOX.icon, cy + iy, BOX.icon, { fill: t.accent });
+      // a submenu's chevron: in the tick's 16 px box, at the chevrons' 12, dim (accent while its row is current)
+      if (it.submenu) icon(c, 'chevronR', x + w - pad - P - BOX.icon + (BOX.icon - BOX.chevron) / 2, cy + (rh - BOX.chevron) / 2, BOX.chevron, { fill: it.hover ? t.accent : t.dim });
       c.add('</g>');
       cy += rh;
     });
@@ -976,10 +1011,12 @@ function screen(o) {
   const d = density(W, H), m = d.margin;
   const c = new K.Canvas(o.id, W, H); const t = T();
   rect(c, 0, 0, W, H, { fill: t.bg, id: 'window' });
-  const top = topBar(c, W, lv, { ...o, d });
+  const top = topBar(c, W, lv, { ...o, d, shallow });
   const footH = shallow ? 0 : footer(c, W, H, lv, { ...o, d });
   const bodyY = top + BAR, bodyH = (shallow ? H - m : H - footH - BAR) - bodyY;
-  const page = o.page || 'changes', po = { ...o, shallow, d };
+  // the page's CHANGES and MESSAGE header rows fold away on a two-row bar and in a shallow window
+  const folded = top > TOP_BAR || shallow;
+  const page = o.page || 'changes', po = { ...o, shallow, folded, d };
   if (stacked(lv)) {
     const nx = m, nw = W - m * 2;
     if (page === 'changes') changesPage(c, nx, bodyY, nw, bodyH, lv, po);
@@ -1049,15 +1086,35 @@ function screen(o) {
       { label: 'Pull', icon: 'pull', hint: '2 behind · Ctrl+P', hover: true }, { label: 'Push', icon: 'push', hint: '1 ahead · Ctrl+Shift+P' }, { label: 'Fetch', icon: 'fetch', hint: 'Ctrl+F' },
       { type: 'sep' }, { label: 'Merge…', icon: 'merge', hint: 'Ctrl+Shift+M' }] });
   }
-  if (o.overlay === 'more') {
-    menuCard(c, { x: W - m - clampW(240), y: menuY, w: clampW(240), id: 'MoreMenu', items: [
-      { label: 'Fetch', icon: 'fetch', hint: 'Ctrl+F' }, { label: 'Merge…', icon: 'merge', hint: 'Ctrl+Shift+M' }, { type: 'sep' },
+  if (o.overlay === 'more' || o.overlay === 'filesView') {
+    // Folded, on the Changes tab, the page's header rows' controls come first: the files view as a
+    // submenu (its icon the current view's), the unversioned toggle, the agent settings (they hang
+    // from More then); the Diff and History tabs have none of them. Then what folded into More on
+    // an unstacked row, then More's own entries.
+    const view = FILE_VIEWS.find(([id]) => id === filesView(lv, o));
+    const pageItems = folded && page === 'changes' ? [
+      { label: 'Files view', icon: view[1], submenu: true, hover: o.overlay === 'filesView' }, { label: 'Show unversioned files', icon: 'eye', checked: true },
+      { label: 'Agent settings…', icon: 'cog' }, { type: 'sep' }] : [];
+    const syncItems = stacked(lv) || lv !== 'm' ? [] : [{ label: 'Fetch', icon: 'fetch', hint: 'Ctrl+F' }, { label: 'Merge…', icon: 'merge', hint: 'Ctrl+Shift+M' }, { type: 'sep' }];
+    const mw = clampW(240), mx = W - m - mw;
+    menuCard(c, { x: mx, y: menuY, w: mw, id: 'MoreMenu', items: [...pageItems, ...syncItems,
       { label: 'Refresh', icon: 'refresh', hint: 'F5' }, { label: 'Open repository…', icon: 'folderOpen', hint: 'Ctrl+O' }, { label: 'Clone…', icon: 'fetch' }, { type: 'sep' },
       { label: 'Keybindings', icon: 'keyboard', hint: 'Ctrl+K' }] });
+    if (o.overlay === 'filesView') {
+      // Qt's rule for a submenu at the screen's edges, with the window for the screen: beside the menu,
+      // its first row level with the entry; on the other side where it has no room; over the menu, the
+      // window's margin in, where neither side has. As wide as its rows.
+      const items = FILE_VIEWS.map(([id, ic]) => ({ label: FILE_VIEW_NAMES[id], icon: ic, checked: id === view[0] }));
+      const sw = 2 * PAD.menu + 2 * PAD.control + BOX.icon + GAP.icon + Math.max(...items.map(it => tw(it.label))) + GAP.icon + BOX.icon;
+      const sx = mx + mw + sw <= W - m ? mx + mw : mx - sw >= m ? mx - sw : m;
+      menuCard(c, { x: sx, y: menuY, w: sw, id: 'FilesViewMenu', items });
+    }
   }
   if (o.overlay === 'options') { // opens upwards from the Options button, 4 over it
+    // Amend alone, as in the app: check-all is the table header's box, the sparkle writes the message,
+    // and the unversioned toggle folds into the top bar's More with the CHANGES row
     const opt = c.rec.find(r => r.id === 'Options');
-    const items = [{ label: 'Select all', icon: 'check', hint: 'Ctrl+Shift+Space' }, { label: 'Show unversioned files', icon: 'checkCircle', checked: true }, { label: 'Amend last commit', icon: 'undo', hint: 'Ctrl+Shift+A' }, { type: 'sep' }, { label: 'Generate message', icon: 'sparkle', hint: 'Ctrl+G' }];
+    const items = [{ label: 'Amend last commit', icon: 'undo', hint: 'Ctrl+Shift+A' }];
     menuCard(c, { x: opt.x, y: opt.y - GAP.cluster - menuHeight(items), w: clampW(240), id: 'OptionsMenu', items });
   }
   if (o.overlay === 'merge') {
@@ -1076,14 +1133,15 @@ function screen(o) {
     commitPopover(c, { x: tile.x + tile.w + GAP.item, bottom: tile.y + tile.h, w: pw, message: o.message, messageBody: o.messageBody, amend: o.amend });
   }
   if (o.overlay === 'agent') {
-    const cog = c.rec.find(r => r.id === 'AgentSettings');
+    // folded pages have no cog: the settings hang from More, whose entry opens them
+    const cog = c.rec.find(r => r.id === 'AgentSettings') || c.rec.find(r => r.id === 'More');
     const pw = clampW(360), ph = agentPopoverHeight((o.agent || {}).agent);
     // under the cog where the window has room for it, over it where it has
     // not (the commit page's cog stands low, over the message box), and
     // otherwise moved up to fit; right-aligned with the column the cog stands in
     const under = cog.y + cog.h + GAP.cluster, over = cog.y - GAP.cluster - ph, bottom = H - m;
     const py = under + ph <= bottom ? under : over >= m ? over : Math.max(m, bottom - ph);
-    agentPopover(c, { x: Math.max(m, cog.x + cog.w + GAP.icon - pw), y: py, w: pw, ...(o.agent || {}) });
+    agentPopover(c, { x: Math.max(m, Math.min(cog.x + cog.w + GAP.icon, W - m) - pw), y: py, w: pw, ...(o.agent || {}) });
   }
   if (o.overlay === 'searchOptions') { // proposal D: 4 under the filter field, right-aligned with it
     const opt = c.rec.find(r => r.id === 'SearchOptions');

@@ -89,6 +89,12 @@ public:
     // them out in a wide window only (screens.js topBar(), xl), icons below it
     // however much room is left. A bar outside a window goes by its width.
     void setSyncLabels(bool allowed);
+    // Whether the ordinary row keeps More at every level, the bare square an
+    // item gap after the last sync button, whether or not a button folds into
+    // it: the window's page has moved entries there (a shallow window). The
+    // stacked row has it anyway.
+    void setMoreKept(bool kept);
+    bool isMoreKept() const { return m_moreKept; }
 
     // 0 spells everything out, 6 is the narrowest form (2 while stacked, the
     // tabs on a row of their own); what the current width fits (see the
@@ -220,5 +226,6 @@ private:
     int m_level = 0;
     bool m_stacked = false;
     bool m_syncLabels = true;
+    bool m_moreKept = false; // on the ordinary row, with nothing folded into it
     bool m_twoRows = false; // what twoRowsChanged() last said
 };

@@ -204,6 +204,9 @@ private:
     // The density of the window's classes: the margins, the gaps and the
     // footer, or the room it leaves, and whoever lays out with them.
     void applyDensity();
+    // Folds the commit page's header rows into More, or brings them back: on
+    // two rows, and in a shallow window at any width.
+    void applyHeaderRows();
     // Whether the Mini rail is on screen: the Mini layout, or the Diff tab.
     bool railShowing() const;
     // A tab of the top bar, or Ctrl+1 / Ctrl+2: Changes and History are the

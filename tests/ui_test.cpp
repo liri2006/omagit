@@ -5043,6 +5043,145 @@ esac
         QVERIFY(!page->agentButton()->isVisible());
     }
 
+    // A shallow window folds the page's header rows the same way, at any
+    // width and from the first frame. Unstacked, the ordinary row keeps More
+    // for their entries with no sync button folded into it: the bare square
+    // an item gap after Merge, the divider and the toggles after it, and the
+    // bar's hint counting it. More leads with the Files view submenu, the eye
+    // and the agent settings (hanging from More), but not in the Mini
+    // layout. Made tall, the rows come back and More goes again; stacked on
+    // one row, shallow folds them too. At the design's text size.
+    void theShallowWindowFoldsThePagesHeaderRows()
+    {
+        // The desktop's theme back for whatever runs next, however this ends.
+        const auto restoreTheme = qScopeGuard([] {
+            g_theme.reset(new OmarchyTheme);
+            g_theme->apply(*qApp);
+        });
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+        ScopedEnv scratchHome("HOME", home.path().toUtf8());
+        OmarchyTheme theme;
+        QCOMPARE(theme.fontBase(), 12);
+        theme.apply(*qApp);
+
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(1400, 400); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        MainWindow *w = f.window.get();
+        TopBar *bar = f.bar();
+        CommitPage *page = f.page();
+        BadgeButton *more = bar->moreButton();
+        QVERIFY(page->headerRowsHidden()); // before anything settled
+        settle();
+        QCOMPARE(w->size(), QSize(1400, 400));
+        QVERIFY(!w->isStacked());
+        QVERIFY(w->height() < ui::space(560)); // shallow
+        QVERIFY(!bar->isTwoRows());
+        QVERIFY(page->headerRowsHidden());
+        const QList<QToolButton *> controls{page->agentButton(), page->compactButton(), page->treeButton(),
+                                            page->tableButton(), page->unversionedButton()};
+        for (QToolButton *b : controls)
+            QVERIFY2(!b->isVisible(), qPrintable(b->accessibleName()));
+        QCOMPARE(page->activeListView()->mapTo(page, QPoint(0, 0)).y(), 0);
+
+        // The ordinary row: all four sync buttons, then More, then the group
+        // gap with its divider and the toggles against the right margin.
+        const auto rectOf = [bar](const QWidget *c) { return QRect(c->mapTo(bar, QPoint(0, 0)), c->size()); };
+        const auto rightGroup = [&] {
+            for (QToolButton *b : {bar->pullButton(), bar->pushButton(), bar->fetchButton(), bar->mergeButton()})
+                QVERIFY2(b->isVisible(), qPrintable(b->accessibleName()));
+            QVERIFY(more->isVisible());
+            QVERIFY(more->markText().isEmpty()); // nothing folded into it
+            const QRect merge = rectOf(bar->mergeButton()), square = rectOf(more);
+            QCOMPARE(square.x(), merge.x() + merge.width() + ui::space(ui::gap::item));
+            QCOMPARE(square.size(), QSize(ui::space(ui::box::control), ui::space(ui::box::control)));
+            QWidget *divider = nullptr;
+            for (QWidget *c : bar->findChildren<QWidget *>())
+                if (c->isVisible() && c->width() == 1 && c->height() == ui::space(ui::box::divider)
+                    && rectOf(c).x() > square.x())
+                    divider = c;
+            QVERIFY(divider);
+            QCOMPARE(rectOf(divider).x(), square.x() + square.width() + ui::space(ui::gap::group / 2));
+            QCOMPARE(rectOf(bar->layoutButton()).x(), square.x() + square.width() + ui::space(ui::gap::group));
+            QCOMPARE(rectOf(bar->diffToggle()).x() + bar->diffToggle()->width(), bar->width() - ui::windowMargin(w));
+            QVERIFY(rectOf(bar->historyTab()).x() + bar->historyTab()->width() < square.x());
+        };
+        rightGroup();
+        if (QTest::currentTestFailed())
+            return;
+        const int keptHint = bar->sizeHint().width();
+
+        // More's entries: the page's, then the bar's own.
+        QMenu *menu = more->menu();
+        QList<QAction *> actions = filledMenu(menu);
+        const QStringList texts = menuTexts(actions);
+        QVERIFY2(texts.size() > 5, qPrintable(texts.join(QLatin1Char('|'))));
+        QVERIFY2(texts.at(0).endsWith(QStringLiteral("Files view")), qPrintable(texts.at(0)));
+        QVERIFY(actions.at(0)->menu());
+        QCOMPARE(actions.at(0)->menu()->actions().size(), 3);
+        QCOMPARE(texts.mid(1, 4), QStringList({ui::icon(ui::kEye) + QStringLiteral("Show unversioned files"),
+                                               ui::icon(ui::kCog) + QStringLiteral("Agent settings…"),
+                                               QStringLiteral("-"), ui::icon(ui::kRefresh) + QStringLiteral("Refresh")}));
+        filledMenu(menu).at(2)->trigger();
+        settle();
+        AgentPopover *card = f.agentCard();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->anchor(), static_cast<QWidget *>(more));
+        card->dismiss();
+
+        // The Mini layout's page is the commit card: More keeps to its own.
+        w->setPaneLayout(PaneLayout::Mini, false);
+        settle();
+        QCOMPARE(filledMenu(menu).first()->text(), ui::icon(ui::kRefresh) + QStringLiteral("Refresh"));
+        w->setPaneLayout(PaneLayout::Docked, false);
+        settle();
+        QVERIFY(filledMenu(menu).first()->menu());
+
+        // Tall at the same width: the rows back, and More gone with nothing
+        // folded into it, the toggles a group gap after Merge again.
+        w->resize(1400, 800);
+        settle();
+        QVERIFY(w->height() >= ui::space(560));
+        QVERIFY(!page->headerRowsHidden());
+        for (QToolButton *b : controls)
+            QVERIFY2(b->isVisible(), qPrintable(b->accessibleName()));
+        QCOMPARE(page->activeListView()->mapTo(page, QPoint(0, 0)).y(),
+                 ui::space(ui::box::row) + ui::space(ui::gap::header));
+        QVERIFY(bar->mergeButton()->isVisible());
+        QVERIFY(!more->isVisible());
+        const QRect merge = rectOf(bar->mergeButton());
+        QCOMPARE(rectOf(bar->layoutButton()).x(), merge.x() + merge.width() + ui::space(ui::gap::group));
+        QCOMPARE(bar->sizeHint().width(), keptHint - ui::space(ui::box::control) - ui::space(ui::gap::item));
+        QCOMPARE(filledMenu(menu).first()->text(), ui::icon(ui::kRefresh) + QStringLiteral("Refresh"));
+
+        // Shallow again: folded again, More back where it was.
+        w->resize(1400, 400);
+        settle();
+        QVERIFY(page->headerRowsHidden());
+        rightGroup();
+        if (QTest::currentTestFailed())
+            return;
+
+        // Stacked on one row, and shallow: folded too; tall there, back.
+        w->resize(470, 400);
+        settle();
+        QVERIFY(w->isStacked());
+        QVERIFY(!bar->isTwoRows());
+        QVERIFY(page->headerRowsHidden());
+        for (QToolButton *b : controls)
+            QVERIFY2(!b->isVisible(), qPrintable(b->accessibleName()));
+        QVERIFY(filledMenu(menu).first()->menu());
+        w->resize(470, 612);
+        settle();
+        QVERIFY(w->isStacked());
+        QVERIFY(!bar->isTwoRows());
+        QVERIFY(!page->headerRowsHidden());
+        QCOMPARE(filledMenu(menu).first()->text(), ui::icon(ui::kRefresh) + QStringLiteral("Refresh"));
+    }
+
     // The Files view submenu keeps to the window as More does: at 340
     // neither side of More has the room for it, so it opens over More,
     // inside the window's margins; where the window has the room beside
@@ -5332,9 +5471,9 @@ esac
     }
 
     // The block gap follows the window's height: 4 shallow, 8 normal, 12 tall
-    // (screens.js density()), between the changes list and the MESSAGE row as
-    // between the message box and the action bar; the rows of every list are
-    // 24.
+    // (screens.js density()), between the changes list and the MESSAGE row
+    // (the message box, where a shallow window folds the row away) as between
+    // the message box and the action bar; the rows of every list are 24.
     void theBlockGapFollowsTheWindowsHeight()
     {
         WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(ui::space(945), ui::space(1234)); });
@@ -5358,11 +5497,14 @@ esac
             const QByteArray where = QByteArray::number(height);
             const int block = ui::space(ui::densityFor(WidthClass::Medium, heightClass).block);
             // The MESSAGE row is the 24 px header row the label sits in.
-            const int messageRow = rectIn(messageLabel, host).y();
+            const bool folded = heightClass == HeightClass::Shallow;
+            QVERIFY2(messageLabel->isVisible() == !folded, where.constData());
+            const int messageRow = rectIn(folded ? static_cast<QWidget *>(message) : messageLabel, host).y();
             const int listBottom = rectIn(page->table(), host).bottom() + 1;
             QVERIFY2(messageRow - listBottom == block, where.constData());
             QVERIFY2(rectIn(commit, host).y() - (rectIn(message, host).bottom() + 1) == block, where.constData());
-            QVERIFY2(messageLabel->height() == ui::space(ui::box::row), where.constData());
+            if (!folded)
+                QVERIFY2(messageLabel->height() == ui::space(ui::box::row), where.constData());
         }
         // Every clickable row is 24: the files, the commits, a menu's.
         QCOMPARE(page->table()->verticalHeader()->defaultSectionSize(), ui::space(ui::box::row));
@@ -9401,8 +9543,9 @@ esac
     // Over the cog, which stands low on the commit page (right over the
     // message box), its right edge on the cog's, 360 wide where there is
     // room, clamped by the window's margins where there is not, moved up in a
-    // short window, and placed again when its height changes. Under a cog
-    // with room below it: theAgentCardSitsBesideTheCommitCard().
+    // short window (hanging from More there, the cog's row folded away), and
+    // placed again when its height changes. Under a cog with room below it:
+    // theAgentCardSitsBesideTheCommitCard().
     void theAgentCardStandsOverItsCog()
     {
         WindowFixture f = mainWindow();
@@ -9475,16 +9618,20 @@ esac
         QCOMPARE(card->x(), margins().left());
 
         // Short: moved up to fit, never above the top margin. Widening out of
-        // the stacked width closes the card, so it is opened again first.
+        // the stacked width closes the card, so it is opened again first —
+        // from More again: a shallow window folds the cog's row away too.
         f.window->resize(945, 360);
         settle();
         QVERIFY(!card->isVisible());
-        QTest::mouseClick(cog, Qt::LeftButton);
+        QVERIFY(f.page()->headerRowsHidden());
+        QVERIFY(!cog->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showAgentMenu"));
         settle();
         QVERIFY(card->isVisible());
+        QCOMPARE(card->anchor(), more);
         QTRY_VERIFY(card->geometry().bottom() + 1 <= host->height() - margins().bottom()
                     || card->y() == margins().top());
-        QVERIFY(card->y() < cogRect().bottom() + 1 + ui::space(ui::gap::cluster));
+        QVERIFY(card->y() < rectIn(more, host).bottom() + 1 + ui::space(ui::gap::cluster));
         QVERIFY(card->y() >= margins().top());
     }
 

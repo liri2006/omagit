@@ -31,6 +31,15 @@ Generates the design frames for the Omagit Figma file
   controls (an 80 px bar), labelled again, and the menus hang under the
   controls row, over it; the diff header drops its HEAD → Working tree title
   where it would touch the path.
+  Folded header rows (2026-09-26): on a two-row bar and in a shallow window
+  `changesPage` drops the CHANGES and MESSAGE rows (`folded`); their controls
+  lead the More menu on the Changes tab (`overlay: 'more'`: Files view ›, Show
+  unversioned files, Agent settings…; `overlay: 'filesView'` opens the
+  submenu, placed by Qt's screen-edge rule with the window for the screen), a
+  shallow unstacked bar keeps More at every width, the agent settings hang from
+  More, and on two rows the sync dropdown is a borderless 64 px miniature
+  (`SyncDropdown/mini`). The Options menu carries Amend last commit alone, as the
+  app's does, and a menu hint gives way where it would touch its label.
   CHANGES is the top section and MESSAGE the bottom one, over the action bar;
   the agent popover hangs under its cog, or stands over it where the frame
   has no room below (`agentPopoverHeight`).
@@ -97,6 +106,9 @@ kind, rect and props, recorded by the builders in `kit.js`) and `out/icons.json`
   `replace-instances.js` on it), re-imported every frame in place keeping the
   layer order (`__omGrid.batch(ids)`) and deleted the old frame once nothing
   used its components (`__omGrid.finish()`).
+- `figma/sync-mini.js` — one-off (2026-09-26): adds the `SyncDropdown/mini`
+  component (the two-row bar's borderless miniature) under `SyncDropdown` on
+  the Components sheet; `replace-instances.js` uses it for `mini` records.
 - `figma/replace-instances.js` — swaps the flat SVG groups in every frame for
   instances of those components, matched by layer name and position from the
   manifest; light-theme frames get their instances rebound to the Light styles.

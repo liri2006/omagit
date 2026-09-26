@@ -61,7 +61,7 @@
       case 'Checkbox': { const inst = comp.Checkbox.defaultVariant.createInstance(); om.setProps(inst, { state: r.disabled ? 'disabled' : r.state, Label: r.label || 'Label', 'Show label': !!r.label }); return inst; }
       case 'RefChip': { const inst = comp.RefChip.defaultVariant.createInstance(); om.setProps(inst, { kind: r.kind, Label: r.label }); return inst; }
       case 'StatusPill': { const inst = comp.StatusPill.defaultVariant.createInstance(); om.setProps(inst, { status: r.status }); return inst; }
-      case 'SyncDropdown': { const inst = comp.SyncDropdown.createInstance(); om.setProps(inst, { Behind: String(r.down), Ahead: String(r.up) }); return inst; }
+      case 'SyncDropdown': { const inst = (r.mini && comp['SyncDropdown/mini'] || comp.SyncDropdown).createInstance(); om.setProps(inst, { Behind: String(r.down), Ahead: String(r.up) }); return inst; }
       case 'SectionLabel': { const inst = comp.SectionLabel.createInstance(); om.setProps(inst, { Label: r.label }); return inst; }
     }
     return null;

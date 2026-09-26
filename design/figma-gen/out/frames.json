@@ -544,5 +544,40 @@
   "page": "Screens · Half & Quarter",
   "w": 340,
   "h": 612
+ },
+ {
+  "file": "79-Extra-narrow-More-menu.svg",
+  "id": "Extra narrow · More menu",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "80-Extra-narrow-Files-view-submenu.svg",
+  "id": "Extra narrow · Files view submenu",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "81-Extra-narrow-Options-menu.svg",
+  "id": "Extra narrow · Options menu",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "82-Extra-narrow-Agent-settings.svg",
+  "id": "Extra narrow · Agent settings",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
+ },
+ {
+  "file": "83-Shallow-More-menu-945x400.svg",
+  "id": "Shallow · More menu 945x400",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 400
  }
 ]

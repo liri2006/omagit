@@ -135,9 +135,10 @@ public:
     // between the page's parts (4, 8, 12 by the height class) and, shallow,
     // the action bar's stacked form at any width. Nothing of it is saved.
     void setWindowClass(WidthClass width, HeightClass height);
-    // The window's narrowest presentation (the top bar on two rows): the
-    // CHANGES and MESSAGE header rows go, their controls moving to the top
-    // bar's More menu (addHeaderOptions()). Nothing of it is saved.
+    // The window's narrowest presentation (the top bar on two rows) and any
+    // shallow window: the CHANGES and MESSAGE header rows go, their controls
+    // moving to the top bar's More menu (addHeaderOptions()). Nothing of it
+    // is saved.
     void setHeaderRowsHidden(bool hidden);
     bool headerRowsHidden() const { return m_headerRowsHidden; }
     // The header rows' controls as entries at the end of `menu`: a Files

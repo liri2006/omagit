@@ -95,6 +95,14 @@ emit(S.screen({ id: 'Extra narrow shallow · 340x493', W: 340, H: 493, page: 'ch
   emit(S.screen({ id: 'New branch · Eighth · Card', ...Q, W: 470, overlay: 'newBranch', newBranch: { name } }), P);
   emit(S.screen({ id: 'New branch · Extra narrow · Card', ...Q, W: 340, overlay: 'newBranch', newBranch: { name } }), P);
 }
+// Folded header rows (2026-09-26): on a two-row bar and in a shallow window the CHANGES and MESSAGE rows
+// give way, their controls lead More (Files view ›, Show unversioned files, Agent settings…); on two rows
+// the sync dropdown is a borderless miniature; the options menu keeps Amend, without the unversioned toggle.
+emit(S.screen({ id: 'Extra narrow · More menu', W: 340, H: 612, page: 'changes', overlay: 'more' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow · Files view submenu', W: 340, H: 612, page: 'changes', overlay: 'filesView' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow · Options menu', W: 340, H: 612, page: 'changes', overlay: 'options' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Extra narrow · Agent settings', W: 340, H: 612, page: 'changes', overlay: 'agent', agent: { agent: 'claude', model: '', effort: '' } }), 'Screens · Narrow');
+emit(S.screen({ id: 'Shallow · More menu 945x400', W: 945, H: 400, page: 'changes', overlay: 'more' }), 'Screens · Half & Quarter');
 fs.writeFileSync(OUT + '/frames.json', JSON.stringify(frames, null, 1));
 fs.writeFileSync(OUT + '/manifest.json', JSON.stringify(manifest));
 console.log(frames.length + ' frames total');

@@ -50,6 +50,9 @@ constexpr int kSyncMenuWidth = 260, kMoreMenuWidth = 240; // screens.js: the Syn
 //   4  folder       tab glyphs   as 2
 //   5  folder       tab glyphs   all four in the more menu
 //   6  folder       tab glyphs   all four in the more menu; the branch elides
+//
+// More stands after the sync buttons from level 2 on, and at every level
+// while the window keeps it there (setMoreKept()).
 struct Fold {
     bool repoLabel;
     bool tabLabels;
@@ -601,6 +604,17 @@ void TopBar::setSyncLabels(bool allowed)
     relayout();
 }
 
+// More joins the right group or leaves it, which moves the width every level
+// needs, and so the level a width comes to and the bar's own size hints.
+void TopBar::setMoreKept(bool kept)
+{
+    if (m_moreKept == kept)
+        return;
+    m_moreKept = kept;
+    invalidateHeight();
+    relayout();
+}
+
 // The window's side margin, which the row keeps and the hairline does not.
 void TopBar::applyMargins()
 {
@@ -720,7 +734,7 @@ int TopBar::rightGroupWidth(int level) const
             continue;
         w += (fold.syncLabels ? m_syncControls.at(i).fullWidth : m_syncControls.at(i).iconWidth) + space(gap::item);
     }
-    if (fold.syncShown < m_syncControls.size())
+    if (fold.syncShown < m_syncControls.size() || m_moreKept)
         w += m_metrics.more + space(gap::item);
     // The gap after the last button gives way to the group gap.
     return w - space(gap::item) + m_metrics.divider + m_metrics.toggles;
@@ -852,7 +866,7 @@ void TopBar::apply(int level, int branchLabelWidth)
             if (!shown)
                 m_foldedSync << c.button;
         }
-        m_more->setVisible(!m_foldedSync.isEmpty());
+        m_more->setVisible(!m_foldedSync.isEmpty() || m_moreKept);
         m_syncDropdown->setVisible(false);
     }
     updateMoreMark();
@@ -907,7 +921,7 @@ void TopBar::place(int level, int branchLabelWidth)
         put(c.button, x, w);
         x += w + space(gap::item);
     }
-    if (!m_foldedSync.isEmpty()) {
+    if (!m_foldedSync.isEmpty() || m_moreKept) {
         put(m_more, x, m_metrics.more);
         x += m_metrics.more + space(gap::item);
     }

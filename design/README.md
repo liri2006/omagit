@@ -273,10 +273,9 @@ The tiling end of the design (the `s` / `xs` levels of `screens.js`).
   Fetch, Merge…, each the button's own click.
 - More also carries Refresh, Open repository…, Clone… and Keybindings after
   the folded sync buttons, on every row.
-- The stacked action bar: the options `…` (Check all / Uncheck all, Show
-  unversioned files, Amend last commit, Generate message / Stop generating,
-  each the page's own path) and Commit across the rest of the row, without
-  the `⏎` (the card's keeps it).
+- The stacked action bar: the options `…` (Amend last commit alone, the
+  checkbox's own path, opening upwards) and Commit across the rest of the
+  row, without the `⏎` (the card's keeps it).
 - While `window/filesView` is unset (and no `--files-view`), the list is
   compact stacked and the table otherwise, never saved.
 - A drop-down of the right group or of the action bar stays inside the

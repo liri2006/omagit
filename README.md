@@ -208,7 +208,9 @@ history with a branch graph, and plugs into the Nautilus context menu as
   controls and the sync dropdown shrinks to a borderless `↓2 ↑1` without its chevron; the
   page's CHANGES and MESSAGE header rows fold away too, and their controls lead the More
   menu on the Changes tab: a **Files view** submenu (Compact list, Tree, Table), Show
-  unversioned files, and Agent settings…, which hangs the agent card from More.
+  unversioned files, and Agent settings…, which hangs the agent card from More. A shallow
+  window (under 560 px tall at the design's text size) folds them the same way at any width,
+  and the top bar keeps More for them even where no sync button is folded into it.
   The diff is unified while stacked, at the line it was on; Ctrl+T still switches there,
   without saving, and the remembered view comes back as the window widens.
 - Looks like an Omarchy system program: the UI follows the shell's control kit (square

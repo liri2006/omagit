@@ -334,9 +334,10 @@ void MainWindow::buildUi()
 
     // ---- The narrowest presentation: the bar on two rows takes the page's
     // header rows in, their controls moving to its More menu, the agent
-    // settings with them (hanging from More, as the menu does).
-    connect(m_topBar, &TopBar::twoRowsChanged, m_commitPage, &CommitPage::setHeaderRowsHidden);
-    m_commitPage->setHeaderRowsHidden(m_topBar->isTwoRows());
+    // settings with them (hanging from More, as the menu does). A shallow
+    // window does the same at any width (applyHeaderRows()).
+    connect(m_topBar, &TopBar::twoRowsChanged, this, &MainWindow::applyHeaderRows);
+    applyHeaderRows();
     connect(m_topBar, &TopBar::fillingMoreMenu, this, [this](QMenu *menu) {
         if (!m_commitPage->headerRowsHidden() || m_mode != CommitMode || railShowing())
             return;
@@ -800,6 +801,7 @@ void MainWindow::updateStacking()
         m_heightClass = heightClass;
         applyDensity();
         m_commitPage->setWindowClass(widthClass, heightClass);
+        applyHeaderRows();
     }
     // On every pass: the narrowest stacked widths, which the width classes do
     // not tell apart from the others, leave the remote chips out of its rows.
@@ -856,6 +858,15 @@ void MainWindow::applyDensity()
     m_topBar->setDensity(m_density);
     m_topBar->setSyncLabels(m_widthClass == WidthClass::Wide);
     m_footer->setDensity(m_density);
+}
+
+// The page's header rows fold away with the bar on two rows and in a shallow
+// window, whatever its width; More then carries their controls, so the
+// ordinary row keeps it even with no sync button folded into it.
+void MainWindow::applyHeaderRows()
+{
+    m_commitPage->setHeaderRowsHidden(m_topBar->isTwoRows() || m_heightClass == HeightClass::Shallow);
+    m_topBar->setMoreKept(m_commitPage->headerRowsHidden());
 }
 
 // The design's width of the left section for the window's width class.

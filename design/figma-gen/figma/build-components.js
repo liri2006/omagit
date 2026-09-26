@@ -9,7 +9,7 @@
   const cpage = om.page('Components'); figma.currentPage = cpage;
   const cframe = cpage.children.find(n => n.name === 'Components' && n.type === 'FRAME');
   const OLD = ['Button/default', 'Button/primary', 'Button/ghost', 'Button/danger', 'Button/icon', 'Button/badge', 'Button/busy', 'Button/mark', 'Button/dropdown',
-    'Chip/branch', 'Chip/repo', 'SyncDropdown', 'SectionLabel', 'Segmented', 'Field', 'Checkbox', 'RefChip', 'StatusPill', 'Badge', 'Icon', 'Segment', 'Button', 'IconButton'];
+    'Chip/branch', 'Chip/repo', 'SyncDropdown', 'SyncDropdown/mini', 'SectionLabel', 'Segmented', 'Field', 'Checkbox', 'RefChip', 'StatusPill', 'Badge', 'Icon', 'Segment', 'Button', 'IconButton'];
   const isTop = n => (n.type === 'COMPONENT_SET' || n.type === 'COMPONENT') && n.parent.type !== 'COMPONENT_SET';
   const old = cframe.findAll(n => isTop(n) && OLD.includes(n.name));
   om.say('old components', old.length);
@@ -206,6 +206,16 @@
   const syncComp = done(sd); cframe.appendChild(syncComp);
   om.child(syncComp, 'Behind').componentPropertyReferences = { characters: syncComp.addComponentProperty('Behind', 'TEXT', '2') };
   om.child(syncComp, 'Ahead').componentPropertyReferences = { characters: syncComp.addComponentProperty('Ahead', 'TEXT', '1') };
+  // its two-row miniature: no chrome, no chevron, [4][↓ 16][2][8][↑ 16][1][4] (screens.js syncDropdown(…, mini))
+  const sm = mkFrame('SyncDropdown/mini', 64, 28);
+  const putMini = (n, x, y) => { sm.appendChild(n); n.x = x; n.y = y; };
+  putMini(icon('down', 16, 'Icon down'), 4, 6);
+  const mBehind = om.textNode('2', 'Body 12/Bold', 'Accent', 1, 'Behind'); putMini(mBehind, 20, 14 - mBehind.height / 2);
+  putMini(icon('up', 16, 'Icon up'), 36, 6);
+  const mAhead = om.textNode('1', 'Body 12/Bold', 'Accent', 1, 'Ahead'); putMini(mAhead, 52, 14 - mAhead.height / 2);
+  const syncMini = figma.createComponentFromNode(sm); cframe.appendChild(syncMini);
+  om.child(syncMini, 'Behind').componentPropertyReferences = { characters: syncMini.addComponentProperty('Behind', 'TEXT', '2') };
+  om.child(syncMini, 'Ahead').componentPropertyReferences = { characters: syncMini.addComponentProperty('Ahead', 'TEXT', '1') };
 
   // ---- SectionLabel
   const sl = hbox('SectionLabel', { h: 16, px: 0, gap: 0 }); // a 16 px text line, the caption centred
@@ -219,7 +229,7 @@
   const oldCaptions = captions.children.filter(n => !isPatternCaption(n));
   const dimText = cframe.findOne(n => n.name === 'DimText' && n.type === 'COMPONENT');
   const rows = [
-    ['Button · variant × state · props: Label, Icon, Show icon / label / chevron / badge / mark · Chip/branch · Chip/repo · Badge · SyncDropdown · IconButton (variant ghost / default, state, size 24 / 28, Icon)', [buttonSet, chipBranch, chipRepo, badgeComp, syncComp, iconButtonSet]],
+    ['Button · variant × state · props: Label, Icon, Show icon / label / chevron / badge / mark · Chip/branch · Chip/repo · Badge · SyncDropdown (+ /mini) · IconButton (variant ghost / default, state, size 24 / 28, Icon)', [buttonSet, chipBranch, chipRepo, badgeComp, syncComp, syncMini, iconButtonSet]],
     ['Icon · Material Design Icons, 16 px box with the glyph at 14 (7/8), glyph scales with the instance', [iconSet]],
     ['Segment (state) · Segmented (mode hug / stretch, Show segment 3) · Field (state, Value, Placeholder, Icon, Caret, Trailing icon)', [segmentSet, segmentedSet, fieldSet]],
     ['Checkbox (state, Label) · RefChip (kind, Label) · StatusPill (status) · SectionLabel (Label) · DimText', [checkboxSet, refSet, pillSet, sectionComp, dimText].filter(Boolean)],
