@@ -288,21 +288,24 @@ public:
 
     // --- History ------------------------------------------------------------
 
-    // `count` commits starting `skip` commits after the tip, parents never before
-    // their children (--date-order). ok is false if git failed (e.g. no commits).
-    QList<Commit> log(int skip, int count, bool allRefs, bool *ok = nullptr) const;
-    // The commits log() walks from, as the refs stand now: HEAD's, and with
-    // `allRefs` every ref's (tags peeled to their commits, refs to anything
-    // else left out), in a stable order. Empty without commits; ok is false
+    // `count` commits of the history walked from the revisions `startPoints`
+    // and nothing else, starting `skip` commits in, parents never before
+    // their children (--date-order). Commit IDs, as logStartPoints() gives
+    // them, are the same walk however the refs move meanwhile, so a later
+    // page skips exactly the commits an earlier one read; a symbolic
+    // revision (HEAD) is resolved again on every call. No start point is an
+    // empty history, and no git; ok is false where git failed.
+    QList<Commit> log(const QStringList &startPoints, int skip, int count, bool *ok = nullptr) const;
+    // The commits the history is walked from, as the refs stand now: HEAD's,
+    // and with `allRefs` every ref's (tags peeled to their commits, refs to
+    // anything else left out), in a stable order: `git log` of HEAD, or of
+    // --all, walks the same history. Empty without commits; ok is false
     // where git failed.
     QStringList logStartPoints(bool allRefs, bool *ok = nullptr) const;
-    // The history log() pages through, walked from `startPoints`
-    // (logStartPoints()) and nothing else, without blocking, from `skip`
-    // commits in on: however the refs move meanwhile, the same start points
-    // are the same walk, so a later call skips exactly the commits an earlier
-    // one printed. `batch` gets the commits as git prints them, in log()'s
-    // order, and `done(ok)` follows once git has exited (ok false where git
-    // failed or was killed after the timeout). No start point is an empty
+    // log()'s walk without blocking, from `skip` commits in on, to its end:
+    // `batch` gets the commits as git prints them, in log()'s order, and
+    // `done(ok)` follows once git has exited (ok false where git failed or
+    // was killed after the timeout). No start point is an empty
     // history: `done(true)` from the event loop, and no process. Neither is
     // called once `context` is gone. The process is runAsync()'s kind; a
     // caller that loses interest disconnects from it and kills it
@@ -359,8 +362,9 @@ private:
     // where there is any, is git's stdin, closed after it.
     QProcess *startAsync(const QStringList &args, int timeoutMs, const QStringList &env,
                          const std::function<void(QProcess *)> &listen, const QByteArray &input = QByteArray());
+    // `input`, where there is any, is git's stdin, closed after it.
     GitResult exec(const QStringList &args, int timeoutMs = kQueryTimeoutMs,
-                   const QStringList &env = QStringList()) const;
+                   const QStringList &env = QStringList(), const QByteArray &input = QByteArray()) const;
     // Hands git's own words to the caller: `error` gets stderr, or `fallback`
     // when git said nothing. Returns whether the command succeeded.
     static bool report(const GitResult &r, QString *error, const QString &fallback = QString());

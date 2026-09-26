@@ -37,6 +37,10 @@ public:
     explicit MainWindow(GitRepo *repo, QWidget *parent = nullptr);
     ~MainWindow() override;
 
+    // Stacks (or not) for the width the window is about to be shown at, so
+    // that the minimum its layout sets on the way is the presentation's.
+    void setVisible(bool visible) override;
+
     void setMode(Mode mode);
     Mode mode() const { return m_mode; }
     // Docked: the left section next to the diff pane. Mini: a file rail instead

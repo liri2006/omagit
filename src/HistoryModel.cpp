@@ -66,8 +66,13 @@ void HistoryModel::readLog()
     m_exhausted = false;
     m_failed = false;
     m_logStale = false;
+    // The walk's start points, read here once for this read and every
+    // loadMore() after it: a ref that moves in between (a commit or a fetch
+    // no reload has noticed yet) must not shift the commits the next batch
+    // skips. The next reload reads them again.
     bool ok = false;
-    const QList<Commit> commits = m_repo->log(0, wanted, m_allRefs, &ok);
+    m_logScope = m_repo->logStartPoints(m_allRefs, &ok);
+    const QList<Commit> commits = ok ? m_repo->log(m_logScope, 0, wanted, &ok) : QList<Commit>();
     m_failed = !ok;
     for (const Commit &c : commits) {
         m_commits.append(c);
@@ -96,7 +101,7 @@ bool HistoryModel::loadMore()
     if (m_commits.size() >= m_batch)
         askForCommitGraph();
     bool ok = false;
-    const QList<Commit> commits = m_repo->log(m_commits.size(), m_batch, m_allRefs, &ok);
+    const QList<Commit> commits = m_repo->log(m_logScope, m_commits.size(), m_batch, &ok);
     if (!ok) {
         m_failed = true;
         return false;

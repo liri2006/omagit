@@ -207,10 +207,12 @@ DiffPane::DiffPane(QWidget *parent)
         saveOption(settings::kDiffSyntaxHighlighting, on);
     });
     // However the view changes (the menus, Ctrl+T, the view's own context
-    // menu), the dropdown says so and the choice is kept.
+    // menu), the dropdown says so and the choice is kept — but for the
+    // stacked window's own, see setStacked().
     connect(m_diff, &DiffView::modeChanged, this, [this](DiffView::Mode mode) {
         updateViewButton();
-        saveOption(settings::kDiffTwoPane, mode == DiffView::TwoPane);
+        if (!m_stacked)
+            saveOption(settings::kDiffTwoPane, mode == DiffView::TwoPane);
     });
     connect(m_diff, &DiffView::changeIndexChanged, this, [this](int index, int total) {
         m_prevButton->setEnabled(total > 0 && index > 0);
@@ -231,6 +233,22 @@ void DiffPane::applyTheme()
     m_syntaxButton->setText(icon(kCodeTags, QStringLiteral("<>")).trimmed());
     // The thresholds, the gaps and the 28 px square all follow the text size.
     applyForm();
+}
+
+void DiffPane::setStacked(bool on)
+{
+    if (on == m_stacked)
+        return;
+    if (on) {
+        m_wideTwoPane = m_diff->mode() == DiffView::TwoPane;
+        m_stacked = true;
+    }
+    // The window crossed a width, nothing more: the diff stays where the user
+    // reads. Stacked until the switch is over either way, so it saves
+    // nothing: written back on the way out, the restored view would clobber
+    // what another window saved meanwhile.
+    m_diff->setModeKeepingTopLine(!on && m_wideTwoPane ? DiffView::TwoPane : DiffView::OnePane);
+    m_stacked = on;
 }
 
 void DiffPane::resizeEvent(QResizeEvent *event)

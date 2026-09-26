@@ -770,10 +770,6 @@ WindowFixture mainWindow(int extra = 0, bool mini = false,
         || !git(path, {"config", "commit.gpgsign", "false"}))
         return f;
     f.repo.reset(new GitRepo(path));
-    // GitRepo looks git up once per process, on its first run: that run has
-    // the PATH everyone has, not the git-only one below, which goes with
-    // this fixture.
-    f.repo->hasHead();
     const QByteArray env = qgetenv("PATH");
     qputenv("PATH", f.tools->path().toUtf8());
     f.window.reset(new MainWindow(f.repo.get()));
@@ -1331,6 +1327,47 @@ PaneFixture diffPane()
     f.pane->resize(ui::space(1000), 400);
     f.pane->show();
     return f;
+}
+
+// A long diff with one change: 40 lines of context, 40 lines replaced by 40
+// others, 40 more of context. Each line is one word over and over ("keep07",
+// "gone12", "new12"), so a double-click anywhere on it selects the word that
+// names it.
+DiffDocument replacementDiff()
+{
+    QString text = QStringLiteral("@@ -1,120 +1,120 @@\n");
+    const auto add = [&text](QChar tag, const QString &kind, int from, int to) {
+        for (int i = from; i < to; ++i) {
+            const QString word = kind + QStringLiteral("%1").arg(i, 2, 10, QLatin1Char('0'));
+            text += tag + (word + QLatin1Char(' ')).repeated(20).trimmed() + QLatin1Char('\n');
+        }
+    };
+    add(QLatin1Char(' '), QStringLiteral("keep"), 0, 40);
+    add(QLatin1Char('-'), QStringLiteral("gone"), 0, 40);
+    add(QLatin1Char('+'), QStringLiteral("new"), 0, 40);
+    add(QLatin1Char(' '), QStringLiteral("keep"), 40, 80);
+    return DiffModel::parse(text);
+}
+
+// The document line that is `word` over and over, -1 with none.
+int diffLineOf(const DiffDocument &doc, const QString &word)
+{
+    for (int i = 0; i < doc.lines.size(); ++i)
+        if (doc.lines.at(i).text.startsWith(word + QLatin1Char(' ')))
+            return i;
+    return -1;
+}
+
+// A DiffView on its own showing replacementDiff() unified, taller than it
+// shows at once.
+std::unique_ptr<DiffView> replacementView(const DiffDocument &doc)
+{
+    auto view = std::make_unique<DiffView>();
+    view->setDocument(doc, QStringLiteral("x.txt"), QString(), QStringLiteral("HEAD"), QStringLiteral("Working tree"));
+    view->setMode(DiffView::OnePane);
+    view->resize(ui::space(600), 400);
+    view->show();
+    return view;
 }
 
 // The row's buttons on screen, each no narrower than what it wears asks. A
@@ -1988,7 +2025,7 @@ esac
         // The matches of one search without pages, in git's order.
         const auto unpaged = [&repo](const QString &text) {
             QStringList out;
-            for (const Commit &c : repo.log(0, 100000, false))
+            for (const Commit &c : repo.log(repo.logStartPoints(false), 0, 100000))
                 if (commitMatches(c, text))
                     out << c.hash;
             return out;
@@ -2222,7 +2259,7 @@ esac
         };
         const auto unpaged = [&repo](bool allRefs) {
             QStringList out;
-            for (const Commit &c : repo.log(0, 100000, allRefs))
+            for (const Commit &c : repo.log(repo.logStartPoints(allRefs), 0, 100000))
                 if (commitMatches(c, QStringLiteral("hit")))
                     out << c.hash;
             return out;
@@ -2273,6 +2310,99 @@ esac
             QCOMPARE(model.rowCount(), 0);
         }
         QVERIFY(repo.findChildren<QProcess *>().isEmpty());
+    }
+
+    // The loaded commits' batches, the same way: a commit on HEAD, HEAD
+    // moved back, or with All branches a new branch, that comes between two
+    // batches before any reload has seen it neither shows up in the later
+    // batches nor shifts them — none twice, none missing. The next reload
+    // reads the refs as they are. Without a commit, nothing is loaded and
+    // nothing failed.
+    void everyBatchOfTheLogWalksTheSameHistory()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QList<ImportedCommit> imported;
+        for (int i = 1; i <= 12; ++i)
+            imported.append({QStringLiteral("commit %1").arg(i)});
+        QVERIFY(importHistory(dir.path(), imported));
+        GitRepo repo(dir.path());
+        const auto hashes = [](const HistoryModel &model) {
+            QStringList out;
+            for (int row = 0; row < model.rowCount(); ++row)
+                out << model.commit(row).hash;
+            return out;
+        };
+        const auto whole = [&repo](bool allRefs) {
+            QStringList out;
+            for (const Commit &c : repo.log(repo.logStartPoints(allRefs), 0, 100000))
+                out << c.hash;
+            return out;
+        };
+        const auto readToTheEnd = [](HistoryModel &model) {
+            for (int batches = 0; !model.exhausted() && batches < 50; ++batches)
+                model.loadMore();
+            QVERIFY(model.exhausted() && !model.failed());
+        };
+
+        // HEAD moves on by a commit, the newest of all.
+        {
+            HistoryModel model(&repo);
+            QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+            model.setBatchSize(4);
+            model.reload();
+            const QStringList onHead = whole(false);
+            QCOMPARE(onHead.size(), 12);
+            QCOMPARE(hashes(model), onHead.first(4));
+            QVERIFY(commit(dir.path(), QStringLiteral("on top"), 0));
+            readToTheEnd(model);
+            QCOMPARE(hashes(model), onHead);
+            QCOMPARE(model.laneCount(), 1);
+            QVERIFY(model.reload());
+            QCOMPARE(model.commit(0).subject, QStringLiteral("on top"));
+
+            // HEAD back by two, with the oldest commit still to load.
+            QCOMPARE(model.rowCount(), 12);
+            QVERIFY(!model.exhausted());
+            const QStringList before = whole(false);
+            QCOMPARE(before.size(), 13);
+            QVERIFY(git(dir.path(), {"reset", "-q", "--soft", "HEAD~2"}));
+            readToTheEnd(model);
+            QCOMPARE(hashes(model), before);
+        }
+
+        // All branches: a new branch off the middle of main.
+        {
+            HistoryModel model(&repo);
+            QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+            model.setBatchSize(4);
+            model.setAllRefs(true);
+            const QStringList everywhere = whole(true);
+            QCOMPARE(everywhere.size(), 11); // main, two back
+            QCOMPARE(hashes(model), everywhere.first(4));
+            QVERIFY(git(dir.path(), {"branch", "side", "main~6"}));
+            QVERIFY(git(dir.path(), {"checkout", "-q", "side"}));
+            QVERIFY(commit(dir.path(), QStringLiteral("on the side"), 0));
+            QVERIFY(git(dir.path(), {"checkout", "-q", "main"}));
+            readToTheEnd(model);
+            QCOMPARE(hashes(model), everywhere);
+            QVERIFY(model.reload());
+            QCOMPARE(model.commit(0).subject, QStringLiteral("on the side"));
+        }
+
+        // No commit yet: nothing to load, and nothing failed.
+        QTemporaryDir empty;
+        QVERIFY(empty.isValid());
+        QVERIFY(git(empty.path(), {"init", "-q", "-b", "main"}));
+        repo.setRoot(empty.path());
+        HistoryModel model(&repo);
+        model.reload();
+        for (const bool all : {false, true}) {
+            model.setAllRefs(all);
+            QCOMPARE(model.rowCount(), 0);
+            QVERIFY(model.exhausted() && !model.failed());
+            QVERIFY(!model.loadMore());
+        }
     }
 
     // --- ChangesModel -------------------------------------------------------
@@ -3620,6 +3750,62 @@ esac
         QSettings().setValue(settings::kWindowLayout, QStringLiteral("docked"));
     }
 
+    // Stacked, the diff is unified, as the design's Diff tab shows it, from
+    // the first frame of a window shown narrow. The saved split or unified
+    // choice is the wide window's and comes back as it widens, neither switch
+    // writing it; Ctrl+T while stacked switches for as long as that lasts and
+    // saves nothing.
+    void theStackedDiffIsUnified()
+    {
+        const QSize narrow(627, 612);
+        QVERIFY(narrow.width() < ui::space(700));
+        QSettings().setValue(settings::kDiffTwoPane, true);
+        WindowFixture f = mainWindow(0, true, [narrow](MainWindow *w) { w->resize(narrow); });
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        auto *pane = f.window->findChild<DiffPane *>();
+        DiffView *view = pane->view();
+        QVERIFY(f.window->isStacked());
+        QCOMPARE(f.bar()->currentTab(), TopBar::Tab::Diff);
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        QVERIFY(QSettings().value(settings::kDiffTwoPane).toBool());
+
+        // Widening writes nothing either: the window goes back to the split
+        // it had, and the unified view another window saved meanwhile stays.
+        QSettings().setValue(settings::kDiffTwoPane, false);
+        unstack(f);
+        QCOMPARE(view->mode(), DiffView::TwoPane);
+        QVERIFY(!QSettings().value(settings::kDiffTwoPane).toBool());
+        QSettings().setValue(settings::kDiffTwoPane, true);
+        stack(f);
+        QCOMPARE(view->mode(), DiffView::OnePane);
+
+        pane->togglePaneMode(); // Ctrl+T
+        QCOMPARE(view->mode(), DiffView::TwoPane);
+        pane->togglePaneMode();
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        pane->togglePaneMode();
+        QVERIFY(QSettings().value(settings::kDiffTwoPane).toBool());
+        unstack(f);
+        QCOMPARE(view->mode(), DiffView::TwoPane);
+        stack(f);
+        QCOMPARE(view->mode(), DiffView::OnePane); // the split of the last stacked spell is gone
+
+        // The wide window's choice is saved as ever, and is the one it widens to.
+        unstack(f);
+        pane->togglePaneMode();
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        QVERIFY(!QSettings().value(settings::kDiffTwoPane).toBool());
+        stack(f);
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        pane->togglePaneMode();
+        QCOMPARE(view->mode(), DiffView::TwoPane);
+        unstack(f);
+        QCOMPARE(view->mode(), DiffView::OnePane);
+        QVERIFY(!QSettings().value(settings::kDiffTwoPane).toBool());
+        QSettings().remove(settings::kDiffTwoPane);
+    }
+
     // The tabs, Ctrl+1 / Ctrl+2 and the two layout keys move between the
     // presentations; only a real change of mode reads anything again.
     void theStackedTabsAndKeysMoveBetweenPresentations()
@@ -4077,6 +4263,89 @@ esac
         QCOMPARE(view->mode(), before);
     }
 
+    // The window's own switch keeps the line at the top, an added line that
+    // the split row pairs with a removed one too: unified, split and unified
+    // again comes back to it, not to the removed line. Scrolled to another
+    // row, the split view's top row is its left line again.
+    void theStackingSwitchKeepsTheTopLine()
+    {
+        const DiffDocument doc = replacementDiff();
+        std::unique_ptr<DiffView> view = replacementView(doc);
+        QVERIFY(QTest::qWaitForWindowExposed(view.get()));
+        settle();
+        QScrollBar *bar = view->verticalScrollBar();
+        // Unified, every line is a row of its own; split, "new20" shares
+        // "gone20"'s row, which no filler above it moves.
+        const int removed = diffLineOf(doc, QStringLiteral("gone20")), added = diffLineOf(doc, QStringLiteral("new20"));
+        bar->setValue(added);
+        QCOMPARE(bar->value(), added);
+        QCOMPARE(view->topLine(), added);
+
+        view->setModeKeepingTopLine(DiffView::TwoPane);
+        QCOMPARE(bar->value(), removed);
+        QCOMPARE(view->topLine(), added);
+        view->setModeKeepingTopLine(DiffView::OnePane);
+        QCOMPARE(bar->value(), added);
+        QCOMPARE(view->topLine(), added);
+
+        view->setModeKeepingTopLine(DiffView::TwoPane);
+        bar->setValue(removed + 1);
+        QCOMPARE(view->topLine(), removed + 1);
+        view->setModeKeepingTopLine(DiffView::OnePane);
+        QCOMPARE(bar->value(), removed + 1);
+    }
+
+    // The same switch keeps a selection wherever the other view shows the
+    // same text: a word of context or of an added line, both ways. One from
+    // a removed line to an added one, which no single pane shows, is
+    // cleared, and so is the left pane's over context and removed lines,
+    // which unified takes the added lines into.
+    void theStackingSwitchKeepsASelectionWhereItCan()
+    {
+        const DiffDocument doc = replacementDiff();
+        std::unique_ptr<DiffView> view = replacementView(doc);
+        QVERIFY(QTest::qWaitForWindowExposed(view.get()));
+        settle();
+        QScrollBar *bar = view->verticalScrollBar();
+        QWidget *viewport = view->viewport();
+        // What Ctrl+C copies: "-" with nothing selected.
+        const auto selection = [&view] {
+            QApplication::clipboard()->setText(QStringLiteral("-"));
+            view->copySelection();
+            return QApplication::clipboard()->text();
+        };
+        const QPoint middle = viewport->rect().center();
+        for (const QString &kind : {QStringLiteral("keep"), QStringLiteral("new")}) {
+            bar->setValue(diffLineOf(doc, kind + QStringLiteral("10"))); // a page of that kind from here on
+            QTest::mouseDClick(viewport, Qt::LeftButton, {}, middle);
+            const QString word = selection();
+            QVERIFY2(word.startsWith(kind) && word.size() == kind.size() + 2, qPrintable(word));
+            view->setModeKeepingTopLine(DiffView::TwoPane);
+            QCOMPARE(selection(), word);
+            view->setModeKeepingTopLine(DiffView::OnePane);
+            QCOMPARE(selection(), word);
+        }
+
+        // Unified, a drag from the removed lines down into the added ones.
+        bar->setValue(diffLineOf(doc, QStringLiteral("new00")) - bar->pageStep() / 2);
+        const QPoint from(middle.x(), viewport->height() / 5), to(middle.x(), viewport->height() * 4 / 5);
+        QTest::mousePress(viewport, Qt::LeftButton, {}, from);
+        QTest::mouseMove(viewport, to);
+        QTest::mouseRelease(viewport, Qt::LeftButton, {}, to);
+        const QString across = selection();
+        QVERIFY2(across.contains(QStringLiteral("gone")) && across.contains(QStringLiteral("\nnew"))
+                     && !across.contains(QStringLiteral("keep")),
+                 qPrintable(across));
+        view->setModeKeepingTopLine(DiffView::TwoPane);
+        QCOMPARE(selection(), QStringLiteral("-"));
+
+        view->selectAll(); // the left pane's
+        const QString left = selection();
+        QVERIFY(left.contains(QStringLiteral("gone")) && !left.contains(QStringLiteral("new")));
+        view->setModeKeepingTopLine(DiffView::OnePane);
+        QCOMPARE(selection(), QStringLiteral("-"));
+    }
+
     // The header's dim text at its right, the one-pane subtitle or a side's
     // label, stays while the whole path, a group gap and it fit the header's
     // text room (the view less 8 at either side), and is dropped otherwise:
@@ -4475,10 +4744,8 @@ esac
                 MainWindow *w = f.window.get();
                 TopBar *bar = f.bar();
                 QVERIFY(w->isStacked());
-                // Shown before it knows it is stacked, the window may have
-                // grown to the ordinary bar's minimum: the tile again.
-                w->resize(340, 612);
-                settle();
+                // Stacked before it was shown: never held to the unstacked
+                // bar's minimum on the way.
                 QCOMPARE(w->width(), 340);
                 QCOMPARE(bar->foldLevel(), 2);
                 const auto rectOf = [bar](const QWidget *c) { return QRect(c->mapTo(bar, QPoint(0, 0)), c->size()); };
@@ -5814,7 +6081,7 @@ esac
 
         // The pages after it.
         QStringList unpaged;
-        for (const Commit &c : repo.log(0, 1000, false))
+        for (const Commit &c : repo.log(repo.logStartPoints(false), 0, 1000))
             if (commitMatches(c, QStringLiteral("hit")))
                 unpaged << c.hash;
         QCOMPARE(unpaged.size(), 60);
@@ -6044,7 +6311,7 @@ esac
             imported.append({QStringLiteral("hit %1").arg(i)});
         QVERIFY(importHistory(dir.path(), imported));
         GitRepo repo(dir.path());
-        const QString oldest = repo.log(0, 100, false).last().hash;
+        const QString oldest = repo.log(repo.logStartPoints(false), 0, 100).last().hash;
         const QString object = QDir(dir.path()).filePath(QStringLiteral(".git/objects/%1/%2").arg(oldest.left(2), oldest.mid(2)));
         const QString hidden = QDir(aside.path()).filePath(QStringLiteral("object"));
         QVERIFY(QFileInfo(object).isFile());
@@ -6785,16 +7052,22 @@ esac
         at.row = 120;
         at.block = 1;
         f.diff()->restoreViewState(at);
+        QCOMPARE(f.diff()->viewState().row, 120);
+        // The working tree's long.txt, every third line changed: the split
+        // view's row 120 is a later line. (The commit's adds it whole.)
+        if (!inHistory)
+            QVERIFY(f.diff()->topLine() > 120);
+        // The place in the diff by its top line: stacked, the diff is
+        // unified, where the rows are others.
         const auto state = [&] {
             const DiffView::ViewState d = f.diff()->viewState();
             QStringList out{currentPath(), QString::number(list->verticalScrollBar()->value()),
-                            QStringLiteral("%1,%2,%3").arg(d.row).arg(d.column).arg(d.block)};
+                            QStringLiteral("%1,%2,%3").arg(f.diff()->topLine()).arg(d.column).arg(d.block)};
             if (inHistory)
                 out << currentHash() << QString::number(commits->verticalScrollBar()->value());
             return out;
         };
         const QStringList start = state();
-        QVERIFY(start.at(2).startsWith(QLatin1String("120,")));
         QCOMPARE(start.at(1), inHistory ? QStringLiteral("2") : QStringLiteral("3"));
         if (inHistory)
             QCOMPARE(start.at(4), QStringLiteral("2"));
@@ -6815,6 +7088,7 @@ esac
         QCOMPARE(state(), start);
         unstack(f);
         QCOMPARE(state(), start);
+        QCOMPARE(f.diff()->viewState().row, 120);
         QCOMPARE(listResets.count(), 0);
         QCOMPARE(railResets.count(), 0);
         if (commitResets)

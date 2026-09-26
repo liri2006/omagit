@@ -358,6 +358,7 @@ void DiffView::setDocument(const DiffDocument &doc, const QString &title, const 
     m_rightLabel = rightLabel;
     m_emptyMessage.clear();
     m_currentBlock = -1;
+    m_keptLine = -1;
     m_selAnchor = m_selCursor = Pos();
 
     // One tokeniser pass per document, never in the paint path.
@@ -394,6 +395,68 @@ void DiffView::restoreViewState(const ViewState &state)
     emit changeIndexChanged(m_currentBlock, m_blockStarts.size());
 }
 
+int DiffView::topLine() const
+{
+    const int row = verticalScrollBar()->value();
+    // The line a switch put at the top while it is there, whichever of the
+    // row's two it is: back the other way, the switch finds the same line.
+    if (m_keptLine >= 0 && row == m_keptRow)
+        return m_keptLine;
+    // A two-pane row's line is the left one's, or the right one's across a filler.
+    for (const QVector<int> &pane : m_panes)
+        if (row < pane.size() && pane.at(row) >= 0)
+            return pane.at(row);
+    return -1;
+}
+
+void DiffView::setModeKeepingTopLine(Mode mode)
+{
+    if (mode == m_mode)
+        return;
+    const int line = topLine();
+    // The selection by the lines at its ends, which both modes show; an end
+    // on a filler row has none.
+    const bool selected = hasSelection();
+    const QString text = selectedText();
+    const Pos anchor = m_selAnchor, cursor = m_selCursor;
+    const int anchorLine = lineAt(anchor.pane, anchor.row), cursorLine = lineAt(cursor.pane, cursor.row);
+    setMode(mode);
+
+    // Kept in the first pane that shows both ends and selects the very same
+    // text between them: a unified range over removed and added lines has no
+    // split equal, and a left-pane one over context and removed lines would
+    // take in the added lines unified. Cleared otherwise, as setMode() leaves it.
+    if (selected && anchorLine >= 0 && cursorLine >= 0) {
+        for (int pane = 0; pane < paneCount(); ++pane) {
+            const int anchorRow = m_panes[pane].indexOf(anchorLine), cursorRow = m_panes[pane].indexOf(cursorLine);
+            if (anchorRow < 0 || cursorRow < 0)
+                continue;
+            m_selAnchor = {pane, anchorRow, anchor.col};
+            m_selCursor = {pane, cursorRow, cursor.col};
+            if (selectedText() == text)
+                break;
+            m_selAnchor = m_selCursor = Pos();
+        }
+    }
+    viewport()->update();
+
+    if (line < 0)
+        return;
+    // A line sits on one row of either pane, or on the same row of both. It
+    // is kept only where the bar's range lets that row be the top.
+    for (const QVector<int> &pane : m_panes) {
+        const int row = pane.indexOf(line);
+        if (row >= 0) {
+            verticalScrollBar()->setValue(row);
+            if (verticalScrollBar()->value() == row) {
+                m_keptLine = line;
+                m_keptRow = row;
+            }
+            return;
+        }
+    }
+}
+
 void DiffView::clear(const QString &message)
 {
     m_doc = DiffDocument();
@@ -402,6 +465,7 @@ void DiffView::clear(const QString &message)
     m_subtitle.clear();
     m_emptyMessage = message;
     m_currentBlock = -1;
+    m_keptLine = -1;
     m_selAnchor = m_selCursor = Pos();
     rebuildLayout();
     updateScrollBars();
@@ -415,6 +479,7 @@ void DiffView::setMode(Mode mode)
         return;
     m_mode = mode;
     m_resizingPanes = m_dragging = false;
+    m_keptLine = -1; // the rows are others now
     updateCursor(QPoint(-1, -1)); // no pointer to speak of: back to text
     // Keep the current change in view across the switch.
     const int block = m_currentBlock;

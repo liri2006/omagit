@@ -270,13 +270,15 @@ static void testStatusAndHistory(const QString &base)
 
     GitRepo repo(dir);
     bool ok = false;
-    const QList<Commit> log = repo.log(0, 100, false, &ok);
+    const QStringList head = repo.logStartPoints(false, &ok);
+    CHECK(ok && head.size() == 1);
+    const QList<Commit> log = repo.log(head, 0, 100, &ok);
     CHECK(ok);
     CHECK(log.size() == 5);
     CHECK(log.first().subject == "rename readme");
     CHECK(log[1].parents.size() == 2);
     CHECK(log.last().parents.isEmpty());
-    CHECK(repo.log(3, 100, false).size() == 2);
+    CHECK(repo.log(head, 3, 100).size() == 2);
     const auto refs = repo.refs();
     CHECK(refs.value(log.first().hash).size() == 1 && refs.value(log.first().hash).first().name == "main");
     CHECK(refs.value(log.first().hash).first().head);
@@ -428,6 +430,9 @@ static void testLogStream(const QString &base)
             bool ok = false;
             CHECK(repo.logStartPoints(allRefs, &ok).isEmpty() && ok);
         }
+        // git log of HEAD would fail here: no git ran.
+        bool ok = false;
+        CHECK(repo.log({}, 0, 100, &ok).isEmpty() && ok);
         QEventLoop loop;
         QObject context;
         int batches = 0;
@@ -459,7 +464,8 @@ static void testLogStream(const QString &base)
         int batches = 0;
         CHECK(streamLog(repo, allRefs, &commits, &batches));
         CHECK(batches >= 1);
-        const QList<Commit> paged = repo.log(0, 1000, allRefs);
+        const QStringList startPoints = repo.logStartPoints(allRefs);
+        const QList<Commit> paged = repo.log(startPoints, 0, 1000);
         CHECK(commits.size() == (allRefs ? 41 : 40) && commits.size() == paged.size());
         for (int i = 0; i < qMin(commits.size(), paged.size()); ++i)
             CHECK(commits[i].hash == paged[i].hash && commits[i].body == paged[i].body);
@@ -467,7 +473,7 @@ static void testLogStream(const QString &base)
 
         QList<Commit> rest;
         CHECK(streamLog(repo, allRefs, &rest, &batches, 12));
-        const QList<Commit> tail = repo.log(12, 1000, allRefs);
+        const QList<Commit> tail = repo.log(startPoints, 12, 1000);
         CHECK(rest.size() == commits.size() - 12 && rest.size() == tail.size());
         for (int i = 0; i < qMin(rest.size(), tail.size()) && 12 + i < commits.size(); ++i)
             CHECK(rest[i].hash == tail[i].hash && rest[i].hash == commits[12 + i].hash);
@@ -504,10 +510,16 @@ static void testLogStartPoints(const QString &base)
     QList<Commit> commits;
     int batches = 0;
     CHECK(streamLog(repo, true, &commits, &batches));
-    const QList<Commit> logged = repo.log(0, 1000, true);
+    // git's own walk of every ref, as `git log --all` prints it.
+    const QStringList logged = QString::fromUtf8(git(dir, {"log", "--date-order", "--format=%H", "--all"}))
+                                   .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     CHECK(commits.size() == 5 && commits.size() == logged.size());
     for (int i = 0; i < qMin(commits.size(), logged.size()); ++i)
-        CHECK(commits[i].hash == logged[i].hash);
+        CHECK(commits[i].hash == logged[i]);
+    const QList<Commit> paged = repo.log(all, 0, 1000);
+    CHECK(paged.size() == 5);
+    for (int i = 0; i < qMin(paged.size(), logged.size()); ++i)
+        CHECK(paged[i].hash == logged[i]);
 }
 
 // Runs one RemoteSync operation to completion and returns whether it succeeded.

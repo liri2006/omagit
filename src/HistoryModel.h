@@ -58,7 +58,8 @@ public:
     // batch of matches at most, though: a `keep` that is gone (amended,
     // rebased, its branch deleted) ends the page there, with more to load.
     bool reload(bool force = false, const QString &keep = QString(), int rows = 0); // force: even if no ref moved
-    // Appends the next batch: the log's next commits, or, filtering, starts
+    // Appends the next batch: the log's next commits, of the history the
+    // last read walked (however the refs moved since), or, filtering, starts
     // the search's next page where there is one (moreMatches()) and none is
     // running. Returns whether it loaded (started) anything: false when the
     // history is exhausted. A second batch of either list has git write its
@@ -147,6 +148,7 @@ private:
     bool m_exhausted = false;
     bool m_failed = false;
     bool m_logStale = false; // a ref moved while filtering: m_commits is read again on the way back
+    QStringList m_logScope; // the commits m_commits' walk starts from, fixed by readLog(): every batch walks the same history
     bool m_commitGraphAsked = false; // ensureCommitGraph() asked for this repository already
     int m_batch = 500;
 

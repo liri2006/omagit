@@ -132,8 +132,10 @@ history with a branch graph, and plugs into the Nautilus context menu as
   with a lane graph, branch/remote/tag chips, author, date and SHA; the filter (Ctrl+S)
   searches the whole history by message, author, e-mail or SHA, the matches showing as git
   finds them. Commits load 500 at a time as you scroll, and so do the filter's matches;
-  loading a second page of either writes git's commit-graph file if the repository has none
-  (as `git gc` does), which keeps the later pages fast. Selecting a commit shows its details
+  every page walks the history as it stood at the last refresh, so a commit or a fetch in
+  between neither repeats nor skips a commit. Loading a second page of either writes git's
+  commit-graph file if the repository has none (as `git gc` does), which keeps the later
+  pages fast. Selecting a commit shows its details
   and the files it touched; selecting a file shows the diff against the parent in the same
   diff pane. Right-click a commit to copy its SHA or message.
 - **Top bar**: one row above the whole window, in every layout — the repository and the
@@ -202,6 +204,8 @@ history with a branch graph, and plugs into the Nautilus context menu as
   (Check all / Uncheck all, Show unversioned files, Amend last commit, Generate message or
   Stop generating) and Commit across the rest of the row. While nobody has picked a files
   view, the list is compact when stacked and the table otherwise, without saving either.
+  The diff is unified while stacked, at the line it was on; Ctrl+T still switches there,
+  without saving, and the remembered view comes back as the window widens.
 - Looks like an Omarchy system program: the UI follows the shell's control kit (square
   corners, one flat background, 1px hairline borders and foreground-alpha fills for
   normal/hover/selected states, accent-coloured selection, Nerd Font glyph icons, the shell's
@@ -332,8 +336,10 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
   restored narrow Mini geometry, tabs and keys and double-clicks moving between the
   presentations without reloading, the commit and agent cards on the Diff tab, the
   screenshot slots and their guards, the folded action bar and its options menu, the
-  width-driven files-view default, selection, scroll and diff position kept across every
-  transition and a refresh, and all of it after a live 12 → 16 → 12 change.
+  width-driven files-view default, the unified stacked diff (the same top line, and the
+  same selected text or none) and the remembered view it leaves alone, selection, scroll
+  and diff position kept across every transition and a refresh, a window asked for at a
+  stacked width shown at that width, and all of it after a live 12 → 16 → 12 change.
 
 ## Layout
 

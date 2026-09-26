@@ -51,6 +51,16 @@ public:
     };
     ViewState viewState() const;
     void restoreViewState(const ViewState &state);
+    // The document line at the top of the view, -1 with none. A two-pane row
+    // that pairs a removed line with an added one gives the removed one,
+    // unless setModeKeepingTopLine() put the added one there and the view is
+    // still on that row.
+    int topLine() const;
+    // setMode() for a switch the user did not ask for (the window stacking):
+    // the line at the top stays there, where setMode() brings the current
+    // change into view, and a selection stays wherever the other mode shows
+    // the same text, where setMode() clears it.
+    void setModeKeepingTopLine(Mode mode);
 
     Mode mode() const { return m_mode; }
     void setShowWhitespace(bool on);
@@ -178,6 +188,8 @@ private:
     Language m_language = Language::None;
     std::array<QColor, size_t(kTokenKindCount)> m_syntaxPens; // one per TokenKind, refreshed with the theme
     int m_currentBlock = -1;
+    int m_keptLine = -1;             // the line setModeKeepingTopLine() put at the top, -1 with none
+    int m_keptRow = 0;               // and the row it put it on
     Pos m_selAnchor, m_selCursor;
     bool m_dragging = false;
     bool m_resizingPanes = false;

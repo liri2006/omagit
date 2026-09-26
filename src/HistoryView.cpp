@@ -865,7 +865,7 @@ void HistoryView::updateFooter()
             m_countLabel->setText(tr("%1 loaded").arg(matches)); // the pages so far, the next one a scroll away
         else
             m_countLabel->setText(n == 0 ? tr("No matches") : matches);
-    } else if (m_model->failed()) {
+    } else if (m_model->failed() || (n == 0 && m_model->exhausted())) {
         m_countLabel->setText(tr("No commits yet"));
     } else if (m_model->exhausted()) {
         m_countLabel->setText(n == 1 ? tr("1 commit") : tr("%1 commits").arg(number));

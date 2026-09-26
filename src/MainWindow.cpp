@@ -746,13 +746,24 @@ void MainWindow::changeEvent(QEvent *event)
         m_sync->nudge();
 }
 
-// The first evaluation comes with the first show: a hidden window's resize()
-// and restoreGeometry() hold their resize event back until then, so it sees
-// the restored preferences and every flag main() applied before show().
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
     updateStacking();
+}
+
+// The first evaluation comes as the window is shown: a hidden window's
+// resize() and restoreGeometry() hold their resize event back until then,
+// so it sees the restored preferences and every flag main() applied before
+// show(). Not with that resize event, though: showing activates the layout
+// first, which holds the window to its minimum, and the unstacked bar's
+// would widen a window asked for at a stacked width (340 at text size 16
+// came up 395). The width it is to show at is width() already.
+void MainWindow::setVisible(bool visible)
+{
+    if (visible && !isVisible())
+        updateStacking();
+    QMainWindow::setVisible(visible);
 }
 
 void MainWindow::updateStacking()
@@ -801,6 +812,7 @@ void MainWindow::updateStacking()
     m_topBar->setStacked(stacked);
     m_commitPage->setStacked(stacked);
     m_history->setStacked(stacked);
+    m_diffPane->setStacked(stacked);
     applyPanes();
     // Back to Docked beside the diff: the left section's own width again, not
     // the whole body it had while stacked.

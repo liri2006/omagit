@@ -42,6 +42,13 @@ public:
 
     void applyTheme();
 
+    // Stacked (the window's narrowest widths), the diff is unified, as the
+    // design's Diff tab shows it: two panes do not fit. The split or unified
+    // choice saved is the wide window's and comes back with it; Ctrl+T and
+    // the menus still switch while stacked, for as long as it lasts, and
+    // save nothing.
+    void setStacked(bool on);
+
     // Opens the "…" menu of the narrowest form (--screenshot-menu diff); only
     // while that button is on screen, so nothing hangs from a hidden one.
     void showOptionsMenu();
@@ -90,4 +97,6 @@ private:
     int m_changeIndex = -1;
     int m_changeTotal = 0;
     Form m_form = Form::Labelled;
+    bool m_stacked = false;
+    bool m_wideTwoPane = true; // the wide window's view, kept while stacked
 };

@@ -41,9 +41,11 @@ QString FileChange::extension() const
     return suffix.isEmpty() ? QString() : QStringLiteral(".") + suffix;
 }
 
+// Looked up on every run, not once per process: PATH may change under a
+// running app (the tests put a git of their own first, for a while).
 static QString gitExecutable()
 {
-    static const QString git = QStandardPaths::findExecutable(QStringLiteral("git"));
+    const QString git = QStandardPaths::findExecutable(QStringLiteral("git"));
     return git.isEmpty() ? QStringLiteral("git") : git;
 }
 
@@ -197,13 +199,20 @@ void GitRepo::prepare(QProcess &p, const QStringList &env, bool terminalPrompt) 
     p.setProcessEnvironment(pe);
 }
 
-GitRepo::GitResult GitRepo::exec(const QStringList &args, int timeoutMs, const QStringList &env) const
+GitRepo::GitResult GitRepo::exec(const QStringList &args, int timeoutMs, const QStringList &env,
+                                 const QByteArray &input) const
 {
     GitResult r;
     QProcess p;
     prepare(p, env, true);
     traceCommand(args);
     p.start(gitExecutable(), fullArgs(args));
+    // Held until git is up, and written while it is waited for; a git that
+    // could not start has no stdin to take it.
+    if (!input.isNull() && p.state() != QProcess::NotRunning) {
+        p.write(input);
+        p.closeWriteChannel();
+    }
     if (!p.waitForFinished(timeoutMs)) {
         p.kill();
         r.err = "git timed out";
@@ -1361,7 +1370,7 @@ bool GitRepo::amendCommit(const QString &message, const QStringList &paths, QStr
 Commit GitRepo::headCommit() const
 {
     bool ok = false;
-    const QList<Commit> list = log(0, 1, false, &ok);
+    const QList<Commit> list = log({QStringLiteral("HEAD")}, 0, 1, &ok); // an unborn HEAD fails
     return ok && !list.isEmpty() ? list.first() : Commit();
 }
 
@@ -1401,8 +1410,8 @@ QStringList GitRepo::remoteBranchesContainingHead() const
 // History
 
 // The history, one NUL-ended record per commit with its fields apart by 0x1f;
-// log() adds the scope (HEAD, or every ref) and the page it wants,
-// logStream() the commits it starts from and those it skips.
+// log() and logStream() add the commits it skips and those it starts from
+// (on stdin), log() the page it wants.
 static QStringList logArgs()
 {
     return {QStringLiteral("log"), QStringLiteral("-z"), QStringLiteral("--date-order"),
@@ -1454,13 +1463,23 @@ QList<Commit> LogStreamParser::finish()
     return commits;
 }
 
-QList<Commit> GitRepo::log(int skip, int count, bool allRefs, bool *ok) const
+// The start points go in on stdin, as many as there are refs, where the
+// command line has a limit.
+static QByteArray startPointsInput(const QStringList &startPoints)
 {
-    QStringList args = logArgs();
-    if (allRefs)
-        args << QStringLiteral("--all");
-    args << QStringLiteral("--max-count=%1").arg(count) << QStringLiteral("--skip=%1").arg(skip);
-    const GitResult r = exec(args, kHistoryTimeoutMs);
+    return (startPoints.join(QLatin1Char('\n')) + QLatin1Char('\n')).toUtf8();
+}
+
+QList<Commit> GitRepo::log(const QStringList &startPoints, int skip, int count, bool *ok) const
+{
+    if (ok)
+        *ok = true;
+    // Given no commit, git log walks HEAD: none is an empty history here.
+    if (startPoints.isEmpty())
+        return {};
+    const QStringList args = logArgs() << QStringLiteral("--max-count=%1").arg(count)
+                                       << QStringLiteral("--skip=%1").arg(skip) << QStringLiteral("--stdin");
+    const GitResult r = exec(args, kHistoryTimeoutMs, {}, startPointsInput(startPoints));
     if (ok)
         *ok = r.ok();
     if (!r.ok())
@@ -1498,10 +1517,7 @@ QProcess *GitRepo::logStream(const QStringList &startPoints, int skip, QObject *
         return nullptr;
     }
     auto parser = std::make_shared<LogStreamParser>();
-    // The start points go in on stdin, as many as there are refs, where the
-    // command line has a limit.
     const QStringList args = logArgs() << QStringLiteral("--skip=%1").arg(skip) << QStringLiteral("--stdin");
-    const QByteArray input = (startPoints.join(QLatin1Char('\n')) + QLatin1Char('\n')).toUtf8();
     return startAsync(args, kHistoryTimeoutMs, {}, [context, parser, batch, done](QProcess *p) {
         connect(p, &QProcess::readyReadStandardOutput, context, [p, parser, batch] {
             const QList<Commit> commits = parser->feed(p->readAllStandardOutput());
@@ -1523,7 +1539,7 @@ QProcess *GitRepo::logStream(const QStringList &startPoints, int skip, QObject *
             if (error == QProcess::FailedToStart)
                 done(false); // every other error is followed by finished()
         });
-    }, input);
+    }, startPointsInput(startPoints));
 }
 
 // The graph is one file or a chain of them (`--split`); --git-path finds
