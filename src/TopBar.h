@@ -29,7 +29,12 @@ class QVBoxLayout;
 // Stacked (setStacked(), the window's narrowest widths) is a presentation of
 // its own: a third tab, Diff, between the two; the four sync buttons give way
 // to one sync dropdown carrying both counts; More is always there; the layout
-// toggles go. It folds in three steps of its own.
+// toggles go. It folds in three steps of its own: the tab labels go first;
+// then, where even the glyphs would crowd the branch name, the tabs take a
+// row of their own under the controls, as wide as the row, with their labels
+// back wherever every segment has the room for its own. The bar's height
+// follows its width there (heightForWidth()), and its popups hang from the
+// first row (ui::popupTop()).
 class TopBar : public QWidget
 {
     Q_OBJECT
@@ -84,9 +89,9 @@ public:
     // however much room is left. A bar outside a window goes by its width.
     void setSyncLabels(bool allowed);
 
-    // 0 spells everything out, 6 is the narrowest form (2 while stacked); what
-    // the current width fits (see the tables in TopBar.cpp), from 1 on while
-    // the sync labels are not allowed.
+    // 0 spells everything out, 6 is the narrowest form (2 while stacked, the
+    // tabs on a row of their own); what the current width fits (see the
+    // tables in TopBar.cpp), from 1 on while the sync labels are not allowed.
     int foldLevel() const { return m_level; }
 
     QSize sizeHint() const override;
@@ -134,6 +139,8 @@ private:
         int more = 0;           // the more button: the design's 28 px square
         int tabsLabels = 0;
         int tabsGlyphs = 0;
+        int tabLabelled = 0; // the widest segment wearing its label: what a share of row 2 has to hold
+        int tabSegments = 0; // the segments taking part
         int toggles = 0; // both, with the gap between them
         int divider = 0; // the group gap, the line at its middle
         int height = 0;  // the row's
@@ -141,16 +148,25 @@ private:
 
     void measure();
     void applyMargins();
+    // The row's height follows its width, and the layouts keep what they last
+    // worked out for a width: whatever moves a level's width starts them over.
+    void invalidateHeight();
     void relayout();
-    // What level `level` comes to with `branchLabelWidth` of the branch name.
+    // What level `level` comes to with `branchLabelWidth` of the branch name:
+    // on a level with two rows, the first row's width.
     int totalWidth(int level, int branchLabelWidth) const;
     int rightGroupWidth(int level) const;
     int minBranchLabel() const;
+    // The level a row `width` wide folds to, and how tall the row is then.
+    int levelFor(int width) const;
+    int rowsHeight(int width) const;
     // How many levels the presentation of the moment has, and whether its
-    // level `level` elides the branch name and shows the tab labels.
+    // level `level` elides the branch name, shows the tab labels and puts
+    // the tabs on a row of their own.
     int levelCount() const;
     bool elides(int level) const;
     bool tabLabels(int level) const;
+    bool twoRows(int level) const;
     void apply(int level, int branchLabelWidth);
     void place(int level, int branchLabelWidth);
     void placeTabs(int leftEnd, int rightStart, int level);

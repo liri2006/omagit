@@ -4,6 +4,7 @@
 #include "ChangesModel.h"
 #include "CommitPage.h"
 #include "AgentPopover.h"
+#include "NewBranchCard.h"
 #include "CommitPopover.h"
 #include "DesktopExec.h"
 #include "DiffPane.h"
@@ -33,6 +34,7 @@
 #include <QKeySequence>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
@@ -114,13 +116,15 @@ MainWindow::MainWindow(GitRepo *repo, QWidget *parent)
     QTimer::singleShot(0, this, &MainWindow::refresh);
 }
 
-// The overlays go first, the agent settings before the commit card they may
-// hang from. The commit card's message box borrows the commit page's
+// The overlays go first, the New branch card and the agent settings before
+// the commit card the latter may hang from. The commit card's message box borrows the commit page's
 // QTextDocument, which the page's own editor owns; the card is created after
 // the pages, so the central widget would otherwise delete the page, and the
 // document with it, while the card's editor still pointed at it.
 MainWindow::~MainWindow()
 {
+    delete m_newBranchCard;
+    m_newBranchCard = nullptr;
     delete m_agentPopover;
     m_agentPopover = nullptr;
     delete m_commitPopover;
@@ -328,6 +332,29 @@ void MainWindow::buildUi()
             m_agentPopover->popup(anchor);
     });
 
+    // ---- The New branch card: an overlay under the branch chip, where the
+    // new branch shows up. Made, the window says so; a name that is taken
+    // offers the branch it names instead.
+    m_newBranchCard = new NewBranchCard(m_repo, central);
+    m_newBranchCard->setAnchor(m_topBar->branchButton(), m_topBar);
+    connect(m_newBranchCard, &NewBranchCard::created, this, [this](const QString &name, const QString &sha, bool switched) {
+        refresh();
+        const QString current = m_repo->branch();
+        QString said;
+        if (sha.isEmpty()) // without commits yet there is no commit to name
+            said = switched ? tr("Created %1 and switched to it").arg(name) : tr("Created %1 — still on %2").arg(name, current);
+        else
+            said = switched ? tr("Created %1 at %2 and switched to it").arg(name, sha)
+                            : tr("Created %1 at %2 — still on %3").arg(name, sha, current);
+        showStatus(said, kMediumStatusMs);
+    });
+    connect(m_newBranchCard, &NewBranchCard::switchRequested, this, &MainWindow::checkoutBranch);
+    // One overlay at a time: the popovers opening close the card, as the card
+    // opening closes them (showNewBranchCard()).
+    connect(m_agentPopover, &AgentPopover::opened, m_newBranchCard, &NewBranchCard::dismiss);
+    connect(m_commitPopover, &CommitPopover::opened, m_newBranchCard, &NewBranchCard::dismiss);
+    connect(m_history, &HistoryView::newBranchRequested, this, [this](const QString &hash) { showNewBranchCard(hash); });
+
     // Every keybinding at once, now that the widgets they belong to exist.
     installShortcuts();
 
@@ -360,7 +387,7 @@ void MainWindow::buildUi()
 //
 // The letters follow lazygit, with Ctrl in front (Ctrl+Shift for its
 // capitals): R refresh, f fetch, p pull, P push, M merge, A amend, e edit,
-// d discard, Ctrl+R recent repositories, Ctrl+S filter,
+// d discard, n new branch, Ctrl+R recent repositories, Ctrl+S filter,
 // Ctrl+W whitespace, Ctrl+L syntax colours, q quit.
 // F5 by name: the platform's Refresh sequence includes Ctrl+R, which is the repositories.
 
@@ -386,6 +413,7 @@ QList<MainWindow::Binding> MainWindow::bindings()
                     [this] { showTab(TopBar::Tab::History); }}
          // Ctrl+1 and Ctrl+2 are the views; the branches are the third "panel".
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_3)}, {}, tr("Branches"), {}, [this] { showBranchMenu(); }}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_N)}, {}, tr("New branch"), {}, [this] { newBranchKeys(); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_R)}, {}, tr("Recent repositories"), {}, [this] { showRepoMenu(); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O)}, {}, tr("Clone repository…"), {},
                     [this] { showCloneDialog(); }}
@@ -442,7 +470,9 @@ QList<MainWindow::Binding> MainWindow::bindings()
 
     // History
     list << Binding{{QKeySequence(Qt::CTRL | Qt::Key_S)}, {}, tr("Filter commits"), history,
-                    [this] { focusHistoryFilter(); }};
+                    [this] { focusHistoryFilter(); }}
+         // The window's Ctrl+N, which starts at the selected commit here.
+         << Binding{{}, QStringLiteral("CTRL + N"), tr("New branch from the selected commit"), history};
 
     // The diff pane. Its shortcuts are the window's too: the pane can be
     // hidden, and a hidden widget's shortcut does not fire.
@@ -466,6 +496,12 @@ QList<MainWindow::Binding> MainWindow::bindings()
     // The merge view handles these itself, so the panel only writes them down.
     list << Binding{{}, QStringLiteral("CTRL + S"), tr("Swap the two sides"), merge}
          << Binding{{}, QStringLiteral("RETURN"), tr("Merge"), merge};
+
+    // So do the branch list and the New branch card.
+    const QString branchList = tr("Branch list"), newBranch = tr("New branch card");
+    list << Binding{{}, QStringLiteral("CTRL + N"), tr("New branch named after the search"), branchList}
+         << Binding{{}, QStringLiteral("RETURN"), tr("Create the branch"), newBranch}
+         << Binding{{}, QStringLiteral("ESC"), tr("Close without creating"), newBranch};
 
     return list;
 }
@@ -853,6 +889,7 @@ void MainWindow::applyTheme()
     m_rail->applyTheme();
     m_commitPopover->applyTheme();
     m_agentPopover->applyTheme();
+    m_newBranchCard->applyTheme();
     // The layout toggle's glyph says which layout is on, so it is the window's
     // to put back after the top bar has re-fetched the glyphs it owns itself.
     applyPanes();
@@ -888,6 +925,10 @@ void MainWindow::refresh()
     reloadChanges();
     restoreSelection(selectedPath, hadCurrent && current.path == selectedPath, state);
     reloadHistory(state);
+    // The card open over it reads the repository again too: its start, the
+    // branches the name is checked against, the changed files.
+    if (m_newBranchCard->isVisible())
+        m_newBranchCard->reload();
 }
 
 // The branch label, the merge buttons, what a merge in progress does to the
@@ -1282,8 +1323,10 @@ void MainWindow::openInEditor()
 
 void MainWindow::showBranchMenu()
 {
+    m_newBranchCard->dismiss(); // the menu, or the card; not both
     const BranchList branches = m_repo->branches();
     BranchMenu menu(this);
+    menu.setNewBranchRow(true); // the top bar's menu alone ends with it
     menu.setBranches(branches, branches.current, true, [&branches](const QString &name, bool remote) {
         if (!remote)
             return tr("Switch to %1").arg(name);
@@ -1292,8 +1335,43 @@ void MainWindow::showBranchMenu()
                                               : tr("Create the local branch %1 tracking %2 and switch to it").arg(local, name);
     });
     connect(&menu, &BranchMenu::picked, this, &MainWindow::checkoutBranch);
+    // The New branch row (or Ctrl+N in the search): the card, with what was
+    // typed, once the menu is gone.
+    bool newBranch = false;
+    QString name;
+    connect(&menu, &BranchMenu::newBranchRequested, this, [&newBranch, &name](const QString &typed) {
+        newBranch = true;
+        name = typed;
+    });
     // The chip is at the top of the window: the list hangs from the bar under it.
     menu.popupAt(m_topBar->branchButton(), false, m_topBar);
+    if (newBranch)
+        showNewBranchCard(QString(), name);
+}
+
+void MainWindow::showNewBranchCard(const QString &start, const QString &name)
+{
+    // One overlay at a time; the card takes the keyboard from whatever the
+    // popovers give it back to.
+    m_agentPopover->dismiss();
+    m_commitPopover->dismiss();
+    m_newBranchCard->popup(start, name);
+}
+
+void MainWindow::newBranchKeys()
+{
+    if (m_newBranchCard->isVisible()) {
+        m_newBranchCard->nameField()->setFocus(Qt::ShortcutFocusReason);
+        return;
+    }
+    QString start;
+    if (m_mode == HistoryMode) {
+        bool ok = false;
+        const Commit commit = m_history->currentCommit(&ok);
+        if (ok)
+            start = commit.hash;
+    }
+    showNewBranchCard(start);
 }
 
 void MainWindow::checkoutBranch(const QString &name)
@@ -1451,7 +1529,8 @@ bool MainWindow::openRepository(const QString &path)
     if (root == m_repo->root())
         return true;
 
-    // The message and the controls on the card belong to the repository being left.
+    // The message and the controls on the cards belong to the repository being left.
+    m_newBranchCard->dismiss();
     m_agentPopover->dismiss();
     m_commitPopover->dismiss();
     m_initialSelection.clear();

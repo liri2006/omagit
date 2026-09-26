@@ -112,6 +112,16 @@ history with a branch graph, and plugs into the Nautilus context menu as
   *Commit merge* (a partial commit being impossible mid-merge, it commits what is staged),
   the branch label says *merging …* and the Merge button carries a red mark; opening the
   view again shows the files still unresolved and offers *Abort merge*.
+- **New branch** (Ctrl+N, the branch list's last row, or *New branch from here…* on a commit in
+  the history): a card under the branch chip with the name and where the branch starts — the
+  current branch, another branch, a remote branch, a tag or the commit picked in the history —
+  and the commit that is. A space in the name becomes a dash; a name git refuses or a branch
+  that exists already is said in red (with *Switch to it* for the latter). *Switch to it* checks
+  the new branch out with your changes along (`git switch -c`), off it only makes the branch
+  (`git branch`); where changed files differ at the start the card names them and only making
+  the branch is possible. A remote branch fills an empty name with its own and is tracked.
+  Typing a name no branch has into the branch list leaves *New branch “…”* as its only row, so
+  Enter takes the name to the card.
 - **Amend last commit**: tick the box (or start with `--amend`) and the message box gets the
   last commit's message while the changes list is compared against the commit before it, so
   the files of the last commit appear checked next to your new changes. *Amend* then rewrites
@@ -238,7 +248,10 @@ binding, **Esc** closes. The keys follow lazygit's letters with Ctrl in front (C
 its capitals): Ctrl+F fetch, Ctrl+P pull, Ctrl+Shift+P push, Ctrl+Shift+M merge, Ctrl+Shift+Space
 check all, Ctrl+Shift+A amend, Ctrl+E open, Ctrl+D discard, Ctrl+R recent repositories, Ctrl+S
 filter the history, Ctrl+W whitespace, Ctrl+L syntax colours, Ctrl+Shift+R (or F5) refresh,
-Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list.
+Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list;
+Ctrl+N a new branch (lazygit's n) — from the current branch, from the selected commit in the
+history, and named after the search in the branch list; in its card Enter creates the branch
+and Esc closes it.
 Ctrl+Enter commits in the commit view; the panel lists it for the *Commit view, Mini rail*,
 because in the Mini layout the same keys open the commit popover, and commit from it once
 it is open (the keypad's Enter works too). Plain Enter in a message box is a new line.
@@ -249,12 +262,12 @@ Handy flags for development: `--select <repo-relative path>` pre-selects a file,
 945x612` gives the window a fixed size first, so a picture does not depend on the desktop it
 was taken on — two positive numbers, only together with `--screenshot`, and anything else is
 a usage error; `--screenshot-menu
-branch|repo|agent|keybindings|merge|login|commit|sync|more|options|diff` opens that panel first and includes it in the picture
+branch|repo|agent|keybindings|merge|login|commit|newbranch|sync|more|options|diff` opens that panel first and includes it in the picture
 (`commit` is the Mini layout's commit popover, so it goes with `--mini`; elsewhere it opens nothing;
 `agent` opens nothing in the history; `sync` and `options` are the stacked layout's sync dropdown
 and action-bar menus and open nothing on a wider window, `more` only where the More button is
 shown, `diff` the diff pane's `…` view options, only where the pane is narrow enough to show
-that button), `--screenshot-keys
+that button, `newbranch` the New branch card from the current branch), `--screenshot-keys
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
 and `@changesTree` in that list focus the list on show, so the keys reach it),
@@ -334,7 +347,9 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/Segmented.*` | The painted segmented control: segments with a glyph, a label and a count pill inside one shared frame, at their own widths or stretched equally (the top bar's tabs, the agent picker) |
 | `src/TopBar.*` | The window's top row: repository and branch chips, the painted Changes / Diff / History tab segments, the sync buttons with their "more" menu (and the window's Refresh, Open, Clone and Keybindings), the layout toggles — and the seven folding levels that fit them into the width; stacked, its own three levels with the sync dropdown |
 | `src/TickMenu.*` | Menu whose checked entries carry an accent tick at the right edge instead of a checkbox (branch, repository, "more" and diff menus) |
-| `src/BranchMenu.*` | The searchable branch dropdown (the top bar's branch chip, both sides of the merge view) |
+| `src/BranchMenu.*` | The searchable branch dropdown (the top bar's branch chip with its New branch row, both sides of the merge view, the New branch card's From picker with the tags) |
+| `src/BranchPicker.*` | The field-like button showing a branch, tag or commit that opens the branch dropdown (the merge view's two sides, the New branch card's From) |
+| `src/NewBranchCard.*` | The New branch card: name, where it starts, what becomes of the changed files, Switch to it and Create branch |
 | `src/MergeDialog.*` | The merge view: source/destination pickers with swap, the merge-tree verdict, merge and abort |
 | `src/LoginDialog.*` | The sign-in: username and password for an https host, an ssh key's passphrase, and whether git will remember it |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |

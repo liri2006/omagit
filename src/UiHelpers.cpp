@@ -42,6 +42,8 @@ void onThemeScale(QObject *owner, const std::function<void()> &apply)
 constexpr qreal kChevronOpacity = 0.7;
 // What windowMargin() reads off a window (setWindowMargin()), in design px.
 const char *const kWindowMarginProperty = "gridMargin";
+// What popupTop() hangs a bar's popups from (setPopupEdge()), in the bar's px.
+const char *const kPopupEdgeProperty = "popupEdge";
 // What QLineEdit keeps between its contents rectangle and the text on its own
 // (QLineEditPrivate::horizontalMargin), under any style: a prompt's text
 // stands that much closer to the magnifier than the design's 4, so the two
@@ -724,7 +726,13 @@ void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar)
 
 int popupTop(const QWidget *bar)
 {
-    return bar->mapToGlobal(QPoint(0, bar->height())).y() + space(gap::cluster);
+    const QVariant edge = bar->property(kPopupEdgeProperty);
+    return bar->mapToGlobal(QPoint(0, edge.isValid() ? edge.toInt() : bar->height())).y() + space(gap::cluster);
+}
+
+void setPopupEdge(QWidget *bar, int y)
+{
+    bar->setProperty(kPopupEdgeProperty, y < 0 ? QVariant() : QVariant(y));
 }
 
 int popupWidth(const QWidget *window, int px)

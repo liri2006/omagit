@@ -172,6 +172,32 @@ public:
     QString defaultBranch() const;
     // The local branches, the one committed to most recently first.
     QStringList branchesByActivity() const;
+    // The tags, the one made most recently first.
+    QStringList tags() const;
+    // Whether git takes `name` for a new branch as it is: `git check-ref-format
+    // --branch` accepts it and prints it back unchanged (it expands "@{-1}" to
+    // the previous branch's name and accepts that too), and it does not start
+    // with a dash. "a b" and "HEAD" are refused.
+    bool isValidBranchName(const QString &name) const;
+    // What a branch name field makes of the text typed into it: every space
+    // becomes a dash, the rest stays as typed.
+    static QString typedBranchName(const QString &typed);
+    // The commit `rev` names: its short hash and its subject (false when git
+    // cannot resolve it).
+    bool describeCommit(const QString &rev, QString *shortSha, QString *subject) const;
+    // The changed files (changedPaths(), untracked included) that differ
+    // between HEAD and `target`, sorted: what keeps `git switch` from moving
+    // to it with the changes in tow.
+    QStringList pathsBlockingSwitch(const QString &target) const;
+    // The same for the changed paths `dirty` the caller has read already, so
+    // that what it says of them comes from one look at the working tree.
+    QStringList pathsBlockingSwitch(const QString &target, const QStringList &dirty) const;
+    // Makes the branch `name` at `start` (HEAD when empty): `git switch -c
+    // name [start]` when `switchTo`, else `git branch name [start]`. A
+    // remote-tracking start is tracked, as git does by default. In a
+    // repository without commits only switching works (it renames the unborn
+    // branch). `error` gets git's message.
+    bool createBranch(const QString &name, const QString &start, bool switchTo, QString *error) const;
 
     // --- Merging ------------------------------------------------------------
 
@@ -222,6 +248,12 @@ public:
     QString baseRef() const;
 
     QList<FileChange> status() const;
+    // Every path `git status` lists, untracked included.
+    QStringList changedPaths() const;
+    // How many files are changed, untracked ones included: one for every
+    // entry `git status` has, a rename (or a copy) counting once where
+    // changedPaths() lists both of its paths.
+    int changedFileCount() const;
 
     // Unified diff of the working tree against baseRef() (or an empty tree for
     // untracked files) with the whole file as context so the viewer can show
@@ -341,7 +373,6 @@ private:
     GitResult stageAll(const QStringList &paths, const QStringList &env, int timeoutMs) const;
     // `git status` as it is parsed everywhere: index/worktree columns and path.
     QList<FileChange> porcelainStatus(bool *ok = nullptr) const;
-    QStringList changedPaths() const; // every path `git status` lists, untracked included
     void applyNumstat(const QByteArray &numstat, QList<FileChange> &changes) const;
     void applyTreeSizes(const QString &commit, QList<FileChange> &changes) const;
 

@@ -65,11 +65,16 @@ constexpr int kFoldCount = int(sizeof(kFolds) / sizeof(kFolds[0]));
 
 // Stacked, the row has three levels of its own. The repository is the bare
 // folder at every one of them and the right group is the sync dropdown and
-// More, so only the tabs and the branch name are left to fold:
+// More, so only the tabs and the branch name are left to fold. The branch
+// keeps its whole name on one row; the first level whose row fits wins:
 //
-//   0  tab labels
-//   1  tab glyphs
-//   2  tab glyphs; the branch elides, down to a lone ellipsis if it has to
+//   0  tab labels, one row
+//   1  tab glyphs, one row
+//   2  two rows (screens.js topBar(), extra narrow): the controls, then a
+//      space(kBar) gap and the tabs alone, stretched over the row's width,
+//      labelled while the widest labelled segment fits floor(width / n)
+//      and glyphs otherwise; the branch elides by what the first row lacks,
+//      down to a lone ellipsis if it has to
 constexpr int kStackedFoldCount = 3;
 
 // What a control takes sideways, its fixed width included: the layout toggles
@@ -98,21 +103,26 @@ void setTextOnce(QToolButton *b, const QString &text)
 
 // The controls' row. The tabs follow the window's centre rather than a
 // layout's idea of it, so the bar places every control by hand and only needs
-// the row to hand each resize back.
+// the row to hand each resize back, and to ask the bar how tall a width makes
+// it: one row, or two where the tabs take one of their own.
 class BarRow : public QWidget
 {
 public:
-    explicit BarRow(std::function<void()> onResize)
-        : m_onResize(std::move(onResize))
+    BarRow(std::function<void()> onResize, std::function<int(int)> heightForWidth)
+        : m_onResize(std::move(onResize)), m_heightForWidth(std::move(heightForWidth))
     {
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     }
+
+    bool hasHeightForWidth() const override { return true; }
+    int heightForWidth(int width) const override { return m_heightForWidth(width); }
 
 protected:
     void resizeEvent(QResizeEvent *) override { m_onResize(); }
 
 private:
     std::function<void()> m_onResize;
+    std::function<int(int)> m_heightForWidth;
 };
 
 // The dropdown's inline content (screens.js syncDropdown()): [8][↓ 16][4]
@@ -309,9 +319,11 @@ int dropdownWidth(const BadgeButton *dropdown)
 TopBar::TopBar(QWidget *parent)
     : QWidget(parent)
 {
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    // At least the one row of the size hint, and as tall as heightForWidth()
+    // makes it: a Fixed height would hold the layout to the hint's one row.
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
-    m_row = new BarRow([this] { relayout(); });
+    m_row = new BarRow([this] { relayout(); }, [this](int width) { return rowsHeight(width); });
     // The badges hang over the buttons' corners, out of the buttons' own
     // rects, so a layer over the whole bar paints them (see the end of the
     // constructor); the room above the row (kBar) is where their tops
@@ -401,7 +413,7 @@ TopBar::TopBar(QWidget *parent)
     // A wider count or Merge's mark widens it, and the row makes room. The
     // bar's own size hints count the dropdown too.
     connect(dropdown, &SyncDropdown::widthChanged, this, [this] {
-        updateGeometry();
+        invalidateHeight();
         relayout();
     });
     connect(m_syncMenu, &QMenu::aboutToShow, this, &TopBar::fillSyncMenu);
@@ -543,7 +555,7 @@ void TopBar::setDensity(const Density &density)
         return;
     m_density = density;
     applyMargins();
-    updateGeometry();
+    invalidateHeight(); // the row's width, and so its level, moved with the margins
 }
 
 void TopBar::setSyncLabels(bool allowed)
@@ -559,6 +571,16 @@ void TopBar::applyMargins()
 {
     const int margin = space(m_density.margin);
     m_rowLayout->setContentsMargins(margin, 0, margin, 0);
+}
+
+// Every layout on the way up keeps its own answer for a width: the row's
+// updateGeometry() clears its item's and the bar's layout's, the bar's the
+// window's, and the row layout nested between them is invalidated by hand.
+void TopBar::invalidateHeight()
+{
+    m_row->updateGeometry();
+    m_rowLayout->invalidate();
+    updateGeometry();
 }
 
 // Every label width comes from a probe's size hint, so the stylesheet's padding
@@ -606,13 +628,22 @@ void TopBar::measure()
         m_historyTab->setLabelled(labels);
         (labels ? m_metrics.tabsLabels : m_metrics.tabsGlyphs) = m_tabs->sizeHint().width();
     }
+    // Still labelled: each segment's own hint, which a share of row 2 holds or not.
+    for (const SegmentButton *tab : {m_changesTab, m_diffTab, m_historyTab}) {
+        if (tab->isHidden())
+            continue;
+        ++m_metrics.tabSegments;
+        m_metrics.tabLabelled = qMax(m_metrics.tabLabelled, tab->sizeHint().width());
+    }
     m_metrics.toggles = widthOf(m_layoutButton) + space(gap::cluster) + widthOf(m_diffToggle);
     m_metrics.divider = space(gap::group);
     for (const QWidget *w : QList<const QWidget *>{m_probeRepo, m_probeBranch, m_layoutButton, m_diffToggle})
         m_metrics.height = qMax(m_metrics.height, w->sizeHint().height());
 
-    m_row->setFixedHeight(m_metrics.height);
-    updateGeometry();
+    // One row, or two a space(kBar) apart (rowsHeight()).
+    m_row->setMinimumHeight(m_metrics.height);
+    m_row->setMaximumHeight(2 * m_metrics.height + space(kBar));
+    invalidateHeight();
     relayout();
 }
 
@@ -626,9 +657,19 @@ bool TopBar::elides(int level) const
     return m_stacked ? level == kStackedFoldCount - 1 : kFolds[level].branchElides;
 }
 
+// Two rows: each segment gets floor(width / n) of the second, and the labels
+// stay while the widest of them fits its share (screens.js topBar():
+// measureSegmented([it]) > each).
 bool TopBar::tabLabels(int level) const
 {
+    if (twoRows(level))
+        return m_metrics.tabLabelled <= m_row->width() / qMax(1, m_metrics.tabSegments);
     return m_stacked ? level == 0 : kFolds[level].tabLabels;
+}
+
+bool TopBar::twoRows(int level) const
+{
+    return m_stacked && level == kStackedFoldCount - 1;
 }
 
 int TopBar::rightGroupWidth(int level) const
@@ -655,6 +696,8 @@ int TopBar::totalWidth(int level, int branchLabelWidth) const
     const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
     const int left = (repoLabel ? m_metrics.repoFull : m_metrics.repoFolded) + space(gap::cluster)
         + m_metrics.branchChrome + branchLabelWidth;
+    if (twoRows(level))
+        return left + space(gap::group) + rightGroupWidth(level);
     const int tabs = tabLabels(level) ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
     return left + space(gap::group) + tabs + space(gap::group) + rightGroupWidth(level);
 }
@@ -668,20 +711,25 @@ int TopBar::minBranchLabel() const
 }
 
 // The height: the room above the row, which the badges rise into, the row,
-// and the room under it, whose last pixel row is the hairline (8 + 28 + 8);
-// the width, the row's and the window's side margins.
+// and the room under it, whose last pixel row is the hairline (8 + 28 + 8),
+// on one row (heightForWidth() says when there are two); the width, the
+// row's and the window's side margins.
 QSize TopBar::sizeHint() const
 {
     return QSize(totalWidth(0, m_metrics.branchLabel) + 2 * space(m_density.margin),
                  space(kBar) + m_metrics.height + space(kBar));
 }
 
-// Never wider than the last level at its shortest branch name: the bar folds
-// instead of forcing a width on the window.
+// Never wider than the last level at its shortest branch name, nor, on two
+// rows, than the tabs as glyphs: the bar folds instead of forcing a width on
+// the window.
 QSize TopBar::minimumSizeHint() const
 {
-    return QSize(totalWidth(levelCount() - 1, minBranchLabel()) + 2 * space(m_density.margin),
-                 space(kBar) + m_metrics.height + space(kBar));
+    const int last = levelCount() - 1;
+    int width = totalWidth(last, minBranchLabel());
+    if (twoRows(last))
+        width = qMax(width, m_metrics.tabsGlyphs);
+    return QSize(width + 2 * space(m_density.margin), space(kBar) + m_metrics.height + space(kBar));
 }
 
 void TopBar::resizeEvent(QResizeEvent *event)
@@ -691,25 +739,38 @@ void TopBar::resizeEvent(QResizeEvent *event)
     relayout();
 }
 
-void TopBar::relayout()
+// The first level that fits, with the whole branch name; the last otherwise.
+int TopBar::levelFor(int width) const
 {
-    const int width = m_row->width();
     const int count = levelCount();
     // Level 0 is the only one wearing the sync labels; stacked, there are none.
     const int first = !m_stacked && !m_syncLabels ? 1 : 0;
-    m_level = count - 1;
     for (int i = first; i < count - 1; ++i) {
-        if (totalWidth(i, m_metrics.branchLabel) <= width) {
-            m_level = i;
-            break;
-        }
+        if (totalWidth(i, m_metrics.branchLabel) <= width)
+            return i;
     }
+    return count - 1;
+}
+
+// What the row answers the layouts: it knows its level from its width alone,
+// so the height they give it is the one relayout() then fills.
+int TopBar::rowsHeight(int width) const
+{
+    return twoRows(levelFor(width)) ? 2 * m_metrics.height + space(kBar) : m_metrics.height;
+}
+
+void TopBar::relayout()
+{
+    const int width = m_row->width();
+    m_level = levelFor(width);
     // Only the last level elides, and only by as much as it has to.
     int label = m_metrics.branchLabel;
     if (elides(m_level))
         label = qBound(minBranchLabel(), width - totalWidth(m_level, 0), m_metrics.branchLabel);
     apply(m_level, label);
     place(m_level, label);
+    // On two rows the popups hang from the first, over the tabs.
+    setPopupEdge(this, twoRows(m_level) ? m_row->y() + m_metrics.height : -1);
     m_badges->update(); // the buttons may have moved without a badge changing
 }
 
@@ -762,7 +823,8 @@ void TopBar::apply(int level, int branchLabelWidth)
 
 void TopBar::place(int level, int branchLabelWidth)
 {
-    const int height = m_row->height(), width = m_row->width();
+    // The controls are centred in the first row, however many the row holds.
+    const int height = m_metrics.height, width = m_row->width();
     const auto put = [height](QWidget *w, int x, int width) {
         const int h = qMin(height, w->sizeHint().height());
         w->setGeometry(x, (height - h) / 2, width, h);
@@ -787,7 +849,7 @@ void TopBar::place(int level, int branchLabelWidth)
     x = width - rightGroupWidth(level);
     const int rightStart = x;
     if (m_stacked) {
-        // As tall as the row: the design's dropdown is the row's height.
+        // As tall as the first row: the design's dropdown is its height.
         const int dropdown = dropdownWidth(m_syncDropdown);
         m_syncDropdown->setGeometry(x, 0, dropdown, height);
         m_syncDropdown->show();
@@ -824,13 +886,21 @@ void TopBar::place(int level, int branchLabelWidth)
 }
 
 // The tabs sit in the middle of the whole bar, nudged aside as far as they
-// have to be to keep clear of either group.
+// have to be to keep clear of either group; on two rows they are the second
+// one, its segments sharing the row's whole width.
 void TopBar::placeTabs(int leftEnd, int rightStart, int level)
 {
-    const int height = m_row->height(), width = m_row->width();
-    const int tabs = tabLabels(level) ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
-    const int low = leftEnd + space(gap::group), high = rightStart - space(gap::group) - tabs;
-    m_tabs->setGeometry(qMax(low, qMin(qRound((width - tabs) / 2.0), high)), 0, tabs, height);
+    const int height = m_metrics.height, width = m_row->width();
+    const bool own = twoRows(level);
+    if (m_tabs->isStretch() != own)
+        m_tabs->setStretch(own);
+    if (own) {
+        m_tabs->setGeometry(0, height + space(kBar), width, height);
+    } else {
+        const int tabs = tabLabels(level) ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
+        const int low = leftEnd + space(gap::group), high = rightStart - space(gap::group) - tabs;
+        m_tabs->setGeometry(qMax(low, qMin(qRound((width - tabs) / 2.0), high)), 0, tabs, height);
+    }
     m_tabs->show();
 }
 

@@ -1,5 +1,6 @@
 #include "MergeDialog.h"
 #include "BranchMenu.h"
+#include "BranchPicker.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
 #include "UiHelpers.h"
@@ -10,7 +11,6 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
 #include <QListWidget>
@@ -18,8 +18,6 @@
 #include <QSettings>
 #include <QShortcut>
 #include <QShowEvent>
-#include <QStyleOptionToolButton>
-#include <QStylePainter>
 #include <QThread>
 #include <QTimer>
 #include <QToolButton>
@@ -184,107 +182,6 @@ MergeVerdict mergeVerdict(const MergePreview &preview, bool noFastForward, const
         v.buttonTip = V::tr("Merge %1 into %2 with a merge commit (Enter)").arg(s, d);
     return v;
 }
-
-// --- The two sides ---------------------------------------------------------
-
-// One side of the merge: a field-like button showing the branch (glyph,
-// name in the title font, a chevron at the right edge) that drops the
-// branch list down on click.
-class BranchPicker : public QToolButton
-{
-public:
-    explicit BranchPicker(QWidget *parent = nullptr)
-        : QToolButton(parent)
-    {
-        setObjectName(QStringLiteral("branchPicker"));
-        setCursor(Qt::PointingHandCursor);
-        setFocusPolicy(Qt::TabFocus);
-        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    }
-
-    void setBranch(const QString &name)
-    {
-        m_name = name;
-        setAccessibleName(name);
-        updateGeometry();
-        update();
-    }
-    QString branch() const { return m_name; }
-
-    QSize sizeHint() const override { return QSize(ui::space(260), ui::space(kPicker)); }
-    QSize minimumSizeHint() const override { return QSize(ui::space(120), ui::space(kPicker)); }
-
-protected:
-    // Like a combo box: Enter goes to the dialog's Merge button, the list
-    // opens on Space, Down or Alt+Down.
-    void keyPressEvent(QKeyEvent *e) override
-    {
-        switch (e->key()) {
-        case Qt::Key_Return:
-        case Qt::Key_Enter:
-            e->ignore();
-            return;
-        case Qt::Key_Down:
-        case Qt::Key_F4:
-            click();
-            e->accept();
-            return;
-        default:
-            QToolButton::keyPressEvent(e);
-        }
-    }
-    void keyReleaseEvent(QKeyEvent *e) override
-    {
-        if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
-            e->ignore();
-            return;
-        }
-        QToolButton::keyReleaseEvent(e);
-    }
-
-    // A big control's kit layout (kit.js button({px: PAD.big})): [12][glyph
-    // box 16][4][name][4][chevron box 12][12], the glyphs centred by their ink.
-    void paintEvent(QPaintEvent *) override
-    {
-        const OmarchyTheme *t = OmarchyTheme::instance();
-        QStylePainter p(this);
-        QStyleOptionToolButton opt;
-        initStyleOption(&opt);
-        opt.text.clear();
-        opt.icon = QIcon();
-        p.drawComplexControl(QStyle::CC_ToolButton, opt); // the stylesheet's box and states
-        const bool on = isEnabled();
-        const QColor dim = on ? t->mutedText() : t->fill(0.45);
-        const int pad = ui::space(ui::pad::big), h = height();
-        const auto centred = [&p](const QFont &font, const QString &glyph, const QRectF &box) {
-            p.setFont(font);
-            p.drawText(box.center() - ui::inkRect(font, glyph).center(), glyph);
-        };
-        p.setPen(dim);
-        const QString mark = glyph(ui::kBranch, QString());
-        int x = pad;
-        if (!mark.isEmpty()) {
-            centred(t->uiFont(), mark, QRectF(x, 0, ui::space(ui::box::icon), h));
-            x += ui::space(ui::box::icon) + ui::space(ui::gap::icon);
-        }
-        QFont small = t->uiFont();
-        small.setPixelSize(qMax(1, qRound(small.pixelSize() * ui::box::chevron / double(ui::box::icon))));
-        const int chevronLeft = width() - pad - ui::space(ui::box::chevron);
-        centred(small, glyph(ui::kChevron, QStringLiteral("▾")), QRectF(chevronLeft, 0, ui::space(ui::box::chevron), h));
-        p.setFont(t->titleFont());
-        const QRect nameRect(x, 0, chevronLeft - ui::space(ui::gap::icon) - x, h);
-        if (m_name.isEmpty()) {
-            p.setPen(dim);
-            p.drawText(nameRect, Qt::AlignVCenter, tr("No branch"));
-            return;
-        }
-        p.setPen(on ? t->accent() : t->fill(0.45));
-        p.drawText(nameRect, Qt::AlignVCenter, p.fontMetrics().elidedText(m_name, Qt::ElideMiddle, nameRect.width()));
-    }
-
-private:
-    QString m_name;
-};
 
 // --- The verdict card ------------------------------------------------------
 

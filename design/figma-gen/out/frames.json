@@ -467,5 +467,82 @@
   "page": "Screens · Narrow",
   "w": 340,
   "h": 493
+ },
+ {
+  "file": "68-New-branch-flow.svg",
+  "id": "New branch · flow",
+  "page": "Screens · Half & Quarter",
+  "w": 1990,
+  "h": 760
+ },
+ {
+  "file": "69-New-branch-1-Branch-menu.svg",
+  "id": "New branch · 1 Branch menu",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "70-New-branch-2-Name-typed.svg",
+  "id": "New branch · 2 Name typed",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "71-New-branch-3-Card.svg",
+  "id": "New branch · 3 Card",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "72-New-branch-4-Pick-where-it-starts.svg",
+  "id": "New branch · 4 Pick where it starts",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "73-New-branch-5-Name-taken.svg",
+  "id": "New branch · 5 Name taken",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "74-New-branch-6-Created.svg",
+  "id": "New branch · 6 Created",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "75-New-branch-7-History-commit-menu.svg",
+  "id": "New branch · 7 History · commit menu",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "76-New-branch-8-History-changes-in-the-way.svg",
+  "id": "New branch · 8 History · changes in the way",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "77-New-branch-Eighth-Card.svg",
+  "id": "New branch · Eighth · Card",
+  "page": "Screens · Half & Quarter",
+  "w": 470,
+  "h": 612
+ },
+ {
+  "file": "78-New-branch-Extra-narrow-Card.svg",
+  "id": "New branch · Extra narrow · Card",
+  "page": "Screens · Half & Quarter",
+  "w": 340,
+  "h": 612
  }
 ]

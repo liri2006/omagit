@@ -483,6 +483,57 @@ QStringList GitRepo::branchesByActivity() const
     return r.ok() ? trimmedLines(r.out) : QStringList();
 }
 
+QStringList GitRepo::tags() const
+{
+    const GitResult r = exec({QStringLiteral("for-each-ref"), QStringLiteral("--sort=-creatordate"),
+                              QStringLiteral("--format=%(refname:short)"), QStringLiteral("refs/tags")});
+    return r.ok() ? trimmedLines(r.out) : QStringList();
+}
+
+bool GitRepo::isValidBranchName(const QString &name) const
+{
+    // A leading dash would be read as an option, by check-ref-format too.
+    if (name.isEmpty() || name.startsWith(QLatin1Char('-')))
+        return false;
+    const GitResult r = exec({QStringLiteral("check-ref-format"), QStringLiteral("--branch"), name});
+    // "@{-1}" passes as the previous branch's name: only a name git gives
+    // back as it was is a name of its own.
+    return r.ok() && QString::fromUtf8(r.out).trimmed() == name;
+}
+
+QString GitRepo::typedBranchName(const QString &typed)
+{
+    QString name = typed;
+    for (QChar &c : name)
+        if (c.isSpace())
+            c = QLatin1Char('-');
+    return name;
+}
+
+bool GitRepo::describeCommit(const QString &rev, QString *shortSha, QString *subject) const
+{
+    // The "--" keeps a name that is also a file's from being read as a path.
+    const GitResult r = exec({QStringLiteral("log"), QStringLiteral("-1"), QStringLiteral("--format=%h%x00%s"), rev,
+                              QStringLiteral("--")});
+    const QList<QByteArray> parts = r.out.trimmed().split('\0');
+    if (!r.ok() || parts.size() < 2 || parts.first().isEmpty())
+        return false;
+    if (shortSha)
+        *shortSha = QString::fromUtf8(parts.at(0));
+    if (subject)
+        *subject = QString::fromUtf8(parts.at(1));
+    return true;
+}
+
+bool GitRepo::createBranch(const QString &name, const QString &start, bool switchTo, QString *error) const
+{
+    QStringList args = switchTo ? QStringList{QStringLiteral("switch"), QStringLiteral("-c"), name}
+                                : QStringList{QStringLiteral("branch"), name};
+    if (!start.isEmpty())
+        args << start;
+    return report(exec(args, kWorkTimeoutMs), error, tr("git %1 failed").arg(args.join(QLatin1Char(' '))));
+}
+
 // ---------------------------------------------------------------------------
 // Merging
 
@@ -492,6 +543,29 @@ QStringList GitRepo::changedPaths() const
     for (const FileChange &c : porcelainStatus())
         paths << c.path;
     return paths;
+}
+
+// `git status` with its renames paired, unlike porcelainStatus()'s: in the -z
+// output a rename or a copy is "XY <path>\0<source>\0", the source a field of
+// its own, which is not another file.
+int GitRepo::changedFileCount() const
+{
+    const GitResult r = exec({QStringLiteral("status"), QStringLiteral("--porcelain=v1"), QStringLiteral("-z"),
+                              QStringLiteral("--untracked-files=all"), QStringLiteral("--renames")});
+    if (!r.ok())
+        return 0;
+    const auto paired = [](char column) { return column == 'R' || column == 'C'; };
+    const QList<QByteArray> fields = r.out.split('\0');
+    int count = 0;
+    for (qsizetype i = 0; i < fields.size(); ++i) {
+        const QByteArray &entry = fields.at(i);
+        if (entry.size() < 4)
+            continue;
+        ++count;
+        if (paired(entry[0]) || paired(entry[1]))
+            ++i; // the source
+    }
+    return count;
 }
 
 // Every ref has to name a commit; the first one that does not gives the error.
@@ -558,17 +632,40 @@ void GitRepo::findBlockedPaths(QStringList touched, MergePreview &p) const
     const QStringList dirty = changedPaths();
     if (dirty.isEmpty())
         return;
-    if (branch() != p.destination) {
-        const GitResult r = exec({QStringLiteral("diff"), QStringLiteral("--name-only"), QStringLiteral("-z"),
-                                  QStringLiteral("HEAD"), p.destination},
-                                 kWorkTimeoutMs);
-        if (r.ok())
-            touched += nulSeparated(r.out);
-    }
+    if (branch() != p.destination)
+        p.blocked = pathsBlockingSwitch(p.destination, dirty);
     for (const QString &path : dirty)
         if (touched.contains(path) && !p.blocked.contains(path))
             p.blocked << path;
     p.blocked.sort();
+}
+
+QStringList GitRepo::pathsBlockingSwitch(const QString &target) const
+{
+    return pathsBlockingSwitch(target, changedPaths());
+}
+
+// git refuses to switch while a changed file is one the switch would write:
+// one that differs between HEAD and the target. Both sides of a rename are
+// such files, so renames are not paired; the "--" keeps a start named like a
+// file from being read as its path.
+QStringList GitRepo::pathsBlockingSwitch(const QString &target, const QStringList &dirty) const
+{
+    if (dirty.isEmpty())
+        return {};
+    const GitResult r = exec({QStringLiteral("diff"), QStringLiteral("--name-only"), QStringLiteral("-z"),
+                              QStringLiteral("--no-renames"), QStringLiteral("HEAD"),
+                              target.isEmpty() ? QStringLiteral("HEAD") : target, QStringLiteral("--")},
+                             kWorkTimeoutMs);
+    if (!r.ok())
+        return {};
+    const QStringList differ = nulSeparated(r.out);
+    QStringList blocking;
+    for (const QString &path : dirty)
+        if (differ.contains(path) && !blocking.contains(path))
+            blocking << path;
+    blocking.sort();
+    return blocking;
 }
 
 // The verdict on the trees alone: "<tree>\0<conflicted path>\0...", exit 0

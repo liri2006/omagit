@@ -38,6 +38,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/TopBar.cpp \
     $$PWD/src/TickMenu.cpp \
     $$PWD/src/BranchMenu.cpp \
+    $$PWD/src/BranchPicker.cpp \
     $$PWD/src/MergeDialog.cpp \
     $$PWD/src/LoginDialog.cpp \
     $$PWD/src/CloneDialog.cpp \
@@ -49,6 +50,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/CommitPage.cpp \
     $$PWD/src/CommitPopover.cpp \
     $$PWD/src/AgentPopover.cpp \
+    $$PWD/src/NewBranchCard.cpp \
     $$PWD/src/Footer.cpp \
     $$PWD/src/MainWindow.cpp
 
@@ -71,6 +73,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/TopBar.h \
     $$PWD/src/TickMenu.h \
     $$PWD/src/BranchMenu.h \
+    $$PWD/src/BranchPicker.h \
     $$PWD/src/MergeDialog.h \
     $$PWD/src/LoginDialog.h \
     $$PWD/src/CloneDialog.h \
@@ -81,6 +84,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/CommitPage.h \
     $$PWD/src/CommitPopover.h \
     $$PWD/src/AgentPopover.h \
+    $$PWD/src/NewBranchCard.h \
     $$PWD/src/Footer.h \
     $$PWD/src/MainWindow.h \
     $$PWD/src/Settings.h

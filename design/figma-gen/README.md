@@ -41,6 +41,17 @@ Generates the design frames for the Omagit Figma file
   `sheets.js` is the notes sheet. In Figma they sit in the section
   "Proposals · Full history search" at the bottom of Screens · Half &
   Quarter (the Starter plan has no room for a page of their own).
+- New branch flow (2026-09-25): the branch menu ends with New branch…
+  (Ctrl+N) after a separator, and a search no branch matches leaves
+  New branch “…” as its only row (`overlay: 'branch'`, `query`, `hover:
+  'new'`); `newBranchCard()` is the card (`overlay: 'newBranch'`, `newBranch:
+  { name, taken, base, blocked, pickerOpen }`), hanging where the branch menu
+  does; `overlay: 'commitMenu'` is a History commit's menu (`commit` picks
+  the selected row). `topBar` takes `branch` and `noUpstream` (no sync
+  badges). `newBranchFlow()` in `sheets.js` is the notes sheet. In Figma:
+  the section "Flow · New branch (2026-09-25)" at the bottom of Screens ·
+  Half & Quarter, with prototype clicks between the frames and two flows
+  (New branch, New branch from History).
 - `sheets.js` — Cover, Foundations, Components and Layout-rules sheets.
 - `build.js` — the frame list; `out/frames.json` records name, page and x offset.
 

@@ -87,6 +87,12 @@ constexpr uint kCheck = 0xF012C, kContentCopy = 0xF018F;
 constexpr uint kDiff = 0xF08AA, kUndo = 0xF054C, kDotsHorizontal = 0xF01D8;
 // md-close: clears the history filter, at the end of its field.
 constexpr uint kClose = 0xF0156;
+// md-source_branch_plus: a new branch (the branch menu's last row, the New
+// branch card's Create button); md-tag_outline: a tag in the branch menu.
+constexpr uint kBranchPlus = 0xF14CA, kTagOutline = 0xF04FC;
+// md-alert_circle_outline, md-alert, md-information_outline: an error under
+// a field, a warning note, and a note that only informs.
+constexpr uint kAlertCircleOutline = 0xF05D6, kAlert = 0xF0026, kInfoOutline = 0xF02FD;
 
 // The frames of the generate button while an agent thinks: a braille spinner
 // when the font has one, a turning circle otherwise.
@@ -271,8 +277,15 @@ QAction *addMenuHeader(QMenu *menu, const QString &text);
 void keepMenuInWindow(QMenu *menu, QWidget *button, QWidget *bar = nullptr);
 
 // Where a popup of the top bar starts, in global coordinates: 4 px under the
-// bar's bottom edge (screens.js screen(): menus at y = TOP_BAR + 4).
+// bar's bottom edge (screens.js screen(): menus at y = TOP_BAR + 4), or 4
+// under the edge the bar published with setPopupEdge() when it did. The
+// stacked bar publishes its first row's bottom edge while its tabs take a row
+// of their own, so the menus hang over the tabs (menuY = BAR + BOX.control +
+// 4). The edge is a dynamic property of the bar, so this knows no TopBar.
 int popupTop(const QWidget *bar);
+// The edge popupTop() hangs `bar`'s popups from, in the bar's coordinates;
+// a negative `y` takes it back, and the bar's bottom edge counts again.
+void setPopupEdge(QWidget *bar, int y);
 
 // A popup's width from the design (menuCard() w), `px` at base 12, never
 // wider than the window less its margins (windowMargin()).

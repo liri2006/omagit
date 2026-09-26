@@ -251,4 +251,44 @@ function searchProposals() {
   return c;
 }
 
-module.exports = { cover, foundations, components, layoutRules, searchProposals };
+// The New branch flow (2026-09-25): what each frame of the section shows and
+// the rules the frames cannot show.
+function newBranchFlow() {
+  const t = T(), W = 1990, H = 760, c = new K.Canvas('New branch · flow', W, H);
+  rect(c, 0, 0, W, H, { fill: t.bg, id: 'bg' });
+  const wrap = (s, maxc) => { const lines = []; let line = ''; s.split(' ').forEach(w => { if ((line + ' ' + w).trim().length > maxc) { lines.push(line); line = w; } else line = line ? line + ' ' + w : w; }); lines.push(line); return lines; };
+  const para = (x, y, s, maxc, o = {}) => { const ls = wrap(s, maxc); ls.forEach((l, i) => text(c, x, y + i * 18, l, { size: o.size || SIZE.body, fill: o.fill || t.fg })); return ls.length * 18; };
+  heading(c, 40, 48, 'New branch · flow');
+  para(40, 84, 'Start a branch where you are in two keystrokes, or from any branch, tag or commit. One card does it everywhere, and it hangs under the branch chip, where the new branch will show up. Frames: Quarter 945×612, then Eighth and Extra narrow.', 150, { fill: t.dim });
+  const steps = [
+    ['1', 'Branch menu', 'The branch chip or Ctrl+3. Its last row, after a separator like Open… and Clone… in the repo menu, is New branch… (Ctrl+N, from anywhere: lazygit\'s n).'],
+    ['2', 'Type a name', 'The search doubles as the name: once no branch matches, the only row left is New branch “…”, current, so Return opens the card with the name in it.'],
+    ['3', 'The card', 'NAME focused; FROM the current branch, with the commit it resolves to; “Your 7 changed files come along”; Switch to it on. Return creates: git switch -c <name> [<start>], or git branch <name> <start> with Switch to it off.'],
+    ['4', 'Pick where it starts', 'The From picker is the merge dialog\'s branch menu with the tags added. A remote branch fills an empty name with its own (origin/feature/x → feature/x) and the new branch tracks it, as git does.'],
+    ['5', 'Name taken', '“Already a branch” in red on a row under the field, with Switch to it as the way out; Create is off until the name is free.'],
+    ['6', 'Created', 'The chip shows the new branch, Push and Pull lose their badges until it is published (Push publishes it), and the footer says what happened.'],
+    ['7', 'From History', 'A commit\'s menu gains New branch from here… (and Ctrl+N with a commit selected): the same card, starting at that commit.'],
+    ['8', 'Changes in the way', 'git will not switch when changed files differ at the start point. The card says which, Switch to it goes off, and Create still makes the branch where it was asked for.'],
+  ];
+  let y = 136;
+  steps.forEach(([n, title, body]) => {
+    c.group('Step ' + n, () => {
+      rect(c, 40, y - 12, 24, 24, { fill: t.accent, fo: n === '8' || n === '7' ? 0.18 : 1 });
+      text(c, 52, y, n, { weight: 700, fill: n === '8' || n === '7' ? t.accent : t.bg, anchor: 'middle' });
+      text(c, 80, y, title, { size: SIZE.title, weight: 700, fill: t.accent });
+      y += 24 + para(80, y + 24, body, 110) + 8;
+    });
+  });
+  const rx = 1100; let ry = 136;
+  text(c, rx, ry, 'Rules', { size: SIZE.title, weight: 700 }); ry += 30;
+  [
+    'Names: a space turns into a dash as it is typed; git check-ref-format --branch decides the rest. A name git refuses gets a red “Not a valid branch name” row and Create goes off; an empty one just leaves Create off.',
+    'Switch to it is on every time the card opens, except where git would refuse (frame 8).',
+    'Keys: Ctrl+N opens the card (from the branch menu with what was typed), Return creates, Esc closes. The keybindings panel lists Ctrl+N as “New branch”.',
+    'The card is 360 wide, 12 padding, like the agent popover; clamped to the window margins (324 at 340), 4 under the branch chip\'s row, over the view toggle when that has a row of its own.',
+    'The primary button reads Create branch whatever the switch; the checkbox says the rest, like Amend next to Commit.',
+  ].forEach(r => { text(c, rx, ry, '·', { weight: 700, fill: t.accent }); ry += para(rx + 16, ry, r, 110) + 12; });
+  return c;
+}
+
+module.exports = { cover, foundations, components, layoutRules, searchProposals, newBranchFlow };

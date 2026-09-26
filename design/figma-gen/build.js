@@ -77,6 +77,24 @@ emit(S.screen({ id: 'Extra narrow · History tab', W: 340, H: 612, page: 'histor
 emit(S.screen({ id: 'Extra narrow · Branch menu', W: 340, H: 612, page: 'changes', overlay: 'branch' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Extra narrow · Sync menu', W: 340, H: 612, page: 'changes', overlay: 'sync' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Extra narrow shallow · 340x493', W: 340, H: 493, page: 'changes' }), 'Screens · Narrow');
+// New branch flow (2026-09-25): the branch menu's New branch… row (Ctrl+N), the card, History's way in.
+// In Figma: the section "Flow · New branch" at the bottom of Screens · Half & Quarter.
+{
+  const Q = { W: 945, H: 612, page: 'changes' }, P = 'Screens · Half & Quarter', name = 'feature/tile-rules';
+  emit(SH.newBranchFlow(), P);
+  emit(S.screen({ id: 'New branch · 1 Branch menu', ...Q, overlay: 'branch', hover: 'new' }), P);
+  emit(S.screen({ id: 'New branch · 2 Name typed', ...Q, overlay: 'branch', query: name }), P);
+  emit(S.screen({ id: 'New branch · 3 Card', ...Q, overlay: 'newBranch', newBranch: { name } }), P);
+  emit(S.screen({ id: 'New branch · 4 Pick where it starts', ...Q, overlay: 'newBranch', newBranch: { name, pickerOpen: true } }), P);
+  emit(S.screen({ id: 'New branch · 5 Name taken', ...Q, overlay: 'newBranch', newBranch: { name: 'feature/askpass', taken: true } }), P);
+  emit(S.screen({ id: 'New branch · 6 Created', ...Q, branch: name, noUpstream: true, status: 'Created ' + name + ' at d444446 and switched to it' }), P);
+  emit(S.screen({ id: 'New branch · 7 History · commit menu', ...Q, page: 'history', commit: 2, overlay: 'commitMenu' }), P);
+  emit(S.screen({ id: 'New branch · 8 History · changes in the way', ...Q, page: 'history', commit: 2, overlay: 'newBranch', newBranch: { name: 'hotfix/clone-states',
+    base: { kind: 'commit', name: '14d6d14', sha: '14d6d14', msg: 'Add repository cloning with GitHub browser integration' },
+    blocked: { title: '2 changed files differ at 14d6d14', lines: ['GitRepo.cpp, Toolbar.cpp', 'Commit them first to switch to it.'] } } }), P);
+  emit(S.screen({ id: 'New branch · Eighth · Card', ...Q, W: 470, overlay: 'newBranch', newBranch: { name } }), P);
+  emit(S.screen({ id: 'New branch · Extra narrow · Card', ...Q, W: 340, overlay: 'newBranch', newBranch: { name } }), P);
+}
 fs.writeFileSync(OUT + '/frames.json', JSON.stringify(frames, null, 1));
 fs.writeFileSync(OUT + '/manifest.json', JSON.stringify(manifest));
 console.log(frames.length + ' frames total');

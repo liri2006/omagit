@@ -90,7 +90,7 @@ const ICON = {
   circle: 'mdiCircleMedium', unified: 'mdiViewSequentialOutline', auto: 'mdiAutoFix', sync: 'mdiSync', warn: 'mdiAlertCircleOutline',
   play: 'mdiPlay', filter: 'mdiFilterVariant', loader: 'mdiLoading',
   table: 'mdiTable', list: 'mdiFormatListBulleted', tree: 'mdiFileTree', folderOutline: 'mdiFolderOutline', eye: 'mdiEyeOutline',
-  infinity: 'mdiInfinity', tune: 'mdiTuneVariant',
+  infinity: 'mdiInfinity', tune: 'mdiTuneVariant', branchPlus: 'mdiSourceBranchPlus',
 };
 for (const [k, v] of Object.entries(ICON)) if (!mdi[v]) throw new Error('missing icon ' + k + ' ' + v);
 

@@ -679,8 +679,8 @@
 <rect x="1870" y="112" width="4" height="649" id="Scrollbar" fill="#e0e6ed" fill-opacity="0.25"/>
 </g>
 <g id="BranchMenu">
-<rect x="115" y="48" width="300" height="212" fill="#181c22"/>
-<rect x="116" y="49" width="298" height="210" fill="none" stroke="#4ecdc4" stroke-width="2" stroke-opacity="1"/>
+<rect x="115" y="48" width="300" height="244" fill="#181c22"/>
+<rect x="116" y="49" width="298" height="242" fill="none" stroke="#4ecdc4" stroke-width="2" stroke-opacity="1"/>
 <g id="Field/prompt">
 <g id="icon/search" transform="translate(128,59) scale(0.5833)"><path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" fill="#8791a6"/></g>
 <text x="147" y="70.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" id="placeholder" xml:space="preserve">Search branches…</text>
@@ -711,6 +711,12 @@
 <g id="MenuRow/normal origin/feature/askpass">
 <g id="icon/cloud" transform="translate(128,237) scale(0.5833)"><path d="M6.5 20Q4.22 20 2.61 18.43 1 16.85 1 14.58 1 12.63 2.17 11.1 3.35 9.57 5.25 9.15 5.88 6.85 7.75 5.43 9.63 4 12 4 14.93 4 16.96 6.04 19 8.07 19 11 20.73 11.2 21.86 12.5 23 13.78 23 15.5 23 17.38 21.69 18.69 20.38 20 18.5 20M6.5 18H18.5Q19.55 18 20.27 17.27 21 16.55 21 15.5 21 14.45 20.27 13.73 19.55 13 18.5 13H17V11Q17 8.93 15.54 7.46 14.08 6 12 6 9.93 6 8.46 7.46 7 8.93 7 11H6.5Q5.05 11 4.03 12.03 3 13.05 3 14.5 3 15.95 4.03 17 5.05 18 6.5 18M12 12Z" fill="#e0e6ed" fill-opacity="1"/></g>
 <text x="147" y="248.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" fill-opacity="1" xml:space="preserve">origin/feature/askpass</text>
+</g>
+<rect x="123" y="260" width="284" height="1" fill="#e0e6ed" fill-opacity="0.12"/>
+<g id="MenuRow/normal New branch…">
+<g id="icon/branchPlus" transform="translate(128,269) scale(0.5833)"><path d="M13 14C9.64 14 8.54 15.35 8.18 16.24C9.25 16.7 10 17.76 10 19C10 20.66 8.66 22 7 22S4 20.66 4 19C4 17.69 4.83 16.58 6 16.17V7.83C4.83 7.42 4 6.31 4 5C4 3.34 5.34 2 7 2S10 3.34 10 5C10 6.31 9.17 7.42 8 7.83V13.12C8.88 12.47 10.16 12 12 12C14.67 12 15.56 10.66 15.85 9.77C14.77 9.32 14 8.25 14 7C14 5.34 15.34 4 17 4S20 5.34 20 7C20 8.34 19.12 9.5 17.91 9.86C17.65 11.29 16.68 14 13 14M7 18C6.45 18 6 18.45 6 19S6.45 20 7 20 8 19.55 8 19 7.55 18 7 18M7 4C6.45 4 6 4.45 6 5S6.45 6 7 6 8 5.55 8 5 7.55 4 7 4M17 6C16.45 6 16 6.45 16 7S16.45 8 17 8 18 7.55 18 7 17.55 6 17 6M17 14V17H14V19H17V22H19V19H22V17H19V14H17Z" fill="#e0e6ed" fill-opacity="1"/></g>
+<text x="147" y="280.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" fill-opacity="1" xml:space="preserve">New branch…</text>
+<text x="403" y="280.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">Ctrl+N</text>
 </g>
 </g>
 </svg>

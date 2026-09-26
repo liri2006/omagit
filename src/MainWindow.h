@@ -21,6 +21,7 @@ class DiffPane;
 class Footer;
 class HistoryView;
 class MiniRail;
+class NewBranchCard;
 class QFileSystemWatcher;
 class QHBoxLayout;
 class QVBoxLayout;
@@ -74,6 +75,11 @@ public slots:
     // --screenshot-menu commit). Only in the Mini layout's commit view; opening
     // it while it is open only puts the keyboard back in its message box.
     void showCommitPopover();
+    // The New branch card under the branch chip (Ctrl+N, the branch menu's
+    // last row, a commit's menu in the history, --screenshot-menu newbranch):
+    // `name` in its field and `start` where the branch starts — a branch, a
+    // tag, a commit, or, empty, the current branch.
+    void showNewBranchCard(const QString &start = QString(), const QString &name = QString());
 
 private slots:
     void showKeybindings();
@@ -154,6 +160,9 @@ private:
     // Ctrl+Enter: commits from the popover when it is open, opens it in the
     // Mini layout, presses the page's Commit button in the Docked one.
     void commitKeys();
+    // Ctrl+N: the New branch card from the current branch, or from the
+    // commit selected in the history; with the card open, its name field.
+    void newBranchKeys();
     // Where the user was before a refresh: the scroll offsets of the two file
     // lists and the place in the diff.
     struct ViewState {
@@ -243,6 +252,7 @@ private:
     MiniRail *m_rail;
     CommitPopover *m_commitPopover; // the Mini layout's commit controls, an overlay of the central widget
     AgentPopover *m_agentPopover;   // the agent settings, an overlay hanging from a cog
+    NewBranchCard *m_newBranchCard; // an overlay too, hanging under the branch chip
     QFileSystemWatcher *m_watcher; // the working tree root, the index and the changed files
     QString m_indexFile;
     bool m_diffVisible = true;

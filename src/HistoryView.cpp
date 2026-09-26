@@ -6,6 +6,7 @@
 #include "RefChip.h"
 #include "UiHelpers.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QClipboard>
 #include <QFontMetrics>
@@ -31,6 +32,7 @@
 #include <QVBoxLayout>
 
 #include <iterator>
+#include <memory>
 
 using namespace ui;
 
@@ -1095,11 +1097,24 @@ void HistoryView::showContextMenu(const QPoint &pos)
     const Commit c = currentCommit(&ok);
     if (!ok)
         return;
-    QMenu menu(this);
-    menu.addAction(tr("Copy SHA"), this, [c] { QApplication::clipboard()->setText(c.hash); });
-    menu.addAction(tr("Copy short SHA"), this, [c] { QApplication::clipboard()->setText(c.shortHash); });
-    menu.addAction(tr("Copy message"), this, [c] {
+    std::unique_ptr<QMenu> menu(commitMenu(c));
+    menu->exec(m_table->viewport()->mapToGlobal(pos));
+}
+
+QMenu *HistoryView::commitMenu(const Commit &c)
+{
+    auto *menu = new QMenu(this);
+    // Every row wears its glyph, as the More and Options menus' rows do.
+    menu->addAction(icon(kContentCopy) + tr("Copy SHA"), this, [c] { QApplication::clipboard()->setText(c.hash); });
+    menu->addAction(icon(kContentCopy) + tr("Copy short SHA"), this, [c] { QApplication::clipboard()->setText(c.shortHash); });
+    menu->addAction(icon(kContentCopy) + tr("Copy message"), this, [c] {
         QApplication::clipboard()->setText(c.body.isEmpty() ? c.subject : c.subject + QStringLiteral("\n\n") + c.body);
     });
-    menu.exec(m_table->viewport()->mapToGlobal(pos));
+    menu->addSeparator();
+    // The window's Ctrl+N does the same for the selected commit; the text
+    // after the tab only names the keys.
+    QAction *branch = menu->addAction(icon(kBranchPlus) + tr("New branch from here…") + QStringLiteral("\tCtrl+N"), this,
+                                      [this, hash = c.hash] { emit newBranchRequested(hash); });
+    branch->setToolTip(tr("Start a new branch at %1").arg(c.shortHash));
+    return menu;
 }

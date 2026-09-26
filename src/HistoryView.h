@@ -14,6 +14,7 @@ class QAbstractItemView;
 class QHBoxLayout;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QSpacerItem;
 class QSplitter;
 class QStyledItemDelegate;
@@ -75,6 +76,9 @@ public:
     // The list the keyboard belongs on: the commit's files where the page
     // shows them, the commit list where it does not (stacked, shallow).
     QAbstractItemView *activeListView() const;
+    // A commit's context menu: its hash and message to copy, and a new
+    // branch from it. The caller owns the menu.
+    QMenu *commitMenu(const Commit &commit);
 
 signals:
     void currentFileChanged();
@@ -82,6 +86,8 @@ signals:
     // The details card's files button (stacked only): the commit's files,
     // which the window shows on the Diff tab.
     void filesRequested();
+    // New branch from here… in a commit's menu: the card, starting at `hash`.
+    void newBranchRequested(const QString &hash);
 
 private slots:
     void onCommitChanged();

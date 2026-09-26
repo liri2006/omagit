@@ -36,6 +36,10 @@ public:
     // right: not while the toolbar above says the same.
     void setSubtitleShown(bool shown);
     bool subtitleShown() const { return m_subtitleShown; }
+    // The dim text the header over `pane` wears at its right at the width of
+    // the moment: the subtitle, or in two-pane mode that side's label. Empty
+    // when the whole path and a group gap would not leave it the room.
+    QString headerLabel(int pane = 0) const;
 
     // Where the user is in the document: the scroll offsets and the current
     // change. A refresh that shows the same file again restores it so the
@@ -120,6 +124,7 @@ private:
     void updateMetrics();
     void updateScrollBars();
     int headerHeight() const;
+    QRect headerTextRect(int pane) const;
     int linesTop() const;
     int marginWidth() const;
     int edgeOffset(int pane) const;

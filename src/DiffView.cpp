@@ -315,6 +315,31 @@ void DiffView::rebuildLineLayouts()
     }
 }
 
+// The text's room in the header over `pane` (the whole view in one-pane
+// mode): the pane's width less 8 at either side, from the box's edge.
+QRect DiffView::headerTextRect(int pane) const
+{
+    const int pad = ui::space(ui::pad::control), hh = headerHeight();
+    if (m_mode != TwoPane)
+        return QRect(pad - edgeOffset(0), 0, viewport()->width() + edgeOffset(0) - 2 * pad, hh);
+    const QRect pr = paneRect(pane);
+    return QRect(pr.left() - edgeOffset(pane) + pad, 0, pr.width() + edgeOffset(pane) - 2 * pad, hh);
+}
+
+QString DiffView::headerLabel(int pane) const
+{
+    const QString label = m_mode == TwoPane ? (pane == 0 ? m_leftLabel : m_rightLabel)
+        : m_subtitleShown                   ? m_subtitle
+                                            : QString();
+    if (label.isEmpty() || m_title.isEmpty())
+        return QString();
+    QFont bold = font();
+    bold.setBold(true);
+    const int needs = QFontMetrics(bold, viewport()).horizontalAdvance(m_title) + ui::space(ui::gap::group)
+        + QFontMetrics(font(), viewport()).horizontalAdvance(label);
+    return needs <= headerTextRect(pane).width() ? label : QString();
+}
+
 void DiffView::setSubtitleShown(bool shown)
 {
     if (m_subtitleShown == shown)
@@ -712,6 +737,20 @@ void DiffView::paintEvent(QPaintEvent *)
     QFont bold = font();
     bold.setBold(true);
 
+    // The path, and the dim label at the right while both fit (headerLabel());
+    // alone, the path elides in the middle if it has to.
+    const auto drawHeader = [&](int pane) {
+        const QRect tr = headerTextRect(pane);
+        const QString label = headerLabel(pane);
+        if (!label.isEmpty()) {
+            p.setFont(font());
+            p.setPen(t->mutedText());
+            p.drawText(tr, Qt::AlignVCenter | Qt::AlignRight, label);
+        }
+        p.setFont(bold);
+        p.setPen(t->text());
+        p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft, p.fontMetrics().elidedText(m_title, Qt::ElideMiddle, tr.width()));
+    };
     if (m_title.isEmpty()) {
         // nothing loaded
     } else if (m_mode == TwoPane) {
@@ -719,32 +758,11 @@ void DiffView::paintEvent(QPaintEvent *)
             const QRect pr = paneRect(pane);
             p.save();
             p.setClipRect(QRect(pr.left(), 0, pr.width(), hh));
-            const int pad = ui::space(ui::pad::control);
-            const QRect tr(pr.left() - edgeOffset(pane) + pad, 0, pr.width() + edgeOffset(pane) - 2 * pad, hh);
-            const QString label = pane == 0 ? m_leftLabel : m_rightLabel;
-            p.setFont(font());
-            p.setPen(t->mutedText());
-            const int labelW = p.fontMetrics().horizontalAdvance(label) + ui::space(ui::gap::item);
-            p.drawText(tr, Qt::AlignVCenter | Qt::AlignRight, label);
-            p.setFont(bold);
-            p.setPen(t->text());
-            p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft,
-                       p.fontMetrics().elidedText(m_title, Qt::ElideMiddle, tr.width() - labelW));
+            drawHeader(pane);
             p.restore();
         }
     } else {
-        const int pad = ui::space(ui::pad::control);
-        const QRect tr(pad - edgeOffset(0), 0, w + edgeOffset(0) - 2 * pad, hh);
-        p.setFont(font());
-        p.setPen(t->mutedText());
-        const QString subtitle = m_subtitleShown ? m_subtitle : QString();
-        const int subW = subtitle.isEmpty() ? 0 : p.fontMetrics().horizontalAdvance(subtitle) + ui::space(ui::gap::item);
-        if (!subtitle.isEmpty())
-            p.drawText(tr, Qt::AlignVCenter | Qt::AlignRight, subtitle);
-        p.setFont(bold);
-        p.setPen(t->text());
-        p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft,
-                   p.fontMetrics().elidedText(m_title, Qt::ElideMiddle, tr.width() - subW));
+        drawHeader(0);
     }
 
     if (paneCount() == 2)

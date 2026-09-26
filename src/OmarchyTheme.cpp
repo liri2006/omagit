@@ -785,10 +785,10 @@ QStatusBar { background: %bg%; color: %dim%; border-top: 1px solid %hair%; }
 QStatusBar::item { border: none; }
 QLabel#sectionLabel, QLabel#dimLabel { color: %dim%; font-size: %caption%px; font-weight: bold; }
 /* The commit popover's hint and the agent popover's small lines: small and
-   regular, unlike the bold captions; the agent popover's notes beside its
-   section captions are caption-sized, and regular too. */
+   regular, unlike the bold captions; the notes beside the section captions of
+   the agent popover and the New branch card are caption-sized, and regular too. */
 QLabel#commitPopoverHint, QLabel#agentPopoverSmall, QLabel#footerStatus, QLabel#historyCount { color: %dim%; font-size: %small%px; font-weight: normal; }
-QLabel#agentPopoverNote { color: %dim%; font-size: %caption%px; font-weight: normal; }
+QLabel#agentPopoverNote, QLabel#newBranchNote { color: %dim%; font-size: %caption%px; font-weight: normal; }
 QLabel#captionLabel { font-size: %caption%px; font-weight: bold; }
 QLabel#bigLabel { font-size: %big%px; }
 /* The top bar's two chips: ghost buttons (ui::KitButton lays out their glyph,
@@ -818,9 +818,13 @@ QLineEdit#promptField, QLineEdit#promptField:hover, QLineEdit#promptField:focus 
 }
 QLabel#promptIcon { color: %dim%; font-size: %icon%px; }
 QDialog#keybindingsPanel { background: %bg%; border: 2px solid %acc%; }
-/* The Mini layout's commit popover and the agent settings: overlays framed
-   like the other popups. */
-QFrame#commitPopover, QFrame#agentPopover { background: %bg%; border: 2px solid %acc%; }
+/* The Mini layout's commit popover, the agent settings and the New branch
+   card: overlays framed like the other popups. */
+QFrame#commitPopover, QFrame#agentPopover, QFrame#newBranchCard { background: %bg%; border: 2px solid %acc%; }
+/* The New branch card's Switch to it while git would refuse the switch:
+   kit.js checkbox(), disabled — the label at 45 %, the box's border at 12 %. */
+QFrame#newBranchCard QCheckBox:disabled { color: %disabled%; }
+QFrame#newBranchCard QCheckBox::indicator:unchecked:disabled { border-color: %hair%; }
 /* An install command in the agent settings, with its copy button inside. */
 QFrame#commandRow { background: %fill4%; border: 1px solid %bd25%; }
 QLineEdit#keybindingsSearch, QLineEdit#keybindingsSearch:hover, QLineEdit#keybindingsSearch:focus {

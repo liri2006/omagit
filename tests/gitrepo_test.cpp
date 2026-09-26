@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -684,6 +685,166 @@ static void testBranches(const QString &base)
     CHECK(repo.branches().remote.isEmpty());
     repo.setRoot(other);
     CHECK(changes == 1);
+}
+
+// git with the tagger's and committer's clock set, so tags made in one
+// second still have an order.
+static void gitAt(const QString &dir, const QStringList &args, const QString &date)
+{
+    QProcess p;
+    p.setWorkingDirectory(dir);
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("GIT_COMMITTER_DATE"), date);
+    p.setProcessEnvironment(env);
+    p.start(QStringLiteral("git"), args);
+    p.waitForFinished(15000);
+    if (p.exitCode() != 0)
+        fprintf(stderr, "git %s failed: %s\n", qPrintable(args.join(' ')), p.readAllStandardError().constData());
+}
+
+// A new branch: switched to or only made, from HEAD, a commit or a remote
+// branch (which it then tracks); the names git takes; the changes that keep
+// a switch from happening; the tags a start can be; a repository without
+// commits.
+static void testCreateBranch(const QString &base)
+{
+    const QString server = base + "/create-server.git";
+    QDir().mkpath(server);
+    git(server, {"init", "-q", "--bare", "-b", "main"});
+    const QString seed = initRepo(base + "/create-seed");
+    write(seed, "a.txt", "a\n");
+    git(seed, {"add", "."});
+    git(seed, {"commit", "-q", "-m", "one"});
+    git(seed, {"branch", "feature/remote"});
+    git(seed, {"push", "-q", server, "main", "feature/remote"});
+    const QString dir = base + "/create-mine";
+    git(base, {"clone", "-q", server, dir});
+    git(dir, {"config", "user.name", "Tester"});
+    git(dir, {"config", "user.email", "tester@example.com"});
+    git(dir, {"config", "commit.gpgsign", "false"});
+    write(dir, "b.txt", "b\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "two"});
+    const QString first = QString::fromUtf8(git(dir, {"rev-parse", "HEAD~1"}));
+    const QString second = QString::fromUtf8(git(dir, {"rev-parse", "HEAD"}));
+
+    GitRepo repo(dir);
+    QString sha, subject;
+    CHECK(repo.describeCommit("main", &sha, &subject));
+    CHECK(second.startsWith(sha) && sha.size() >= 7 && subject == "two");
+    CHECK(repo.describeCommit(first, &sha, &subject) && subject == "one");
+    CHECK(!repo.describeCommit("no-such-thing", &sha, &subject));
+
+    // Switching: the new branch is checked out, at HEAD.
+    QString error;
+    CHECK(repo.createBranch("feature/on", QString(), true, &error));
+    CHECK(repo.branch() == "feature/on");
+    CHECK(QString::fromUtf8(git(dir, {"rev-parse", "feature/on"})) == second);
+    // Not switching: made where it was asked for, the checkout stays.
+    CHECK(repo.createBranch("from-commit", first, false, &error));
+    CHECK(repo.branch() == "feature/on");
+    CHECK(QString::fromUtf8(git(dir, {"rev-parse", "from-commit"})) == first);
+    int code = 0;
+    repo.run({"config", "--get", "branch.from-commit.merge"}, &code);
+    CHECK(code != 0); // a local start is not tracked
+    // From a remote branch: it tracks it, as git does by default.
+    CHECK(repo.createBranch("tracking", "origin/feature/remote", true, &error));
+    CHECK(repo.branch() == "tracking");
+    CHECK(git(dir, {"config", "--get", "branch.tracking.merge"}) == "refs/heads/feature/remote");
+    CHECK(repo.upstreamState().upstream == "origin/feature/remote");
+    // A name that is taken fails with git's own words.
+    error.clear();
+    CHECK(!repo.createBranch("main", QString(), true, &error));
+    CHECK(error.contains("already exists"));
+    CHECK(repo.branch() == "tracking");
+    git(dir, {"switch", "-q", "main"});
+
+    // The names git takes.
+    for (const QString &bad : {QString(), QStringLiteral("a b"), QStringLiteral("HEAD"), QStringLiteral("-x"),
+                               QStringLiteral("@{-1}"), QStringLiteral("x..y"), QStringLiteral("x.lock")})
+        CHECK(!repo.isValidBranchName(bad));
+    for (const QString &good : {QStringLiteral("feature/ok"), QStringLiteral("x"), QStringLiteral("fix-1.2")})
+        CHECK(repo.isValidBranchName(good));
+    CHECK(GitRepo::typedBranchName("my new  branch") == "my-new--branch");
+    CHECK(GitRepo::typedBranchName("feature/ok") == "feature/ok");
+
+    // The changes in the way of a switch: a changed file that differs at the
+    // start point, not one that is the same there; untracked ones too.
+    CHECK(repo.pathsBlockingSwitch(first).isEmpty()); // a clean tree
+    write(dir, "a.txt", "changed\n");
+    write(dir, "b.txt", "changed too\n");
+    CHECK(repo.pathsBlockingSwitch(first) == QStringList{"b.txt"});
+    CHECK(repo.pathsBlockingSwitch("main").isEmpty());
+    CHECK(repo.pathsBlockingSwitch(QString()).isEmpty());
+    git(dir, {"checkout", "-q", "--", "a.txt", "b.txt"});
+    git(dir, {"switch", "-q", "from-commit"});
+    write(dir, "b.txt", "untracked here\n");
+    write(dir, "c.txt", "untracked\n");
+    CHECK(repo.pathsBlockingSwitch("main") == QStringList{"b.txt"});
+    CHECK(repo.pathsBlockingSwitch("main", {"c.txt"}).isEmpty()); // the paths given, not read again
+    CHECK(repo.pathsBlockingSwitch("main", {"b.txt", "c.txt"}) == QStringList{"b.txt"});
+    QFile::remove(dir + "/b.txt");
+    QFile::remove(dir + "/c.txt");
+    git(dir, {"switch", "-q", "main"});
+
+    // The changed files as the card counts them: a staged rename once, a file
+    // staged and changed again once, the untracked ones each.
+    CHECK(repo.changedFileCount() == 0);
+    git(dir, {"mv", "a.txt", "moved.txt"});
+    write(dir, "b.txt", "staged\n");
+    git(dir, {"add", "b.txt"});
+    write(dir, "b.txt", "staged, then changed\n");
+    write(dir, "new/one.txt", "1\n");
+    write(dir, "new/two.txt", "2\n");
+    CHECK(repo.changedPaths().size() == 5); // both sides of the rename
+    CHECK(repo.changedFileCount() == 4);
+    git(dir, {"reset", "-q", "--hard"});
+    QDir(dir + "/new").removeRecursively();
+    CHECK(repo.changedFileCount() == 0);
+
+    // A start that renames a changed file: its old name is in the way, which
+    // a diff pairing the rename would only have called by the new one. A
+    // start named like a file is a start, not the file.
+    const QString renames = initRepo(base + "/create-renames");
+    write(renames, "a.txt", "a file long enough to be seen as renamed\n");
+    write(renames, "README.md", "readme\n");
+    git(renames, {"add", "."});
+    git(renames, {"commit", "-q", "-m", "one"});
+    git(renames, {"switch", "-q", "-c", "moved"});
+    git(renames, {"mv", "a.txt", "b.txt"});
+    git(renames, {"commit", "-q", "-m", "moved"});
+    git(renames, {"switch", "-q", "-c", "README.md", "main"});
+    write(renames, "README.md", "readme on its branch\n");
+    git(renames, {"commit", "-q", "-am", "readme"});
+    git(renames, {"switch", "-q", "main"});
+    GitRepo renaming(renames);
+    write(renames, "a.txt", "changed\n");
+    CHECK(renaming.pathsBlockingSwitch("moved") == QStringList{"a.txt"});
+    CHECK(renaming.pathsBlockingSwitch("README.md").isEmpty());
+    git(renames, {"checkout", "-q", "--", "a.txt"});
+    write(renames, "README.md", "changed\n");
+    CHECK(renaming.pathsBlockingSwitch("README.md") == QStringList{"README.md"});
+    CHECK(renaming.pathsBlockingSwitch("moved").isEmpty());
+
+    // Tags, the newest first.
+    CHECK(repo.tags().isEmpty());
+    gitAt(dir, {"tag", "-a", "-m", "old", "v1", first}, "2024-01-01T10:00:00+00:00");
+    gitAt(dir, {"tag", "-a", "-m", "new", "v2", second}, "2024-02-01T10:00:00+00:00");
+    gitAt(dir, {"tag", "-a", "-m", "middle", "v1.5", first}, "2024-01-15T10:00:00+00:00");
+    CHECK(repo.tags() == QStringList({"v2", "v1.5", "v1"}));
+    CHECK(repo.createBranch("from-tag", "v1", false, &error));
+    CHECK(QString::fromUtf8(git(dir, {"rev-parse", "from-tag"})) == first);
+
+    // No commits yet: switching renames the unborn branch; only switching works.
+    const QString unbornDir = initRepo(base + "/create-unborn");
+    GitRepo unborn(unbornDir);
+    CHECK(!unborn.hasHead());
+    CHECK(unborn.pathsBlockingSwitch(QString()).isEmpty());
+    error.clear();
+    CHECK(!unborn.createBranch("side", QString(), false, &error));
+    CHECK(!error.isEmpty());
+    CHECK(unborn.createBranch("first-branch", QString(), true, &error));
+    CHECK(unborn.branch() == "first-branch");
 }
 
 // The diff handed to a coding agent: stat first, tracked and untracked files, a cut-off.
@@ -1395,6 +1556,7 @@ int main(int argc, char **argv)
     testLogStartPoints(tmp.path());
     testRemote(tmp.path());
     testBranches(tmp.path());
+    testCreateBranch(tmp.path());
     testMerge(tmp.path());
     testMergeAsync(tmp.path());
     testRunAsyncOutlivesContext(tmp.path());

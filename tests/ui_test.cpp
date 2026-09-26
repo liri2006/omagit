@@ -7,6 +7,7 @@
 #include "../src/BadgeButton.h"
 #include "../src/Footer.h"
 #include "../src/BranchMenu.h"
+#include "../src/BranchPicker.h"
 #include "../src/ChangesModel.h"
 #include "../src/ChangesTreeModel.h"
 #include "../src/CommitDetails.h"
@@ -26,6 +27,7 @@
 #include "../src/MergeDialog.h"
 #include "../src/MessageEdit.h"
 #include "../src/MiniRail.h"
+#include "../src/NewBranchCard.h"
 #include "../src/OmarchyTheme.h"
 #include "../src/RemoteSync.h"
 #include "../src/Segmented.h"
@@ -40,6 +42,7 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QFontMetrics>
@@ -74,6 +77,7 @@
 #include <QStackedWidget>
 #include <QStandardItemModel>
 #include <QStandardPaths>
+#include <QStyleOptionButton>
 #include <QStyleOptionViewItem>
 #include <QTableView>
 #include <QTcpServer>
@@ -90,6 +94,7 @@
 #include <QVBoxLayout>
 #include <QtMath>
 #include <QWheelEvent>
+#include <QWidgetAction>
 
 #include <functional>
 #include <memory>
@@ -651,9 +656,11 @@ struct BarFixture
     QWidget *tabs() const { return bar->changesTab()->parentWidget(); }
     QRect rectOf(QWidget *w) const { return QRect(w->mapTo(bar, QPoint(0, 0)), w->size()); }
 
+    // As tall as the width makes the bar, as a window's layout would have it:
+    // one row, or two where the stacked tabs take their own.
     int levelAt(int width) const
     {
-        bar->resize(width, bar->sizeHint().height());
+        bar->resize(width, bar->heightForWidth(width));
         QCoreApplication::processEvents();
         return bar->foldLevel();
     }
@@ -698,6 +705,7 @@ struct WindowFixture
     MiniRail *rail() const { return window->findChild<MiniRail *>(); }
     CommitPopover *popover() const { return window->findChild<CommitPopover *>(); }
     AgentPopover *agentCard() const { return window->findChild<AgentPopover *>(); }
+    NewBranchCard *newBranchCard() const { return window->findChild<NewBranchCard *>(); }
     QToolButton *tile() const { return rail()->commitTile(); }
     QWidget *host() const { return window->centralWidget(); }
     DiffView *diff() const { return window->findChild<DiffView *>(); }
@@ -727,17 +735,18 @@ struct WindowFixture
 // `mini` starts the window in the Mini layout before its first show;
 // `beforeShow` does whatever else main() would do before showing it (flags,
 // a size of its own); a `branch` is checked out after the first commit, in
-// place of main.
+// place of main; a `folder` names the repository's directory (the top bar's
+// repository chip), inside the scratch one.
 WindowFixture mainWindow(int extra = 0, bool mini = false,
                          const std::function<void(MainWindow *)> &beforeShow = {},
-                         const QString &branch = {})
+                         const QString &branch = {}, const QString &folder = {})
 {
     WindowFixture f;
     f.dir.reset(new QTemporaryDir);
     f.tools.reset(new QTemporaryDir);
-    const QString path = f.dir->path();
+    const QString path = folder.isEmpty() ? f.dir->path() : QDir(f.dir->path()).filePath(folder);
     const QString gitBinary = QStandardPaths::findExecutable(QStringLiteral("git"));
-    if (!f.dir->isValid() || !f.tools->isValid() || gitBinary.isEmpty())
+    if (!f.dir->isValid() || !f.tools->isValid() || gitBinary.isEmpty() || !QDir().mkpath(path))
         return f;
     // A PATH with nothing on it but git: the window's commit page asks the
     // coding-agent CLIs for their models as it is built, and no such process
@@ -761,6 +770,10 @@ WindowFixture mainWindow(int extra = 0, bool mini = false,
         || !git(path, {"config", "commit.gpgsign", "false"}))
         return f;
     f.repo.reset(new GitRepo(path));
+    // GitRepo looks git up once per process, on its first run: that run has
+    // the PATH everyone has, not the git-only one below, which goes with
+    // this fixture.
+    f.repo->hasHead();
     const QByteArray env = qgetenv("PATH");
     qputenv("PATH", f.tools->path().toUtf8());
     f.window.reset(new MainWindow(f.repo.get()));
@@ -1340,6 +1353,97 @@ QStringList squeezedButtons(QWidget *row)
             out << QStringLiteral("%1: %2 < %3").arg(b->accessibleName()).arg(b->width()).arg(needs);
     }
     return out;
+}
+
+// ---- The New branch flow
+
+// The rows of a menu that are on screen, the search prompt aside: "-" for a
+// separator, a section's caption as it reads, an entry's text.
+QStringList shownRows(const QMenu *menu)
+{
+    QStringList out;
+    for (QAction *a : menu->actions()) {
+        if (!a->isVisible())
+            continue;
+        if (a->isSeparator()) {
+            out << QStringLiteral("-");
+        } else if (auto *wa = qobject_cast<QWidgetAction *>(a)) {
+            if (auto *label = qobject_cast<QLabel *>(wa->defaultWidget()))
+                out << label->text();
+        } else {
+            out << a->text();
+        }
+    }
+    return out;
+}
+
+// The branch menu's New branch row: the entry wearing the branch-plus glyph.
+QAction *newBranchRow(const QMenu *menu)
+{
+    for (QAction *a : menu->actions())
+        if (a->property("branchGlyph").toUInt() == ui::kBranchPlus)
+            return a;
+    return nullptr;
+}
+
+// Clicks `picker` and, once the branch menu it opens is up, hands the menu to
+// `inMenu`; whatever it leaves open is closed after it, so the click returns.
+void inPickerMenu(QAbstractButton *picker, const std::function<void(BranchMenu *)> &inMenu)
+{
+    QTimer::singleShot(0, picker, [inMenu] {
+        QElapsedTimer clock;
+        clock.start();
+        BranchMenu *menu = nullptr;
+        while (!(menu = qobject_cast<BranchMenu *>(QApplication::activePopupWidget())) && clock.elapsed() < 5000)
+            QTest::qWait(10);
+        if (menu)
+            inMenu(menu);
+        if (QWidget *popup = QApplication::activePopupWidget())
+            popup->close();
+    });
+    picker->click();
+}
+
+// Picks the entry `name` of an open branch menu the way Return does: the menu
+// closes, then the entry fires.
+void pickIn(BranchMenu *menu, const QString &name)
+{
+    for (QAction *a : menu->actions()) {
+        if (a->text() == name) {
+            menu->close();
+            a->trigger();
+            return;
+        }
+    }
+    menu->close();
+}
+
+// Whether `a` is `b` to a pixel on every edge.
+bool withinAPixel(const QRect &a, const QRect &b)
+{
+    return qAbs(a.x() - b.x()) <= 1 && qAbs(a.y() - b.y()) <= 1 && qAbs(a.width() - b.width()) <= 1
+        && qAbs(a.height() - b.height()) <= 1;
+}
+
+QString rectText(const QRect &r)
+{
+    return QStringLiteral("%1,%2 %3x%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height());
+}
+
+// The New branch card open the way Ctrl+N and the menus open it.
+NewBranchCard *openNewBranchCard(const WindowFixture &f, const QString &start = {}, const QString &name = {})
+{
+    QMetaObject::invokeMethod(f.window.get(), "showNewBranchCard", Q_ARG(QString, start), Q_ARG(QString, name));
+    settle();
+    NewBranchCard *card = f.newBranchCard();
+    return card && card->isVisible() ? card : nullptr;
+}
+
+// The footer's message of the moment.
+QString footerStatus(const WindowFixture &f)
+{
+    auto *label = f.window->findChild<ui::ElidedLabel *>(QStringLiteral("footerStatus"));
+    return label ? label->fullText() : QString();
 }
 
 } // namespace
@@ -2783,8 +2887,9 @@ esac
     // --- The stacked top bar --------------------------------------------------
 
     // Stacked, the row has three levels of its own: the tab labels go, then
-    // the branch name elides. The repository is the bare folder, the right
-    // group the sync dropdown and More, and the toggles are gone.
+    // the tabs take a row of their own, and only there does the branch name
+    // elide, by what the first row lacks. The repository is the bare folder,
+    // the right group the sync dropdown and More, and the toggles are gone.
     void theStackedTopBarFoldsInThreeSteps()
     {
         BarFixture f = topBar();
@@ -2825,8 +2930,12 @@ esac
         QCOMPARE(f.levelAt(wide - (labels - glyphs) - 1), 2);
 
         // What every level shows.
+        const QString fullBranch = ui::icon(ui::kBranch) + bar->branchLabel() + ui::chevron();
         for (int level = 0; level <= 2; ++level) {
             QCOMPARE(f.levelAt(widest.value(level, wide)), level);
+            // One row, 8 + 28 + 8, or two: the tabs a space(kBar) under it.
+            const int rows = level == 2 ? 2 : 1;
+            QCOMPARE(bar->height(), (rows + 1) * ui::space(ui::kBar) + rows * ui::space(ui::box::control));
             QCOMPARE(visible(f.sync()), QList<bool>({false, false, false, false}));
             QVERIFY(!bar->layoutButton()->isVisible());
             QVERIFY(!bar->diffToggle()->isVisible());
@@ -2836,10 +2945,12 @@ esac
             QVERIFY(bar->syncDropdown()->isVisible());
             QVERIFY(bar->moreButton()->isVisible());
             QCOMPARE(bar->diffTab()->isVisible(), true);
-            // The dropdown is the design's 96 px whatever its hint, the row's
-            // height; More is the design's bare 28 px square, in the icon form.
+            // The dropdown is the design's 96 px whatever its hint, the first
+            // row's height, 8 under the bar's top; More is the design's bare
+            // 28 px square, in the icon form.
             QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(96));
-            QCOMPARE(f.rectOf(bar->syncDropdown()).height(), bar->syncDropdown()->parentWidget()->height());
+            QCOMPARE(f.rectOf(bar->syncDropdown()).height(), ui::space(ui::box::control));
+            QCOMPARE(f.rectOf(bar->syncDropdown()).y(), ui::space(ui::kBar));
             QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(ui::box::control));
             QVERIFY(bar->moreButton()->property("iconForm").toBool());
             // The gaps: the bare folder, a cluster to the branch, an item
@@ -2853,21 +2964,41 @@ esac
             QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(ui::gap::cluster));
             QCOMPARE(more.x() - (sync.x() + sync.width()), ui::space(ui::gap::item));
             QCOMPARE(more.x() + more.width(), bar->width() - ui::space(12));
-            QCOMPARE(static_cast<SegmentButton *>(bar->changesTab())->isLabelled(), level == 0);
-            QCOMPARE(static_cast<SegmentButton *>(bar->diffTab())->isLabelled(), level == 0);
+            // Two rows this wide give every segment the room for its label.
+            QCOMPARE(static_cast<SegmentButton *>(bar->changesTab())->isLabelled(), level != 1);
+            QCOMPARE(static_cast<SegmentButton *>(bar->diffTab())->isLabelled(), level != 1);
             QVERIFY(bar->changesCount() > 0); // the pill stays at every level
+            // The name is whole on one row, and on two while the first holds it.
+            QCOMPARE(bar->branchButton()->text(), fullBranch);
         }
 
-        // Wide, the tabs sit in the middle; at the narrowest the clamp keeps
-        // them a group gap clear of both groups.
+        // Wide, the tabs sit in the middle; at the narrowest one row the
+        // clamp keeps them a group gap clear of both groups.
         QCOMPARE(f.levelAt(wide + 400), 0);
         const QRect middle = f.rectOf(f.tabs());
         QVERIFY(qAbs(middle.x() + middle.width() / 2.0 - (wide + 400) / 2.0) <= 1.0);
-        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 2);
+        QCOMPARE(f.levelAt(widest.value(2) + 1), 1);
         const QRect tight = f.rectOf(f.tabs());
         const QRect branch = f.rectOf(bar->branchButton());
         QCOMPARE(tight.x(), branch.x() + branch.width() + ui::space(ui::gap::group));
         QCOMPARE(tight.x() + tight.width() + ui::space(ui::gap::group), f.rectOf(bar->syncDropdown()).x());
+        // A pixel less, the tabs are the second row: the row's whole width,
+        // stretched, a space(kBar) under the first.
+        QCOMPARE(f.levelAt(widest.value(2)), 2);
+        const QRect own = f.rectOf(f.tabs());
+        QCOMPARE(own, QRect(ui::space(12), 2 * ui::space(ui::kBar) + ui::space(ui::box::control),
+                            bar->width() - 2 * ui::space(12), ui::space(ui::box::control)));
+        QVERIFY(static_cast<SegmentStrip *>(f.tabs())->isStretch());
+        // Down to the narrowest, the name elides by exactly what the first
+        // row lacks: when it does, the chip ends a group gap from the dropdown.
+        for (int width = widest.value(2); width >= bar->minimumSizeHint().width(); --width) {
+            QCOMPARE(f.levelAt(width), 2);
+            const int end = f.rectOf(bar->branchButton()).right() + 1 + ui::space(ui::gap::group);
+            if (bar->branchButton()->text() == fullBranch)
+                QVERIFY(end <= f.rectOf(bar->syncDropdown()).x());
+            else
+                QCOMPARE(end, f.rectOf(bar->syncDropdown()).x());
+        }
         // The branch floor: a lone ellipsis between the glyph and the
         // chevron, in the chip's font, and the chip no wider than that.
         // The name's advance rounded up, as the bar and the chip measure it.
@@ -2881,6 +3012,8 @@ esac
         QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 2);
         QCOMPARE(bar->branchButton()->text(), ui::icon(ui::kBranch) + QString(QChar(0x2026)) + ui::chevron());
         QCOMPARE(f.rectOf(bar->branchButton()).width(), branchChrome + ellipsis);
+        // No share of a row this narrow holds "Changes 7": the tabs go to glyphs.
+        QVERIFY(!static_cast<SegmentButton *>(bar->changesTab())->isLabelled());
         QVERIFY(bar->minimumSizeHint().width() < bar->sizeHint().width());
         // So the stacked row asks for less than the ordinary one's last level,
         // which keeps 72 px of this long a name.
@@ -3944,6 +4077,65 @@ esac
         QCOMPARE(view->mode(), before);
     }
 
+    // The header's dim text at its right, the one-pane subtitle or a side's
+    // label, stays while the whole path, a group gap and it fit the header's
+    // text room (the view less 8 at either side), and is dropped otherwise:
+    // the path gets the whole room then.
+    void theDiffHeaderDropsItsLabelBeforeThePath()
+    {
+        DiffView view;
+        const DiffDocument doc = DiffModel::parse(QStringLiteral("@@ -1,2 +1,2 @@\n-a\n+A\n b\n"));
+        const QString path = QStringLiteral("src/ui/Toolbar.cpp"), subtitle = QStringLiteral("Modified   +1  −1");
+        const QString left = QStringLiteral("HEAD"), right = QStringLiteral("Working tree");
+        view.setDocument(doc, path, subtitle, left, right);
+        view.setMode(DiffView::OnePane);
+        view.resize(ui::space(600), 300);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        settle();
+        QCOMPARE(view.headerLabel(), subtitle);
+
+        QFont bold = view.font();
+        bold.setBold(true);
+        const int needs = QFontMetrics(bold).horizontalAdvance(path) + ui::space(ui::gap::group)
+            + QFontMetrics(view.font()).horizontalAdvance(subtitle);
+        const auto room = [&view] { return view.viewport()->width() + view.frameWidth() - 2 * ui::space(ui::pad::control); };
+        bool shown = false, dropped = false;
+        for (int width = needs + ui::space(100); width >= needs - ui::space(100); --width) {
+            view.resize(width, 300);
+            QCoreApplication::processEvents();
+            const bool fits = needs <= room();
+            QCOMPARE(view.headerLabel(), fits ? subtitle : QString());
+            (fits ? shown : dropped) = true;
+        }
+        QVERIFY(shown && dropped);
+        // Not shown at all while the toolbar says the same.
+        view.resize(ui::space(600), 300);
+        view.setSubtitleShown(false);
+        QCOMPARE(view.headerLabel(), QString());
+        view.setSubtitleShown(true);
+
+        // Two panes, each on its own: the longer label goes first while the
+        // shorter one still fits beside the path, then both.
+        view.setMode(DiffView::TwoPane);
+        view.resize(ui::space(1000), 300);
+        QCoreApplication::processEvents();
+        QCOMPARE(view.headerLabel(0), left);
+        QCOMPARE(view.headerLabel(1), right);
+        bool split = false;
+        for (int width = ui::space(1000); width >= ui::space(150); --width) {
+            view.resize(width, 300);
+            QCoreApplication::processEvents();
+            QVERIFY(view.headerLabel(0).isEmpty() || view.headerLabel(0) == left);
+            QVERIFY(view.headerLabel(1).isEmpty() || view.headerLabel(1) == right);
+            QVERIFY(!(view.headerLabel(0).isEmpty() && !view.headerLabel(1).isEmpty()));
+            split = split || (view.headerLabel(0) == left && view.headerLabel(1).isEmpty());
+        }
+        QVERIFY(split);
+        QCOMPARE(view.headerLabel(0), QString());
+        QCOMPARE(view.headerLabel(1), QString());
+    }
+
     // The "…" menu offers the view dropdown's choice and says what the two
     // squares say at the moment it opens; its entries take the same paths.
     void theDiffToolbarMenuMirrorsTheOptions()
@@ -4083,7 +4275,9 @@ esac
 
     // The stacked bar never forces a width on a 470 tile: with the Changes
     // pill and a branch name longer than the ordinary row's 72 px, the window
-    // stays 470 wide on every tab and the name elides instead.
+    // stays 470 wide on every tab. So long a name leaves the tabs no room on
+    // one row: they take a second, and the name elides only by what the first
+    // row lacks. "main" keeps a 470 tile to one row.
     void theStackedWindowKeepsA470Tile()
     {
         WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); },
@@ -4106,7 +4300,14 @@ esac
             QVERIFY2(w->width() == 470, qPrintable(QStringLiteral("%1: %2 wide").arg(QLatin1String(name)).arg(w->width())));
             QVERIFY2(w->minimumSizeHint().width() <= 470,
                      qPrintable(QStringLiteral("%1: a minimum of %2").arg(QLatin1String(name)).arg(w->minimumSizeHint().width())));
-            QVERIFY2(bar->branchButton()->text().contains(QChar(0x2026)), qPrintable(bar->branchButton()->text()));
+            QVERIFY2(bar->foldLevel() == 2, name);
+            const QRect branch(bar->branchButton()->mapTo(bar, QPoint(0, 0)), bar->branchButton()->size());
+            const int end = branch.x() + branch.width() + ui::space(ui::gap::group);
+            const int sync = bar->syncDropdown()->mapTo(bar, QPoint(0, 0)).x();
+            if (bar->branchButton()->text() == ui::icon(ui::kBranch) + bar->branchLabel() + ui::chevron())
+                QVERIFY2(end <= sync, name);
+            else
+                QVERIFY2(end == sync, qPrintable(bar->branchButton()->text()));
         };
         holds(bar->changesTab(), "Changes");
         if (QTest::currentTestFailed())
@@ -4119,6 +4320,281 @@ esac
         if (QTest::currentTestFailed())
             return;
         QCOMPARE(w->mode(), MainWindow::HistoryMode);
+        f.window.reset(); // the window goes before the theme changes under it
+
+        // "main" at the design's text size, where 470 holds its one row.
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+            {
+                WindowFixture main = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); });
+                QVERIFY(main.window);
+                QVERIFY(QTest::qWaitForWindowExposed(main.window.get()));
+                settle();
+                QVERIFY(main.window->isStacked());
+                QCOMPARE(main.bar()->branchLabel(), QStringLiteral("main"));
+                QCOMPARE(main.bar()->foldLevel(), 1);
+                QCOMPARE(main.bar()->height(), 2 * ui::space(ui::kBar) + ui::space(ui::box::control));
+                QCOMPARE(main.bar()->branchButton()->text(), ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron());
+            }
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
+    }
+
+    // At 340 (a tile the user hit) not even the tab glyphs fit beside "main",
+    // so the tabs take a row of their own under the controls (screens.js
+    // topBar(), extra narrow): the row's whole width, labelled again, the
+    // branch whole, the bar 8 + 28 + 8 + 28 + 8 and the body under it from
+    // the first frame; the popups hang from the first row, over the tabs.
+    void theExtraNarrowBarGivesTheTabsARowOfTheirOwn()
+    {
+        // At the design's text size, where its pixels are the bar's.
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        const QString toml = QDir(dir.path()).filePath(QStringLiteral("shell.toml"));
+        QVERIFY(writeFixture(toml, "[font]\nbase-size = 12\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+            {
+                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(340, 612); });
+                QVERIFY(f.window);
+                QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+                MainWindow *w = f.window.get();
+                TopBar *bar = f.bar();
+                const int row = ui::space(ui::box::control), gap = ui::space(ui::kBar);
+                // As first laid out: no pass with the body under a one-row bar.
+                QCOMPARE(bar->foldLevel(), 2);
+                QCOMPARE(bar->height(), 3 * gap + 2 * row);
+                settle();
+                QCOMPARE(w->width(), 340);
+                QVERIFY(w->isStacked());
+                QCOMPARE(bar->branchLabel(), QStringLiteral("main"));
+                QCOMPARE(bar->foldLevel(), 2);
+                QCOMPARE(bar->height(), 3 * gap + 2 * row);
+                const auto rectOf = [bar](const QWidget *c) { return QRect(c->mapTo(bar, QPoint(0, 0)), c->size()); };
+
+                // Row 1: the controls, centred in the first 28 px, 8 under the top;
+                // the branch spelled out.
+                for (QWidget *c : QList<QWidget *>{bar->repoButton(), bar->branchButton(), bar->syncDropdown(), bar->moreButton()}) {
+                    const QRect r = rectOf(c);
+                    QVERIFY2(c->isVisible(), qPrintable(c->accessibleName()));
+                    QVERIFY2(r.top() >= gap && r.bottom() < gap + row, qPrintable(c->accessibleName()));
+                    QVERIFY2(qAbs(r.top() + r.bottom() + 1 - (2 * gap + row)) <= 1, qPrintable(c->accessibleName()));
+                }
+                QCOMPARE(rectOf(bar->syncDropdown()).height(), row);
+                QCOMPARE(bar->branchButton()->text(), ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron());
+
+                // Row 2: the tabs alone, stretched over the row's width (the window's
+                // less its stacked 8 px margins), a space(kBar) under row 1, clear of
+                // every other control on the bar.
+                auto *tabs = static_cast<SegmentStrip *>(bar->changesTab()->parentWidget());
+                const QRect strip = rectOf(tabs);
+                const int margin = ui::space(8);
+                QCOMPARE(strip, QRect(margin, 2 * gap + row, bar->width() - 2 * margin, row));
+                QVERIFY(tabs->isStretch());
+                for (QToolButton *b : bar->findChildren<QToolButton *>()) {
+                    if (b->isVisible() && !tabs->isAncestorOf(b))
+                        QVERIFY2(!rectOf(b).intersects(strip), qPrintable(b->accessibleName()));
+                }
+                // The labels are back: a third of the row holds each labelled segment.
+                for (const SegmentButton *segment : tabs->segments()) {
+                    QVERIFY(segment->isVisible());
+                    QVERIFY2(segment->isLabelled(), qPrintable(segment->accessibleName()));
+                    QVERIFY(segment->sizeHint().width() <= strip.width() / 3);
+                }
+                QVERIFY(bar->changesCount() > 0);
+                // The body under the bar's hairline.
+                QVERIFY(f.page()->mapTo(w, QPoint(0, 0)).y() >= bar->mapTo(w, QPoint(0, bar->height())).y());
+
+                // The popups hang 4 under row 1, over the tabs.
+                const int top = bar->mapToGlobal(QPoint(0, gap + row)).y() + ui::space(ui::gap::cluster);
+                QCOMPARE(ui::popupTop(bar), top);
+                for (QToolButton *anchor : QList<QToolButton *>{bar->syncDropdown(), bar->moreButton()}) {
+                    QMenu *menu = anchor->menu();
+                    QVERIFY(menu);
+                    QTimer::singleShot(0, menu, [menu] { menu->close(); });
+                    anchor->showMenu();
+                    QCOMPARE(menu->y(), top);
+                }
+
+                // The row count follows the width both ways, and the popup edge with it.
+                w->resize(470, 612);
+                settle();
+                QCOMPARE(bar->foldLevel(), 1);
+                QCOMPARE(bar->height(), 2 * gap + row);
+                QCOMPARE(ui::popupTop(bar), bar->mapToGlobal(QPoint(0, bar->height())).y() + ui::space(ui::gap::cluster));
+                w->resize(340, 612);
+                settle();
+                QCOMPARE(bar->foldLevel(), 2);
+                QCOMPARE(bar->height(), 3 * gap + 2 * row);
+                QCOMPARE(ui::popupTop(bar), top);
+
+                // A long name elides by exactly what row 1 lacks; the bar stays two
+                // rows and the window its width.
+                bar->setBranchLabel(QStringLiteral("feature/askpass-login-dialog"));
+                settle();
+                QCOMPARE(w->width(), 340);
+                QCOMPARE(bar->foldLevel(), 2);
+                QCOMPARE(bar->height(), 3 * gap + 2 * row);
+                QVERIFY2(bar->branchButton()->text().contains(QChar(0x2026)), qPrintable(bar->branchButton()->text()));
+                QVERIFY(bar->branchButton()->text().startsWith(ui::icon(ui::kBranch) + QStringLiteral("feature/")));
+                const QRect branch = rectOf(bar->branchButton());
+                QCOMPARE(branch.x() + branch.width() + ui::space(ui::gap::group), rectOf(bar->syncDropdown()).x());
+                QCOMPARE(rectOf(tabs), strip);
+            }
+        }
+
+        // At 16, by what the bar measures: two rows, the second a space(kBar)
+        // under the first (as tall as the dropdown), the tabs alone on it and
+        // across it, labelled only while every segment's label fits its
+        // share, and the popups hanging from the first.
+        QVERIFY(writeFixture(toml, "[font]\nbase-size = 16\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 16);
+            theme.apply(*qApp);
+            {
+                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(340, 612); });
+                QVERIFY(f.window);
+                QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+                settle();
+                MainWindow *w = f.window.get();
+                TopBar *bar = f.bar();
+                QVERIFY(w->isStacked());
+                // Shown before it knows it is stacked, the window may have
+                // grown to the ordinary bar's minimum: the tile again.
+                w->resize(340, 612);
+                settle();
+                QCOMPARE(w->width(), 340);
+                QCOMPARE(bar->foldLevel(), 2);
+                const auto rectOf = [bar](const QWidget *c) { return QRect(c->mapTo(bar, QPoint(0, 0)), c->size()); };
+                const QRect sync = rectOf(bar->syncDropdown());
+                QCOMPARE(sync.y(), ui::space(ui::kBar));
+                const int firstRow = sync.bottom() + 1;
+                auto *tabs = static_cast<SegmentStrip *>(bar->changesTab()->parentWidget());
+                const QRect strip = rectOf(tabs);
+                const int margin = ui::windowMargin(w);
+                QCOMPARE(strip, QRect(margin, firstRow + ui::space(ui::kBar), bar->width() - 2 * margin, sync.height()));
+                QVERIFY(tabs->isStretch());
+                for (QToolButton *b : bar->findChildren<QToolButton *>()) {
+                    if (b->isVisible() && !tabs->isAncestorOf(b))
+                        QVERIFY2(!rectOf(b).intersects(strip), qPrintable(b->accessibleName()));
+                }
+                // Each segment's hint wearing its label, whatever it wears now.
+                bool fits = true;
+                for (SegmentButton *segment : tabs->segments()) {
+                    const bool labelled = segment->isLabelled();
+                    segment->setLabelled(true);
+                    fits = fits && segment->sizeHint().width() <= strip.width() / 3;
+                    segment->setLabelled(labelled);
+                }
+                for (const SegmentButton *segment : tabs->segments())
+                    QVERIFY2(segment->isLabelled() == fits, qPrintable(segment->accessibleName()));
+                QCOMPARE(ui::popupTop(bar), bar->mapToGlobal(QPoint(0, firstRow)).y() + ui::space(ui::gap::cluster));
+            }
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
+    }
+
+    // The row count follows what the first row has to hold, not only the
+    // width: a longer branch name, or a dropdown widened by a three-digit
+    // count, takes the tabs to a row of their own in a window that keeps its
+    // size, and the bar's height, the body and the popups' edge move with it
+    // and back.
+    void theStackedBarsRowsFollowItsContent()
+    {
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+            {
+                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); });
+                QVERIFY(f.window);
+                QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+                settle();
+                MainWindow *w = f.window.get();
+                TopBar *bar = f.bar();
+                QVERIFY(w->isStacked());
+                QCOMPARE(bar->branchLabel(), QStringLiteral("main"));
+                const int row = ui::space(ui::box::control), gap = ui::space(ui::kBar);
+                // One row or two: the bar 8 + 28 + 8 or 8 + 28 + 8 + 28 + 8,
+                // the body under it, where it was the last time the bar had
+                // that many rows, and the popups under the bar or under row 1.
+                QHash<int, int> bodyTops;
+                const auto rows = [&](int count) {
+                    settle();
+                    QCOMPARE(bar->foldLevel() == 2, count == 2);
+                    QCOMPARE(bar->height(), (count + 1) * gap + count * row);
+                    const int body = f.page()->mapTo(w, QPoint(0, 0)).y();
+                    QVERIFY(body >= bar->mapTo(w, QPoint(0, bar->height())).y());
+                    QCOMPARE(body, bodyTops.value(count, body));
+                    bodyTops.insert(count, body);
+                    const int edge = count == 2 ? gap + row : bar->height();
+                    QCOMPARE(ui::popupTop(bar), bar->mapToGlobal(QPoint(0, edge)).y() + ui::space(ui::gap::cluster));
+                };
+
+                // The branch name, the window held at 470.
+                rows(1);
+                bar->setBranchLabel(QStringLiteral("feature/askpass-login-dialog"));
+                rows(2);
+                QCOMPARE(w->width(), 470);
+                bar->setBranchLabel(QStringLiteral("main"));
+                rows(1);
+                QCOMPARE(w->width(), 470);
+
+                // The narrowest width "main" keeps one row at: a pixel short
+                // of it, the tabs take the second.
+                int narrowest = 470;
+                while (narrowest > 300) {
+                    w->resize(narrowest - 1, 612);
+                    settle();
+                    if (bar->foldLevel() == 2)
+                        break;
+                    --narrowest;
+                }
+                QVERIFY(narrowest > 300);
+                w->resize(narrowest, 612);
+                rows(1);
+                QCOMPARE(w->width(), narrowest);
+
+                // There, Pull's 99+ widens the dropdown past what the row has
+                // left; a single digit gives it back. The window has no remote
+                // to count against, so the count goes on Pull, which the
+                // dropdown follows.
+                const int dropdown = bar->syncDropdown()->width();
+                bar->pullButton()->setCount(100);
+                rows(2);
+                QVERIFY(bar->syncDropdown()->width() > dropdown);
+                bar->pullButton()->setCount(3);
+                rows(1);
+                QCOMPARE(bar->syncDropdown()->width(), dropdown);
+                QCOMPARE(w->width(), narrowest);
+            }
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
     }
 
     // --- The window's grid and classes ---------------------------------------
@@ -4386,6 +4862,61 @@ esac
             QCOMPARE(menu->y(), top);
             QVERIFY(menu->geometry().right() < f.window->mapToGlobal(QPoint(f.window->width(), 0)).x());
         }
+    }
+
+    // The branch menu starts at the chip and keeps to the room right of it
+    // (screens.js: Math.min(300, W - m - bx)): at 340 it ends inside the
+    // window's right margin, where a window-wide room would run past it;
+    // wide, it is the design's 300.
+    void theBranchMenuKeepsToTheRoomRightOfTheChip()
+    {
+        // At base 12, where the chip's x plus the design's 300 runs past a 340 window.
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        {
+            ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+            ScopedEnv scratchHome("HOME", home.path().toUtf8());
+            OmarchyTheme theme;
+            QCOMPARE(theme.fontBase(), 12);
+            theme.apply(*qApp);
+            {
+                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(340, 612); });
+                QVERIFY(f.window);
+                QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+                settle();
+                MainWindow *w = f.window.get();
+                TopBar *bar = f.bar();
+                QVERIFY(w->isStacked());
+                QCOMPARE(w->width(), 340);
+                QVERIFY(bar->branchButton()->mapTo(w, QPoint(0, 0)).x() + ui::space(300) > w->width());
+                // The menu lives while it is open, so its geometry is read then.
+                const auto open = [&] {
+                    QRect geometry;
+                    QTimer::singleShot(0, w, [w, &geometry] {
+                        if (auto *menu = w->findChild<BranchMenu *>()) {
+                            geometry = menu->geometry();
+                            menu->close();
+                        }
+                    });
+                    bar->branchButton()->click();
+                    return geometry;
+                };
+                const QRect menu = open();
+                QVERIFY(!menu.isNull());
+                QCOMPARE(menu.x(), bar->branchButton()->mapToGlobal(QPoint(0, 0)).x());
+                QVERIFY2(menu.x() + menu.width() <= w->mapToGlobal(QPoint(w->width(), 0)).x() - ui::windowMargin(w),
+                         qPrintable(QStringLiteral("%1 + %2").arg(menu.x()).arg(menu.width())));
+                QCOMPARE(menu.y(), ui::popupTop(bar));
+
+                w->resize(ui::space(945), ui::space(612));
+                settle();
+                QCOMPARE(open().width(), ui::space(300));
+            }
+        }
+        g_theme.reset(new OmarchyTheme);
+        g_theme->apply(*qApp);
+        QVERIFY(OmarchyTheme::instance() == g_theme.get());
     }
 
     // The window's classes size the commit page, and nothing of it is saved:
@@ -5913,8 +6444,8 @@ esac
     }
 
     // The branch menu: the design's 300 px where the window has the room, the
-    // window less its margins where it has not; a branch glyph on every
-    // local entry and a cloud on every remote one.
+    // room from the button to the window's right margin where it has not; a
+    // branch glyph on every local entry and a cloud on every remote one.
     void theBranchMenuWearsTheDesignsRows()
     {
         QWidget window;
@@ -5951,8 +6482,9 @@ esac
             BranchMenu menu;
             menu.setBranches(branches, branches.current, true, {});
             open(menu);
-            QCOMPARE(menu.minimumWidth(), qMax(anchor->width(), window.width() - ui::space(24)));
-            QCOMPARE(menu.maximumWidth(), qMax(anchor->width(), window.width() - ui::space(24)));
+            // The button is at the window's left edge.
+            QCOMPARE(menu.minimumWidth(), qMax(anchor->width(), window.width() - ui::windowMargin(&window)));
+            QCOMPARE(menu.maximumWidth(), qMax(anchor->width(), window.width() - ui::windowMargin(&window)));
         }
     }
 
@@ -8706,6 +9238,709 @@ esac
         field->clear();
         QVERIFY(shown(QStringLiteral("main")) && shown(QStringLiteral("feature/tiling")));
         QVERIFY(separatorShown());
+    }
+
+    // The top bar's branch menu ends with New branch… (Ctrl+N at the right,
+    // behind a separator). The search doubles as the name: a text no branch
+    // has leaves the row alone, current, with the name in it, and Return
+    // takes it to the card; matches keep the first of them current and the
+    // row under them; a local branch's own name hides it. Ctrl+N in the field
+    // asks for the card at any time. Tags get a section of their own.
+    void theBranchMenuOffersANewBranch()
+    {
+        BranchList branches;
+        branches.local = {QStringLiteral("feature/askpass"), QStringLiteral("feature/tiling"), QStringLiteral("main")};
+        branches.remote = {QStringLiteral("origin/feature/askpass"), QStringLiteral("origin/main")};
+        branches.current = QStringLiteral("main");
+        BranchMenu menu;
+        menu.setNewBranchRow(true);
+        menu.setBranches(branches, branches.current, true, {});
+        QSignalSpy asked(&menu, &BranchMenu::newBranchRequested);
+        auto *field = menu.findChild<QLineEdit *>(QStringLiteral("promptField"));
+        QAction *row = newBranchRow(&menu);
+        QVERIFY(field && row);
+
+        // Last, after a separator; the keys after the tab, which the menu
+        // paints at the right itself.
+        QCOMPARE(menu.actions().last(), row);
+        QCOMPARE(row->text(), QStringLiteral("New branch…\tCtrl+N"));
+        QCOMPARE(row->text().section(QLatin1Char('\t'), 0, 0), QStringLiteral("New branch…"));
+        QCOMPARE(row->text().section(QLatin1Char('\t'), 1), QStringLiteral("Ctrl+N"));
+        QCOMPARE(shownRows(&menu),
+                 QStringList({QStringLiteral("LOCAL"), QStringLiteral("feature/askpass"), QStringLiteral("feature/tiling"),
+                              QStringLiteral("main"), QStringLiteral("-"), QStringLiteral("REMOTE"),
+                              QStringLiteral("origin/feature/askpass"), QStringLiteral("origin/main"), QStringLiteral("-"),
+                              QStringLiteral("New branch…\tCtrl+N")}));
+        QVERIFY(!menu.activeAction());
+
+        // A name no branch has: the row alone, current, carrying the name.
+        field->setText(QStringLiteral("feature/tile-rules"));
+        QCOMPARE(shownRows(&menu), QStringList({QStringLiteral("New branch “feature/tile-rules”…")}));
+        QCOMPARE(menu.activeAction(), row);
+        QTest::keyClick(field, Qt::Key_Return);
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(asked.takeFirst().value(0).toString(), QStringLiteral("feature/tile-rules"));
+
+        // Matches: the first is current, the row under them, Up from the
+        // first wraps round to it.
+        field->setText(QStringLiteral("fea"));
+        QCOMPARE(shownRows(&menu),
+                 QStringList({QStringLiteral("LOCAL"), QStringLiteral("feature/askpass"), QStringLiteral("feature/tiling"),
+                              QStringLiteral("-"), QStringLiteral("REMOTE"), QStringLiteral("origin/feature/askpass"),
+                              QStringLiteral("-"), QStringLiteral("New branch “fea”…")}));
+        QCOMPARE(menu.activeAction()->text(), QStringLiteral("feature/askpass"));
+        QTest::keyClick(field, Qt::Key_Up);
+        QCOMPARE(menu.activeAction(), row);
+        QTest::keyClick(field, Qt::Key_Down);
+        QCOMPARE(menu.activeAction()->text(), QStringLiteral("feature/askpass"));
+        QTest::keyClick(field, Qt::Key_Return); // the match, not the row
+        QCOMPARE(asked.size(), 0);
+
+        // A local branch's own name: no row (a remote one's leaves it).
+        field->setText(QStringLiteral("main"));
+        QVERIFY(!row->isVisible());
+        QCOMPARE(shownRows(&menu), QStringList({QStringLiteral("LOCAL"), QStringLiteral("main"), QStringLiteral("-"),
+                                                QStringLiteral("REMOTE"), QStringLiteral("origin/main")}));
+        field->setText(QStringLiteral("origin/main"));
+        QVERIFY(row->isVisible());
+        // Ctrl+N asks whatever the row says, with the search's text trimmed.
+        field->setText(QStringLiteral("  main "));
+        QTest::keyClick(field, Qt::Key_N, Qt::ControlModifier);
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(asked.takeFirst().value(0).toString(), QStringLiteral("main"));
+        field->clear();
+        QTest::keyClick(field, Qt::Key_N, Qt::ControlModifier);
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(asked.takeFirst().value(0).toString(), QString());
+        QCOMPARE(row->text(), QStringLiteral("New branch…\tCtrl+N"));
+
+        // Without the row (the merge view's and the From picker's menus): no
+        // row, and Ctrl+N is no key of theirs; tags in a section of their own.
+        BranchMenu plain;
+        plain.setBranches(branches, branches.current, true, {}, QString(),
+                          {QStringLiteral("v0.4"), QStringLiteral("v0.3")});
+        QSignalSpy plainAsked(&plain, &BranchMenu::newBranchRequested);
+        QVERIFY(!newBranchRow(&plain));
+        const QStringList rows = shownRows(&plain);
+        QCOMPARE(rows.mid(rows.indexOf(QStringLiteral("TAGS")) - 1),
+                 QStringList({QStringLiteral("-"), QStringLiteral("TAGS"), QStringLiteral("v0.4"), QStringLiteral("v0.3")}));
+        QList<uint> glyphs;
+        for (QAction *a : plain.actions())
+            if (a->text().startsWith(QLatin1Char('v')))
+                glyphs << a->property("branchGlyph").toUInt();
+        QCOMPARE(glyphs, QList<uint>({ui::kTagOutline, ui::kTagOutline}));
+        auto *plainField = plain.findChild<QLineEdit *>(QStringLiteral("promptField"));
+        QCOMPARE(plainField->placeholderText(), QStringLiteral("Search branches and tags…"));
+        QSignalSpy picked(&plain, &BranchMenu::picked);
+        plainField->setText(QStringLiteral("0.3"));
+        QCOMPARE(shownRows(&plain), QStringList({QStringLiteral("TAGS"), QStringLiteral("v0.3")}));
+        QTest::keyClick(plainField, Qt::Key_N, Qt::ControlModifier);
+        QCOMPARE(plainAsked.size(), 0);
+        QTest::keyClick(plainField, Qt::Key_Return);
+        QCOMPARE(picked.size(), 1);
+        QCOMPARE(picked.takeFirst().value(0).toString(), QStringLiteral("v0.3"));
+        plainField->setText(QStringLiteral("nothing"));
+        QCOMPARE(shownRows(&plain), QStringList({QStringLiteral("No matching branch")}));
+    }
+
+    // Neither side of the merge view offers a new branch: the row is the top
+    // bar's menu's alone, and the pickers look as they did.
+    void theMergePickersHaveNoNewBranchRow()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(git(f.repo->root(), {"branch", "feature"}));
+        MergeDialog dialog(f.repo.get(), f.window.get());
+        dialog.setAttribute(Qt::WA_DeleteOnClose, false);
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+        const QList<BranchPicker *> pickers = dialog.findChildren<BranchPicker *>();
+        QCOMPARE(pickers.size(), 2);
+        for (BranchPicker *picker : pickers) {
+            QCOMPARE(picker->objectName(), QStringLiteral("branchPicker"));
+            QCOMPARE(picker->height(), ui::space(36));
+            QCOMPARE(picker->kind(), BranchPicker::Kind::Branch);
+            bool seen = false, row = true;
+            inPickerMenu(picker, [&seen, &row](BranchMenu *menu) {
+                seen = true;
+                row = newBranchRow(menu) != nullptr;
+            });
+            QVERIFY(seen);
+            QVERIFY(!row);
+        }
+    }
+
+    // The card at the design's three frames (out/manifest.json: New branch ·
+    // 3 Card, · Eighth · Card, · Extra narrow · Card; screens.js
+    // newBranchCard()) at a 12 px text: 360 wide at the branch chip, moved
+    // left to keep the window's margin, 4 under the bar; the field, the
+    // picker, Switch to it and Create branch where the frames have them.
+    void theNewBranchCardFollowsTheDesign_data()
+    {
+        QTest::addColumn<int>("width");
+        QTest::addColumn<QRect>("card");
+        QTest::addColumn<QRect>("name");
+        QTest::addColumn<QRect>("picker");
+        QTest::addColumn<QRect>("create");
+        QTest::addColumn<QPoint>("check");   // the Switch to it box, 16 px square
+        QTest::addColumn<int>("designRows"); // the top bar's rows in the frame
+        QTest::newRow("945") << 945 << QRect(111, 48, 360, 240) << QRect(123, 80, 336, 28) << QRect(123, 144, 336, 28)
+                             << QRect(292, 248, 167, 28) << QPoint(123, 254) << 1;
+        QTest::newRow("470") << 470 << QRect(44, 48, 360, 240) << QRect(56, 80, 336, 28) << QRect(56, 144, 336, 28)
+                             << QRect(225, 248, 167, 28) << QPoint(56, 254) << 1;
+        QTest::newRow("340") << 340 << QRect(8, 40, 324, 240) << QRect(20, 72, 300, 28) << QRect(20, 136, 300, 28)
+                             << QRect(153, 240, 167, 28) << QPoint(20, 246) << 2;
+    }
+
+    void theNewBranchCardFollowsTheDesign()
+    {
+        QFETCH(int, width);
+        QFETCH(QRect, card);
+        QFETCH(QRect, name);
+        QFETCH(QRect, picker);
+        QFETCH(QRect, create);
+        QFETCH(QPoint, check);
+        QFETCH(int, designRows);
+        // The desktop's theme back for whatever runs next, however this ends.
+        const auto restoreTheme = qScopeGuard([] {
+            g_theme.reset(new OmarchyTheme);
+            g_theme->apply(*qApp);
+        });
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+        ScopedEnv scratchHome("HOME", home.path().toUtf8());
+        OmarchyTheme theme;
+        QCOMPARE(theme.fontBase(), 12);
+        theme.apply(*qApp);
+
+        WindowFixture f = mainWindow(0, false, [width](MainWindow *w) { w->resize(width, 612); }, {},
+                                     QStringLiteral("omagit"));
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        QWidget *host = f.host();
+        if (host->width() != width) {
+            // A top bar that cannot fold to the width holds the window wider.
+            const QString why = QStringLiteral("the window cannot be %1 wide: its top bar asks for %2")
+                                    .arg(width)
+                                    .arg(f.window->minimumSizeHint().width());
+            f.window.reset();
+            QSKIP(qPrintable(why));
+        }
+        NewBranchCard *shown = openNewBranchCard(f, {}, QStringLiteral("feature/tile-rules"));
+        QVERIFY(shown);
+        const QRect cardRect = shown->geometry();
+        // 4 under the bar, whatever its rows. The frame at 340 has the
+        // extra-narrow two-row bar, under whose first row the card hangs;
+        // under a one-row bar it is the bar's 8 lower.
+        QCOMPARE(cardRect.y(), host->mapFromGlobal(QPoint(0, ui::popupTop(f.bar()))).y());
+        const int rows = f.bar()->height() > ui::space(44) ? 2 : 1;
+        const int dy = cardRect.y() - card.y();
+        QCOMPARE(dy, rows == designRows ? 0 : ui::space(ui::kBar));
+        // At the chip, or a margin inside the window's edge.
+        QCOMPARE(cardRect.x(), qMin(rectIn(f.bar()->branchButton(), host).x(),
+                                    width - ui::windowMargin(f.window.get()) - cardRect.width()));
+        QCheckBox *box = shown->switchBox();
+        QStyleOptionButton option;
+        option.initFrom(box);
+        const QRect indicator = box->style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, box);
+        const QList<QPair<QRect, QRect>> pairs{
+            {cardRect, card},
+            {rectIn(shown->nameField(), host), name},
+            {rectIn(shown->startPicker(), host), picker},
+            {rectIn(shown->createButton(), host), create},
+            {QRect(box->mapTo(host, indicator.topLeft()), indicator.size()), QRect(check, QSize(16, 16))},
+        };
+        for (const auto &pair : pairs) {
+            const QRect want = pair.second.translated(0, dy);
+            QVERIFY2(withinAPixel(pair.first, want),
+                     qPrintable(QStringLiteral("%1, the design %2").arg(rectText(pair.first), rectText(want))));
+        }
+        QCOMPARE(shown->startPicker()->height(), ui::space(ui::box::control));
+        f.window.reset(); // before the theme it was built with
+    }
+
+    // The name as it is typed: a space goes in as a dash where it was typed;
+    // Create is off for nothing, for a name git refuses (the red line says
+    // so) and for a local branch's (the red line offers to switch to it).
+    void theNewBranchCardChecksTheName()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(git(f.repo->root(), {"branch", "feature/askpass"}));
+        NewBranchCard *card = openNewBranchCard(f);
+        QVERIFY(card);
+        QLineEdit *field = card->nameField();
+        QCOMPARE(field->objectName(), QStringLiteral("newBranchName"));
+        QCOMPARE(QApplication::focusWidget(), field);
+        QVERIFY(field->text().isEmpty());
+        QVERIFY(!card->createButton()->isEnabled());
+        QVERIFY(card->errorText().isEmpty());
+        QCOMPARE(card->createButton()->text(), ui::icon(ui::kBranchPlus, QStringLiteral("+ ")) + QStringLiteral("Create branch  ⏎"));
+        QVERIFY(card->createButton()->isDefault());
+
+        QTest::keyClicks(field, QStringLiteral("my feature"));
+        QCOMPARE(field->text(), QStringLiteral("my-feature"));
+        QVERIFY(card->createButton()->isEnabled());
+        // Where the caret is, not at the end.
+        QTest::keyClick(field, Qt::Key_Left);
+        QTest::keyClick(field, Qt::Key_Left);
+        QTest::keyClick(field, Qt::Key_Space);
+        QCOMPARE(field->text(), QStringLiteral("my-featu-re"));
+        QCOMPARE(field->cursorPosition(), 9);
+
+        const int heightBefore = card->height();
+        for (const QString &bad : {QStringLiteral("a..b"), QStringLiteral("HEAD"), QStringLiteral("-x"), QStringLiteral("x.lock")}) {
+            field->setText(bad);
+            QVERIFY2(!card->createButton()->isEnabled(), qPrintable(bad));
+            QCOMPARE(card->errorText(), QStringLiteral("Not a valid branch name"));
+            QVERIFY(!card->switchToExistingButton()->isVisible());
+        }
+        // The red line is a 24 px line 4 under the field: the card grows by it.
+        QCOMPARE(card->height(), heightBefore + ui::space(ui::gap::caption + ui::box::row));
+
+        field->setText(QStringLiteral("feature/askpass"));
+        QVERIFY(!card->createButton()->isEnabled());
+        QCOMPARE(card->errorText(), QStringLiteral("Already a branch"));
+        QAbstractButton *existing = card->switchToExistingButton();
+        QVERIFY(existing->isVisible());
+        QCOMPARE(existing->height(), ui::space(ui::box::row));
+        QCOMPARE(rectIn(existing, card).right(), card->width() - ui::space(ui::pad::popover) - 1);
+        field->clear();
+        QVERIFY(card->errorText().isEmpty());
+        QVERIFY(!card->createButton()->isEnabled());
+        QCOMPARE(card->height(), heightBefore);
+
+        // The way out of a taken name: the branch it names, checked out.
+        field->setText(QStringLiteral("feature/askpass"));
+        existing->click();
+        settle();
+        QVERIFY(!card->isVisible());
+        QCOMPARE(f.repo->branches().current, QStringLiteral("feature/askpass"));
+        QCOMPARE(f.bar()->branchButton()->accessibleName(), QStringLiteral("feature/askpass"));
+    }
+
+    // Return makes the branch and switches to it, the footer says so, and the
+    // top bar shows it — without the badges of the branch it left, having
+    // no upstream. Switch to it off, the branch is made and the checkout
+    // stays. Escape closes the card and gives the keyboard back.
+    void theNewBranchCardCreatesTheBranch()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        const QString root = f.repo->root();
+        // main is a commit behind an upstream of its own: a Pull badge.
+        const QString ahead = QString::fromUtf8(f.repo->run({"commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "theirs"})).trimmed();
+        QVERIFY(!ahead.isEmpty());
+        QVERIFY(git(root, {"remote", "add", "origin", QDir(root).filePath(QStringLiteral("no-such-remote.git"))}));
+        QVERIFY(git(root, {"update-ref", "refs/remotes/origin/main", ahead}));
+        QVERIFY(git(root, {"config", "branch.main.remote", "origin"}));
+        QVERIFY(git(root, {"config", "branch.main.merge", "refs/heads/main"}));
+        f.window->refresh();
+        QTRY_COMPARE(f.bar()->pullButton()->count(), 1);
+
+        // Escape: closed, the keyboard back on the list it came from.
+        QAbstractItemView *list = f.page()->activeListView();
+        list->setFocus();
+        QTRY_COMPARE(QApplication::focusWidget(), list);
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        NewBranchCard *card = f.newBranchCard();
+        QTRY_VERIFY(card->isVisible());
+        QCOMPARE(QApplication::focusWidget(), card->nameField());
+        QCOMPARE(card->fromNote(), QStringLiteral("the current branch"));
+        QCOMPARE(card->startPicker()->branch(), QStringLiteral("main"));
+        QCOMPARE(card->startSha(), f.repo->headCommit().shortHash);
+        QCOMPARE(card->startSubject(), QStringLiteral("first"));
+        QCOMPARE(card->carryNote(), QStringLiteral("Your 2 changed files come along."));
+        QVERIFY(card->switchBox()->isChecked() && card->switchBox()->isEnabled());
+        QTest::keyClick(card->nameField(), Qt::Key_Escape);
+        QVERIFY(!card->isVisible());
+        QCOMPARE(QApplication::focusWidget(), list);
+
+        // Return: made at HEAD and switched to, the changes along.
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(card->isVisible());
+        QTest::keyClicks(card->nameField(), QStringLiteral("feature/tile-rules"));
+        QTest::keyClick(card->nameField(), Qt::Key_Return);
+        QTRY_VERIFY(!card->isVisible());
+        const QString sha = f.repo->headCommit().shortHash;
+        QCOMPARE(f.repo->branches().current, QStringLiteral("feature/tile-rules"));
+        QCOMPARE(f.repo->status().size(), 2);
+        QCOMPARE(footerStatus(f), QStringLiteral("Created feature/tile-rules at %1 and switched to it").arg(sha));
+        QCOMPARE(f.bar()->branchButton()->accessibleName(), QStringLiteral("feature/tile-rules"));
+        QTRY_COMPARE(f.bar()->pullButton()->count(), 0);
+        QCOMPARE(f.bar()->pushButton()->count(), 0);
+
+        // Switch to it off: made, and the checkout stays where it was.
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(card->isVisible());
+        QVERIFY(card->switchBox()->isChecked()); // on each time the card opens
+        QTest::keyClicks(card->nameField(), QStringLiteral("side"));
+        card->switchBox()->click();
+        QTest::keyClick(card->nameField(), Qt::Key_Return);
+        QTRY_VERIFY(!card->isVisible());
+        QVERIFY(f.repo->branches().local.contains(QStringLiteral("side")));
+        QCOMPARE(f.repo->branches().current, QStringLiteral("feature/tile-rules"));
+        QCOMPARE(footerStatus(f), QStringLiteral("Created side at %1 — still on feature/tile-rules").arg(sha));
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(card->isVisible());
+        QVERIFY(card->switchBox()->isChecked());
+        card->dismiss();
+    }
+
+    // Where it starts: a branch whose files differ from the changed ones
+    // (Switch to it goes off, and Create still makes the branch there); a
+    // remote branch, picked in the From menu, names an empty field after
+    // itself; a tag. The From menu has the branches, the remote branches
+    // and the tags, with the start ticked.
+    void theNewBranchCardStartsWhereItIsAsked()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        const QString root = f.repo->root();
+        // "other" has another a.txt, which the working tree has changed.
+        QTemporaryDir side;
+        QVERIFY(side.isValid());
+        const QString other = QDir(side.path()).filePath(QStringLiteral("other"));
+        QVERIFY(git(root, {"worktree", "add", "-q", "-b", "other", other, "HEAD"}));
+        QVERIFY(writeFixture(QDir(other).filePath(QStringLiteral("a.txt")), "a on other\n"));
+        QVERIFY(git(other, {"commit", "-q", "-am", "other's a"}, 2));
+        QVERIFY(git(root, {"remote", "add", "origin", QDir(root).filePath(QStringLiteral("no-such-remote.git"))}));
+        QVERIFY(git(root, {"update-ref", "refs/remotes/origin/feature/remote", "HEAD"}));
+        QVERIFY(git(root, {"tag", "v1"}));
+
+        NewBranchCard *card = openNewBranchCard(f, QStringLiteral("other"), QStringLiteral("from-other"));
+        QVERIFY(card);
+        QString otherSha;
+        QVERIFY(f.repo->describeCommit(QStringLiteral("other"), &otherSha, nullptr));
+        QCOMPARE(card->start(), QStringLiteral("other"));
+        QVERIFY(card->fromNote().isEmpty());
+        QCOMPARE(card->startSha(), otherSha);
+        QCOMPARE(card->startSubject(), QStringLiteral("other's a"));
+        QVERIFY(card->blockedNote()->isVisible());
+        QCOMPARE(card->carryNote(), QStringLiteral("1 changed file differs at %1").arg(otherSha));
+        QCOMPARE(card->blockedLines(), QStringList({QStringLiteral("a.txt"), QStringLiteral("Commit them first to switch to it.")}));
+        QVERIFY(!card->switchBox()->isChecked());
+        QVERIFY(!card->switchBox()->isEnabled());
+        QVERIFY(card->createButton()->isEnabled());
+        QTest::keyClick(card->nameField(), Qt::Key_Return);
+        QTRY_VERIFY(!card->isVisible());
+        QCOMPARE(f.repo->run({"rev-parse", "from-other"}), f.repo->run({"rev-parse", "other"}));
+        QCOMPARE(f.repo->branches().current, QStringLiteral("main"));
+        QCOMPARE(footerStatus(f), QStringLiteral("Created from-other at %1 — still on main").arg(otherSha));
+
+        // The From menu: every branch, the remote ones and the tags, the
+        // start ticked; a remote branch fills the empty field with its name.
+        card = openNewBranchCard(f);
+        QVERIFY(card);
+        QVERIFY(!card->blockedNote()->isVisible());
+        QVERIFY(card->switchBox()->isEnabled() && card->switchBox()->isChecked());
+        QStringList rows;
+        QString ticked;
+        inPickerMenu(card->startPicker(), [&rows, &ticked](BranchMenu *menu) {
+            rows = shownRows(menu);
+            for (QAction *a : menu->actions())
+                if (a->isChecked())
+                    ticked = a->text();
+            QVERIFY(!newBranchRow(menu));
+            pickIn(menu, QStringLiteral("origin/feature/remote"));
+        });
+        QVERIFY2(rows.contains(QStringLiteral("REMOTE")) && rows.contains(QStringLiteral("TAGS")) && rows.contains(QStringLiteral("v1")),
+                 qPrintable(rows.join(QLatin1Char(','))));
+        QCOMPARE(ticked, QStringLiteral("main"));
+        QCOMPARE(card->start(), QStringLiteral("origin/feature/remote"));
+        QCOMPARE(card->startPicker()->branch(), QStringLiteral("origin/feature/remote"));
+        QCOMPARE(card->startPicker()->kind(), BranchPicker::Kind::Branch);
+        QCOMPARE(card->nameField()->text(), QStringLiteral("feature/remote"));
+        QVERIFY(card->createButton()->isEnabled());
+        // A name typed already stays; a tag is where the branch starts.
+        card->nameField()->setText(QStringLiteral("mine"));
+        inPickerMenu(card->startPicker(), [](BranchMenu *menu) { pickIn(menu, QStringLiteral("origin/main")); });
+        inPickerMenu(card->startPicker(), [](BranchMenu *menu) { pickIn(menu, QStringLiteral("v1")); });
+        QCOMPARE(card->nameField()->text(), QStringLiteral("mine"));
+        QCOMPARE(card->start(), QStringLiteral("v1"));
+        QCOMPARE(card->startPicker()->kind(), BranchPicker::Kind::Tag);
+        QCOMPARE(card->startSha(), f.repo->headCommit().shortHash);
+        // Back from the remote branch that tracks: made tracking it.
+        inPickerMenu(card->startPicker(), [](BranchMenu *menu) { pickIn(menu, QStringLiteral("origin/feature/remote")); });
+        QTest::keyClick(card->nameField(), Qt::Key_Return);
+        QTRY_VERIFY(!card->isVisible());
+        QCOMPARE(f.repo->branches().current, QStringLiteral("mine"));
+        QCOMPARE(f.repo->upstreamState().upstream, QStringLiteral("origin/feature/remote"));
+
+        // Detached: HEAD's commit, named by its hash, nothing beside FROM.
+        QVERIFY(git(root, {"switch", "-q", "--detach", "main"}));
+        card = openNewBranchCard(f);
+        QVERIFY(card);
+        QCOMPARE(card->start(), QStringLiteral("HEAD"));
+        QCOMPARE(card->startPicker()->kind(), BranchPicker::Kind::Commit);
+        QCOMPARE(card->startPicker()->branch(), f.repo->headCommit().shortHash);
+        QVERIFY(card->fromNote().isEmpty());
+        QVERIFY(card->startSha().isEmpty());
+        QCOMPARE(card->startSubject(), QStringLiteral("first"));
+        card->dismiss();
+
+        // No commits yet on the branch checked out: switching (which renames
+        // the branch to be) is all there is, and there is nowhere else to
+        // start from.
+        QVERIFY(git(root, {"checkout", "-q", "--orphan", "fresh"}));
+        card = openNewBranchCard(f, {}, QStringLiteral("renamed"));
+        QVERIFY(card);
+        QVERIFY(card->switchBox()->isChecked() && !card->switchBox()->isEnabled());
+        QVERIFY(!card->startPicker()->isEnabled());
+        QCOMPARE(card->startPicker()->branch(), QStringLiteral("fresh"));
+        QCOMPARE(card->fromNote(), QStringLiteral("the current branch"));
+        QVERIFY(!card->blockedNote()->isVisible());
+        QTest::keyClick(card->nameField(), Qt::Key_Return);
+        QTRY_VERIFY(!card->isVisible());
+        QCOMPARE(f.repo->branch(), QStringLiteral("renamed"));
+        QCOMPARE(footerStatus(f), QStringLiteral("Created renamed and switched to it"));
+    }
+
+    // Ctrl+N is the window's (the keybindings list it as New branch, after
+    // Branches): the card from the current branch, or, in the history, from
+    // the selected commit — as the commit's menu's New branch from here… has
+    // it too.
+    void ctrlNOpensTheNewBranchCard()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        QVERIFY(QMetaObject::invokeMethod(f.window.get(), "showKeybindings"));
+        auto *panel = f.window->findChild<KeybindingsPanel *>();
+        QVERIFY(panel);
+        auto *list = panel->findChild<QListView *>(QStringLiteral("keybindingsList"));
+        QVERIFY(list);
+        QStringList keys, actions;
+        for (int row = 0; row < list->model()->rowCount(); ++row) {
+            const QModelIndex index = list->model()->index(row, 0);
+            keys << index.data(Qt::UserRole).toString();
+            actions << index.data(Qt::DisplayRole).toString();
+        }
+        const qsizetype at = keys.indexOf(QStringLiteral("CTRL + N"));
+        QVERIFY(at > 0);
+        QCOMPARE(actions.at(at), QStringLiteral("New branch"));
+        QCOMPARE(keys.at(at - 1), QStringLiteral("CTRL + 3"));
+        QCOMPARE(actions.at(at - 1), QStringLiteral("Branches"));
+        QVERIFY(list->model()->index(int(at), 0).data(Qt::UserRole + 2).toString().isEmpty());
+        panel->close();
+        settle();
+
+        QVERIFY(activate(f.window.get()));
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        NewBranchCard *card = f.newBranchCard();
+        QTRY_VERIFY(card->isVisible());
+        QVERIFY(card->start().isEmpty());
+        QCOMPARE(card->fromNote(), QStringLiteral("the current branch"));
+        // Open, Ctrl+N only puts the keyboard back in the name.
+        QTest::keyClicks(card->nameField(), QStringLiteral("kept"));
+        card->startPicker()->setFocus();
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        QCOMPARE(QApplication::focusWidget(), card->nameField());
+        QCOMPARE(card->nameField()->text(), QStringLiteral("kept"));
+        card->dismiss();
+
+        // The history: the selected commit's.
+        f.window->setMode(MainWindow::HistoryMode);
+        settle();
+        auto *history = f.window->findChild<HistoryView *>();
+        bool ok = false;
+        QTRY_VERIFY((history->currentCommit(&ok), ok));
+        const Commit commit = history->currentCommit(&ok);
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(card->isVisible());
+        QCOMPARE(card->start(), commit.hash);
+        QCOMPARE(card->fromNote(), QStringLiteral("the commit picked in History"));
+        QCOMPARE(card->startPicker()->branch(), commit.shortHash);
+        QCOMPARE(card->startPicker()->kind(), BranchPicker::Kind::Commit);
+        QVERIFY(card->startSha().isEmpty()); // the picker names it already
+        QCOMPARE(card->startSubject(), QStringLiteral("first"));
+        card->dismiss();
+
+        // The commit's menu (frame 75): the copies, then New branch from
+        // here… after a separator, every row wearing its glyph.
+        std::unique_ptr<QMenu> menu(history->commitMenu(commit));
+        const QString copy = ui::icon(ui::kContentCopy);
+        QCOMPARE(menuTexts(menu->actions()),
+                 QStringList({copy + QStringLiteral("Copy SHA"), copy + QStringLiteral("Copy short SHA"),
+                              copy + QStringLiteral("Copy message"), QStringLiteral("-"),
+                              ui::icon(ui::kBranchPlus) + QStringLiteral("New branch from here…\tCtrl+N")}));
+        QSignalSpy asked(history, &HistoryView::newBranchRequested);
+        menu->actions().last()->trigger();
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(asked.first().value(0).toString(), commit.hash);
+        QTRY_VERIFY(card->isVisible());
+        QCOMPARE(card->start(), commit.hash);
+        card->dismiss();
+    }
+
+    // One overlay at a time: Ctrl+N over the agent settings leaves the card
+    // alone, the keyboard in its name; the agent settings opening close the
+    // card; so does the branch menu (Ctrl+3).
+    void theNewBranchCardIsTheOnlyOverlay()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        AgentPopover *agent = f.agentCard();
+        NewBranchCard *card = f.newBranchCard();
+        QTest::mouseClick(f.page()->agentButton(), Qt::LeftButton);
+        settle();
+        QVERIFY(agent->isVisible());
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(card->isVisible());
+        QVERIFY(!agent->isVisible());
+        QCOMPARE(QApplication::focusWidget(), card->nameField());
+
+        agent->popup(f.page()->agentButton());
+        settle();
+        QVERIFY(agent->isVisible());
+        QVERIFY(!card->isVisible());
+        agent->dismiss();
+
+        QTest::keyClick(f.window.get(), Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(card->isVisible());
+        // The menu runs its own loop; once it is up, it is closed again.
+        bool menuShown = false, cardShown = true;
+        QTimer::singleShot(0, f.window.get(), [&menuShown, &cardShown, card] {
+            QElapsedTimer clock;
+            clock.start();
+            BranchMenu *menu = nullptr;
+            while (!(menu = qobject_cast<BranchMenu *>(QApplication::activePopupWidget())) && clock.elapsed() < 5000)
+                QTest::qWait(10);
+            menuShown = menu != nullptr;
+            cardShown = card->isVisible();
+            if (menu)
+                menu->close();
+        });
+        QTest::keyClick(f.window.get(), Qt::Key_3, Qt::ControlModifier);
+        QVERIFY(menuShown);
+        QVERIFY(!cardShown);
+        QVERIFY(!card->isVisible());
+    }
+
+    // The card open over a refresh reads the repository again, without being
+    // opened again: a changed file coming to differ at the start brings the
+    // warning and takes Switch to it away, reverted it gives them back; a
+    // branch made meanwhile under the typed name is taken; a start that is
+    // gone gives way to the current branch. The name, the caret, Switch to
+    // it as it was left and the keyboard stay.
+    void theNewBranchCardFollowsTheRepository()
+    {
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        QVERIFY(activate(f.window.get()));
+        const QString root = f.repo->root();
+        // b.txt is new in HEAD: at the first commit it is not there yet.
+        const Commit first = f.repo->headCommit();
+        QVERIFY(writeFixture(QDir(root).filePath(QStringLiteral("b.txt")), "b\n"));
+        QVERIFY(git(root, {"add", "b.txt"}));
+        QVERIFY(git(root, {"commit", "-q", "-m", "second"}, 2));
+        f.window->refresh();
+        settle();
+
+        NewBranchCard *card = openNewBranchCard(f, first.hash);
+        QVERIFY(card);
+        QTest::keyClicks(card->nameField(), QStringLiteral("work"));
+        QTest::keyClick(card->nameField(), Qt::Key_Left);
+        QCOMPARE(card->fromNote(), QStringLiteral("the commit picked in History"));
+        QCOMPARE(card->carryNote(), QStringLiteral("Your 2 changed files come along."));
+        QVERIFY(!card->blockedNote()->isVisible());
+        QVERIFY(card->switchBox()->isEnabled() && card->switchBox()->isChecked());
+        const auto kept = [card] {
+            return card->isVisible() && card->nameField()->text() == QLatin1String("work")
+                && card->nameField()->cursorPosition() == 3 && QApplication::focusWidget() == card->nameField();
+        };
+
+        // b.txt changed: it would be overwritten at the first commit.
+        QVERIFY(writeFixture(QDir(root).filePath(QStringLiteral("b.txt")), "b changed\n"));
+        f.window->refresh();
+        settle();
+        QVERIFY(kept());
+        QCOMPARE(card->start(), first.hash);
+        QCOMPARE(card->fromNote(), QStringLiteral("the commit picked in History"));
+        QVERIFY(card->blockedNote()->isVisible());
+        QCOMPARE(card->carryNote(), QStringLiteral("1 changed file differs at %1").arg(first.shortHash));
+        QVERIFY(!card->switchBox()->isEnabled() && !card->switchBox()->isChecked());
+        // Reverted: nothing in the way, Switch to it back as it was.
+        QVERIFY(git(root, {"checkout", "-q", "--", "b.txt"}));
+        f.window->refresh();
+        settle();
+        QVERIFY(kept());
+        QVERIFY(!card->blockedNote()->isVisible());
+        QCOMPARE(card->carryNote(), QStringLiteral("Your 2 changed files come along."));
+        QVERIFY(card->switchBox()->isEnabled() && card->switchBox()->isChecked());
+        // Switch to it as the user leaves it survives a refresh.
+        card->switchBox()->click();
+        f.window->refresh();
+        settle();
+        QVERIFY(card->switchBox()->isEnabled() && !card->switchBox()->isChecked());
+
+        // The typed name made a branch meanwhile.
+        QVERIFY(card->createButton()->isEnabled());
+        QVERIFY(git(root, {"branch", "work"}));
+        f.window->refresh();
+        settle();
+        QVERIFY(kept());
+        QCOMPARE(card->errorText(), QStringLiteral("Already a branch"));
+        QVERIFY(!card->createButton()->isEnabled());
+        QVERIFY(card->switchToExistingButton()->isVisible());
+        card->dismiss();
+
+        // A start that is gone: the current branch.
+        QVERIFY(git(root, {"branch", "doomed"}));
+        card = openNewBranchCard(f, QStringLiteral("doomed"));
+        QVERIFY(card);
+        QCOMPARE(card->start(), QStringLiteral("doomed"));
+        QVERIFY(git(root, {"branch", "-D", "-q", "doomed"}));
+        f.window->refresh();
+        settle();
+        QVERIFY(card->isVisible());
+        QVERIFY(card->start().isEmpty());
+        QCOMPARE(card->startPicker()->branch(), QStringLiteral("main"));
+        QCOMPARE(card->fromNote(), QStringLiteral("the current branch"));
+        card->dismiss();
+    }
+
+    // The From menu hangs 4 under the picker (frame 72: the picker's bottom
+    // plus GAP.cluster), at a 12 px text.
+    void theFromMenuHangsUnderThePicker()
+    {
+        // The desktop's theme back for whatever runs next, however this ends.
+        const auto restoreTheme = qScopeGuard([] {
+            g_theme.reset(new OmarchyTheme);
+            g_theme->apply(*qApp);
+        });
+        QTemporaryDir dir, home;
+        QVERIFY(dir.isValid() && home.isValid());
+        QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
+        ScopedEnv themeDir("OMAGIT_THEME_DIR", dir.path().toUtf8());
+        ScopedEnv scratchHome("HOME", home.path().toUtf8());
+        OmarchyTheme theme;
+        QCOMPARE(theme.fontBase(), 12);
+        theme.apply(*qApp);
+
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(945, 612); });
+        QVERIFY(f.window);
+        QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
+        settle();
+        NewBranchCard *card = openNewBranchCard(f);
+        QVERIFY(card);
+        BranchPicker *picker = card->startPicker();
+        int menuTop = -1;
+        inPickerMenu(picker, [&menuTop](BranchMenu *menu) { menuTop = menu->geometry().top(); });
+        QCOMPARE(menuTop, picker->mapToGlobal(QPoint(0, picker->height())).y() + 4);
+        card->dismiss();
+        f.window.reset(); // before the theme it was built with
     }
 
     // --- KeybindingsPanel ---------------------------------------------------

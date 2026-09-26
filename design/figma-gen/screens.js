@@ -40,7 +40,8 @@ const FILES = [
 const COMMITS = [
   { sha: 'd444446', msg: 'Make the toolbar tiling aware', author: 'Andras', date: '2026-09-18 10:55', refs: [['main', 'head'], ['origin/main', 'remote']], lane: 0 },
   { sha: '6bd79ab', msg: 'Refine clone dialog layout and GitHub repository states', author: 'Andras', date: '2026-09-17 15:52', refs: [], lane: 0 },
-  { sha: '14d6d14', msg: 'Add repository cloning with GitHub browser integration', author: 'Andras', date: '2026-09-17 12:10', refs: [['v0.4', 'tag']], lane: 0 },
+  { sha: '14d6d14', msg: 'Add repository cloning with GitHub browser integration', author: 'Andras', date: '2026-09-17 12:10', refs: [['v0.4', 'tag']], lane: 0,
+    body: 'Clone from a URL or from your GitHub repositories; the dialog signs in through gh when it has to.' },
   { sha: '2258b52', msg: 'Add Codex-assisted briefing and review workflows', author: 'Andras', date: '2026-09-16 18:31', refs: [['feature/askpass', 'local']], lane: 1, merge: true },
   { sha: '264ad70', msg: 'Add themed askpass login support for remote operations', author: 'Andras', date: '2026-09-16 09:02', refs: [], lane: 1 },
   { sha: '571c560', msg: 'Refine keybindings list scrolling with row peeks', author: 'Andras', date: '2026-09-15 20:44', refs: [], lane: 0 },
@@ -145,7 +146,7 @@ function topBar(c, W, lv, o = {}) {
     const w = button(c, { x, y, variant: 'ghost', icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv), id: 'RepoChip' });
     x += w + GAP.cluster;
     // branch chip (accent, bold)
-    const branch = o.merging ? 'main · merging feature/askpass' : 'main';
+    const branch = o.merging ? 'main · merging feature/askpass' : o.branch || 'main';
     const bw = button(c, { x, y, variant: 'ghost', icon: 'branch', label: branch, chevron: true, weight: 700, iconFill: t.accent, id: 'BranchChip' });
     // paint label accent: overlay
     c.add(`<g id="BranchChip/label-accent">`); text(c, x + PAD.control + BOX.icon + GAP.icon, y + BOX.control / 2, branch, { weight: 700, fill: t.accent }); c.add('</g>');
@@ -165,7 +166,7 @@ function topBar(c, W, lv, o = {}) {
       items.forEach(([ic, lb, b], i) => {
         if (i) rx -= GAP.item;
         const w = measureButton({ icon: ic, label: labels ? lb : '' });
-        rx -= w; button(c, { x: rx, y, icon: ic, label: labels ? lb : '', badge: b, mark: ic === 'merge' && o.merging, id: 'Sync/' + lb });
+        rx -= w; button(c, { x: rx, y, icon: ic, label: labels ? lb : '', badge: o.noUpstream ? undefined : b, mark: ic === 'merge' && o.merging, id: 'Sync/' + lb });
       });
     } else {
       rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, icon: 'dots', id: 'More' }); rx -= GAP.item;
@@ -471,8 +472,9 @@ function commitsTable(c, x, y, w, h, lv, o = {}) {
     const gx = x + cols[0][1] / 2;
     (o.search ? FIX_MATCHES : COMMITS).forEach((cm, i) => {
       if (ry + rh > y + h) return;
-      c.add(`<g id="${K.esc('CommitRow/' + (i === 0 ? 'selected' : 'normal') + ' ' + cm.sha)}">`);
-      if (i === 0) fillBox(c, x + 1, ry, w - 2, rh, 0.08);
+      const sel = i === (o.commit || 0);
+      c.add(`<g id="${K.esc('CommitRow/' + (sel ? 'selected' : 'normal') + ' ' + cm.sha)}">`);
+      if (sel) { fillBox(c, x + 1, ry, w - 2, rh, 0.08); (c.anchors = c.anchors || {}).CommitRow = { x, y: ry, w, h: rh, msgX: x + cols[0][1] }; }
       // graph
       if (!o.search) {
         const lx = gx - 6 + cm.lane * 12;
@@ -484,7 +486,7 @@ function commitsTable(c, x, y, w, h, lv, o = {}) {
       cm.refs.forEach(([lb, kind]) => { if (lv === 'xs' && kind === 'remote') return; mx += refChip(c, mx, ry + (rh - BOX.pill) / 2, lb, kind) + GAP.cluster; });
       const avail = cols[1][1] - (mx - (x + cols[0][1])) - P;
       let msg = cm.msg; const maxc = Math.floor(avail / (0.6 * 12)); if (msg.length > maxc) msg = msg.slice(0, Math.max(0, maxc - 1)) + '…';
-      text(c, mx, ry + rh / 2, msg, { fill: i === 0 ? t.accent : t.fg });
+      text(c, mx, ry + rh / 2, msg, { fill: sel ? t.accent : t.fg });
       let ccx = x + cols[0][1] + cols[1][1];
       cols.slice(2).forEach(([name, cw]) => {
         const v = name === 'Author' ? cm.author : name === 'Date' ? (lv === 'm' ? cm.date.slice(0, 10) : cm.date) : cm.sha;
@@ -504,7 +506,7 @@ function commitDetails(c, x, y, w, h, lv, o = {}) {
   const t = T(), P = PAD.popover, L = BOX.line;
   c.group('CommitDetails', () => {
     border(c, x, y, w, h, { stroke: t.fg, so: 0.4 });
-    const cm = o.search ? FIX_MATCHES[0] : COMMITS[0], top = y + P - GAP.icon;
+    const ci = o.search ? 0 : o.commit || 0, cm = o.search ? FIX_MATCHES[0] : COMMITS[ci], top = y + P - GAP.icon;
     button(c, { x: x + w - (P - GAP.icon) - BOX.row, y: top, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'copy', id: 'CopySha' });
     let cy = top + BOX.row / 2;
     text(c, x + P, cy, cm.msg, { weight: 700, size: SIZE.subtitle });
@@ -514,7 +516,8 @@ function commitDetails(c, x, y, w, h, lv, o = {}) {
     mx += text(c, mx, cy, cm.author + ' <andras@example.org>', { fill: t.dim, size: SIZE.small }) + P;
     if (!stacked(lv)) mx += text(c, mx, cy, cm.date, { fill: t.dim, size: SIZE.small }) + P;
     cy += L + GAP.cluster;
-    mx = x + P; dimText(c, mx, cy, 'Parent 6bd79ab', { size: SIZE.small }); mx += tw('Parent 6bd79ab', SIZE.small) + P;
+    const parent = 'Parent ' + (o.search ? '6bd79ab' : COMMITS[ci + 1].sha);
+    mx = x + P; dimText(c, mx, cy, parent, { size: SIZE.small }); mx += tw(parent, SIZE.small) + P;
     cm.refs.forEach(([lb, kind]) => { mx += refChip(c, mx, cy - BOX.pill / 2, lb, kind) + GAP.cluster; });
     cy += L + GAP.item;
     const body = cm.body || 'The toolbar folds its buttons in three steps now, and the whole window picks a layout from its width and height.';
@@ -660,6 +663,84 @@ function commitPopover(c, o) {
     const full = (o.amend ? 'Amend' : commitLabel(FILES)) + '  ⏎', cw = measureButton({ icon: 'commit', label: full, px: PAD.primary });
     button(c, { x: x + w - P - cw, y: cy, w: cw, variant: 'primary', icon: 'commit', label: full, px: PAD.primary, id: 'Commit' });
   });
+  return h;
+}
+
+// ------------------------------------------------------------ new branch card
+// The New branch popover (Ctrl+N, the branch menu's last row, a commit's
+// menu in History). It hangs where the branch menu does, under the branch
+// chip, since that is where the new branch shows up. 12 padding; captions on
+// 16 lines 4 over their control; sections 16 apart; a hairline 12 above the
+// Switch to it · Create branch row, as in the commit popover.
+// o.name: the typed name; o.taken: it names an existing branch; o.base:
+// { kind: branch|commit|tag, name, sha, msg, current }; o.blocked: changed
+// files git would not carry to the base; o.pickerOpen: the From menu is open.
+const HEAD_BASE = { kind: 'branch', name: 'main', sha: 'd444446', msg: 'Make the toolbar tiling aware', current: true };
+function newBranchCard(c, o) {
+  const t = T(), { x, y, w } = o, P = PAD.popover, inner = w - 2 * P, L = BOX.line;
+  const base = o.base || HEAD_BASE, switchTo = !o.blocked;
+  c.add(`<g id="${K.esc(o.id || 'NewBranchCard')}">`);
+  const bgAt = c.parts.length;
+  let cy = y + P;
+  const caption = (label, right) => {
+    sectionLabel(c, x + P, cy + L / 2, label);
+    if (right) dimText(c, x + w - P, cy + L / 2, right, { anchor: 'end', size: SIZE.caption });
+    cy += L + GAP.caption;
+  };
+  // NAME: focused, the caret after what was typed (or carried over from the menu's search)
+  caption('Name');
+  field(c, { x: x + P, y: cy, w: inner, state: 'focus', value: o.name || '', placeholder: 'feature/…', id: 'BranchName' });
+  cy += BOX.control;
+  if (o.taken) { // on a 24 row 4 under the field: why Create is off, and the way out
+    cy += GAP.caption;
+    icon(c, 'warn', x + P, cy + (BOX.row - BOX.icon) / 2, BOX.icon, { fill: t.red });
+    text(c, x + P + BOX.icon + GAP.icon, cy + BOX.row / 2, 'Already a branch', { fill: t.red, size: SIZE.small, id: 'NameTaken' });
+    const sw = measureButton({ label: 'Switch to it' });
+    button(c, { x: x + w - P - sw, y: cy, h: BOX.row, variant: 'ghost', label: 'Switch to it', id: 'SwitchToExisting' });
+    cy += BOX.row;
+  }
+  cy += GAP.group;
+  // FROM: where it starts, a picker like the merge dialog's, the commit it resolves to under it
+  caption('From', base.current ? 'the current branch' : base.kind === 'commit' ? 'the commit picked in History' : '');
+  const pickIcon = base.kind === 'commit' ? 'commit' : base.kind === 'tag' ? 'tag' : 'branch';
+  button(c, { x: x + P, y: cy, w: inner, icon: pickIcon, label: base.name, chevron: true, weight: 700, state: o.pickerOpen ? 'pressed' : 'normal', id: 'BasePicker' });
+  (c.anchors = c.anchors || {}).BasePicker = { x: x + P, y: cy, w: inner, h: BOX.control };
+  cy += BOX.control + GAP.caption;
+  {
+    // a branch or tag says which commit it is; a commit (named by its SHA already) gives its subject
+    const shaW = base.kind === 'commit' ? 0 : text(c, x + P, cy + L / 2, base.sha, { fill: t.accent, size: SIZE.small, id: 'BaseSha' }) + GAP.item;
+    const room = Math.floor((inner - shaW) / (0.6 * SIZE.small)) - 1;
+    const msg = base.msg.length > room ? base.msg.slice(0, room - 1) + '…' : base.msg;
+    text(c, x + P + shaW, cy + L / 2, msg, { fill: t.dim, size: SIZE.small, id: 'BaseSubject' });
+  }
+  cy += L + GAP.group;
+  // the working tree: git switch -c carries the changes along unless the base
+  // has other versions of those files; then it can only be created, not switched to
+  const n = FILES.length;
+  if (o.blocked) {
+    // a note card: 12 padding, the icon's 16 box then 8, a bold line and 16 px lines 4 under it
+    const b = o.blocked, bh = P + L + GAP.caption + b.lines.length * L + P, tx = x + P + P + BOX.icon + GAP.item;
+    c.group('BlockedNote', () => {
+      fillBox(c, x + P, cy, inner, bh, 0.04); border(c, x + P, cy, inner, bh, { stroke: t.yellow, so: 0.6 });
+      icon(c, 'alert', x + P + P, cy + P, BOX.icon, { fill: t.yellow });
+      text(c, tx, cy + P + L / 2, b.title, { weight: 700, fill: t.yellow });
+      b.lines.forEach((l, i) => text(c, tx, cy + P + L + GAP.caption + i * L + L / 2, l, { fill: t.dim, size: SIZE.small }));
+    });
+    cy += bh;
+  } else {
+    icon(c, 'info', x + P, cy, BOX.icon, { fill: t.dim });
+    text(c, x + P + BOX.icon + GAP.icon, cy + L / 2, 'Your ' + n + ' changed files come along.', { fill: t.dim, size: SIZE.small, id: 'CarryNote' });
+    cy += L;
+  }
+  cy += SEP;
+  hairline(c, x + P, cy, inner, { fo: 0.15 }); cy += SEP;
+  checkbox(c, { x: x + P, y: cy + (BOX.control - BOX.check) / 2, checked: switchTo, disabled: !switchTo, label: 'Switch to it', id: 'SwitchToIt' });
+  const label = 'Create branch  ⏎', bw = measureButton({ icon: 'branchPlus', label, px: PAD.primary });
+  button(c, { x: x + w - P - bw, y: cy, w: bw, variant: 'primary', icon: 'branchPlus', label, px: PAD.primary, state: o.taken || !o.name ? 'disabled' : 'normal', id: 'CreateBranch' });
+  cy += BOX.control;
+  const h = cy + P - y;
+  c.insertAt(bgAt, () => { rect(c, x, y, w, h, { fill: t.bg }); border(c, x, y, w, h, { stroke: t.accent, so: 1, sw: 2 }); });
+  c.add('</g>');
   return h;
 }
 
@@ -926,12 +1007,36 @@ function screen(o) {
   // overlays: menus hang 4 under the top bar and clamp to the window's margins; under a two-row
   // bar (extra narrow) they hang 4 under their button's row, over the tabs, not a row away from it
   const menuY = (top > TOP_BAR ? BAR + BOX.control : TOP_BAR) + GAP.cluster, clampW = dw => Math.min(dw, W - 2 * m);
+  // the branch chip's x: the menus and the New branch card hang from it
+  const bx = m + measureButton({ icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv) }) + GAP.cluster;
   if (o.overlay === 'branch') {
-    const bx = m + measureButton({ icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv) }) + GAP.cluster;
-    menuCard(c, { x: bx, y: menuY, w: Math.min(300, W - m - bx), id: 'BranchMenu', items: [
+    // The last row starts a new branch (Ctrl+N). Typing a name no branch has
+    // leaves it as the only row, carrying the name: Return opens the card with it.
+    const q = o.query, hover = o.hover || 'feature/askpass';
+    const items = q ? [{ type: 'search', label: 'Search branches…', value: q }, { label: 'New branch “' + q + '”…', icon: 'branchPlus', hover: true }] : [
       { type: 'search', label: 'Search branches…' }, { type: 'section', label: 'Local' },
-      { label: 'main', icon: 'branch', checked: true }, { label: 'feature/askpass', icon: 'branch', hover: true, hint: '2 days ago' }, { label: 'feature/tiling', icon: 'branch', hint: 'today' },
-      { type: 'section', label: 'Remote' }, { label: 'origin/main', icon: 'cloud' }, { label: 'origin/feature/askpass', icon: 'cloud' }] });
+      { label: 'main', icon: 'branch', checked: true }, { label: 'feature/askpass', icon: 'branch', hover: hover === 'feature/askpass', hint: '2 days ago' }, { label: 'feature/tiling', icon: 'branch', hint: 'today' },
+      { type: 'section', label: 'Remote' }, { label: 'origin/main', icon: 'cloud' }, { label: 'origin/feature/askpass', icon: 'cloud' },
+      { type: 'sep' }, { label: 'New branch…', icon: 'branchPlus', hint: 'Ctrl+N', hover: hover === 'new' }];
+    menuCard(c, { x: bx, y: menuY, w: Math.min(300, W - m - bx), id: 'BranchMenu', items });
+  }
+  if (o.overlay === 'newBranch') { // under the branch chip, moved left to stay a margin inside the window
+    const nb = o.newBranch || {}, cw = clampW(360), cx = Math.min(bx, W - m - cw);
+    newBranchCard(c, { x: cx, y: menuY, w: cw, ...nb });
+    if (nb.pickerOpen) { // the From picker's menu, the picker's width, 4 under it: branches and tags
+      const pk = c.anchors.BasePicker;
+      menuCard(c, { x: pk.x, y: pk.y + pk.h + GAP.cluster, w: pk.w, id: 'BaseMenu', items: [
+        { type: 'search', label: 'Search branches and tags…' }, { type: 'section', label: 'Local' },
+        { label: 'main', icon: 'branch', checked: true, hint: 'current' }, { label: 'feature/askpass', icon: 'branch', hover: true, hint: '2 days ago' }, { label: 'feature/tiling', icon: 'branch', hint: 'today' },
+        { type: 'section', label: 'Remote' }, { label: 'origin/main', icon: 'cloud' }, { label: 'origin/feature/askpass', icon: 'cloud' },
+        { type: 'section', label: 'Tags' }, { label: 'v0.4', icon: 'tag', hint: '8 days ago' }] });
+    }
+  }
+  if (o.overlay === 'commitMenu') { // a commit's context menu, its corner on the pointer in the row
+    const r = c.anchors.CommitRow, px = r.msgX + 96, py = r.y + r.h / 2;
+    menuCard(c, { x: Math.min(px, W - m - 260), y: py, w: 260, id: 'CommitMenu', items: [
+      { label: 'Copy SHA', icon: 'copy' }, { label: 'Copy short SHA', icon: 'copy' }, { label: 'Copy message', icon: 'copy' },
+      { type: 'sep' }, { label: 'New branch from here…', icon: 'branchPlus', hint: 'Ctrl+N', hover: true }] });
   }
   if (o.overlay === 'repo') {
     menuCard(c, { x: m, y: menuY, w: clampW(300), id: 'RepoMenu', items: [
@@ -993,4 +1098,4 @@ function screen(o) {
   return c;
 }
 
-module.exports = { screen, density, agentPopover, commitPopover, levelFor, topBar, syncDropdown, changesPage, changesTable, actionBar, historyPage, commitsTable, commitDetails, diffPane, miniRail, footer, menuCard, menuHeight, dialogCard, mergeDialog, mergeDialogHeight, keybindingsPanel, FILES, COMMITS, DIFF, tokens, TOP_BAR, SHALLOW, TALL };
+module.exports = { screen, density, agentPopover, commitPopover, newBranchCard, HEAD_BASE, levelFor, topBar, syncDropdown, changesPage, changesTable, actionBar, historyPage, commitsTable, commitDetails, diffPane, miniRail, footer, menuCard, menuHeight, dialogCard, mergeDialog, mergeDialogHeight, keybindingsPanel, FILES, COMMITS, DIFF, tokens, TOP_BAR, SHALLOW, TALL };

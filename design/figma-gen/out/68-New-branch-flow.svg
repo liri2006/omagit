@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="New branch · flow" width="1990" height="760" viewBox="0 0 1990 760">
+<rect x="0" y="0" width="1990" height="760" id="bg" fill="#181c22"/>
+<text x="40" y="53.8" font-family="JetBrains Mono" font-size="16" font-weight="500" fill="#e0e6ed" id="heading New branch · flow" xml:space="preserve">New branch · flow</text>
+<text x="40" y="88.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">Start a branch where you are in two keystrokes, or from any branch, tag or commit. One card does it everywhere, and it hangs under the branch chip,</text>
+<text x="40" y="106.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">where the new branch will show up. Frames: Quarter 945×612, then Eighth and Extra narrow.</text>
+<g id="Step 1">
+<rect x="40" y="124" width="24" height="24" fill="#4ecdc4" fill-opacity="1"/>
+<text x="52" y="140.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">1</text>
+<text x="80" y="141.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">Branch menu</text>
+<text x="80" y="164.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The branch chip or Ctrl+3. Its last row, after a separator like Open… and Clone… in the repo menu, is New</text>
+<text x="80" y="182.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">branch… (Ctrl+N, from anywhere: lazygit's n).</text>
+</g>
+<g id="Step 2">
+<rect x="40" y="192" width="24" height="24" fill="#4ecdc4" fill-opacity="1"/>
+<text x="52" y="208.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">2</text>
+<text x="80" y="209.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">Type a name</text>
+<text x="80" y="232.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The search doubles as the name: once no branch matches, the only row left is New branch “…”, current, so</text>
+<text x="80" y="250.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Return opens the card with the name in it.</text>
+</g>
+<g id="Step 3">
+<rect x="40" y="260" width="24" height="24" fill="#4ecdc4" fill-opacity="1"/>
+<text x="52" y="276.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">3</text>
+<text x="80" y="277.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">The card</text>
+<text x="80" y="300.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">NAME focused; FROM the current branch, with the commit it resolves to; “Your 7 changed files come along”;</text>
+<text x="80" y="318.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Switch to it on. Return creates: git switch -c &lt;name&gt; [&lt;start&gt;], or git branch &lt;name&gt; &lt;start&gt; with Switch to</text>
+<text x="80" y="336.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">it off.</text>
+</g>
+<g id="Step 4">
+<rect x="40" y="346" width="24" height="24" fill="#4ecdc4" fill-opacity="1"/>
+<text x="52" y="362.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">4</text>
+<text x="80" y="363.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">Pick where it starts</text>
+<text x="80" y="386.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The From picker is the merge dialog's branch menu with the tags added. A remote branch fills an empty name</text>
+<text x="80" y="404.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">with its own (origin/feature/x → feature/x) and the new branch tracks it, as git does.</text>
+</g>
+<g id="Step 5">
+<rect x="40" y="414" width="24" height="24" fill="#4ecdc4" fill-opacity="1"/>
+<text x="52" y="430.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">5</text>
+<text x="80" y="431.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">Name taken</text>
+<text x="80" y="454.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">“Already a branch” in red on a row under the field, with Switch to it as the way out; Create is off until the</text>
+<text x="80" y="472.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">name is free.</text>
+</g>
+<g id="Step 6">
+<rect x="40" y="482" width="24" height="24" fill="#4ecdc4" fill-opacity="1"/>
+<text x="52" y="498.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#181c22" text-anchor="middle" xml:space="preserve">6</text>
+<text x="80" y="499.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">Created</text>
+<text x="80" y="522.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The chip shows the new branch, Push and Pull lose their badges until it is published (Push publishes it), and</text>
+<text x="80" y="540.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">the footer says what happened.</text>
+</g>
+<g id="Step 7">
+<rect x="40" y="550" width="24" height="24" fill="#4ecdc4" fill-opacity="0.18"/>
+<text x="52" y="566.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" text-anchor="middle" xml:space="preserve">7</text>
+<text x="80" y="567.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">From History</text>
+<text x="80" y="590.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">A commit's menu gains New branch from here… (and Ctrl+N with a commit selected): the same card, starting at</text>
+<text x="80" y="608.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">that commit.</text>
+</g>
+<g id="Step 8">
+<rect x="40" y="618" width="24" height="24" fill="#4ecdc4" fill-opacity="0.18"/>
+<text x="52" y="634.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" text-anchor="middle" xml:space="preserve">8</text>
+<text x="80" y="635.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#4ecdc4" xml:space="preserve">Changes in the way</text>
+<text x="80" y="658.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">git will not switch when changed files differ at the start point. The card says which, Switch to it goes off,</text>
+<text x="80" y="676.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">and Create still makes the branch where it was asked for.</text>
+</g>
+<text x="1100" y="141.0" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#e0e6ed" xml:space="preserve">Rules</text>
+<text x="1100" y="170.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">·</text>
+<text x="1116" y="170.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Names: a space turns into a dash as it is typed; git check-ref-format --branch decides the rest. A name git</text>
+<text x="1116" y="188.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">refuses gets a red “Not a valid branch name” row and Create goes off; an empty one just leaves Create off.</text>
+<text x="1100" y="218.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">·</text>
+<text x="1116" y="218.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Switch to it is on every time the card opens, except where git would refuse (frame 8).</text>
+<text x="1100" y="248.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">·</text>
+<text x="1116" y="248.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Keys: Ctrl+N opens the card (from the branch menu with what was typed), Return creates, Esc closes. The</text>
+<text x="1116" y="266.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">keybindings panel lists Ctrl+N as “New branch”.</text>
+<text x="1100" y="296.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">·</text>
+<text x="1116" y="296.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The card is 360 wide, 12 padding, like the agent popover; clamped to the window margins (324 at 340), 4 under</text>
+<text x="1116" y="314.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">the branch chip's row, over the view toggle when that has a row of its own.</text>
+<text x="1100" y="344.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">·</text>
+<text x="1116" y="344.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">The primary button reads Create branch whatever the switch; the checkbox says the rest, like Amend next to</text>
+<text x="1116" y="362.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">Commit.</text>
+</svg>
