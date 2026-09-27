@@ -777,7 +777,8 @@ function newBranchCard(c, o) {
 
 // ------------------------------------------------------------ footer
 // 28 high with its hairline as the top pixel row; the status text on the side
-// margin, the keys button flush with the other margin.
+// margin, the keys button flush with the other margin and the settings cog an
+// item gap before it (2026-09-26, as in the app).
 function footer(c, W, H, lv, o = {}) {
   const t = T(), d = o.d || REGULAR, h = BOX.footer, y = H - h, m = d.margin;
   c.group('Footer', () => {
@@ -785,7 +786,9 @@ function footer(c, W, H, lv, o = {}) {
     const st = o.status || (lv === 'xs' ? '~/Projects/omagit' : 'Fetched origin 2 min ago · ~/Projects/omagit');
     if (o.busy) { icon(c, 'loader', m, y + (h - BOX.icon) / 2, BOX.icon, { fill: t.accent }); text(c, m + BOX.icon + GAP.icon, y + h / 2, st, { fill: t.dim, size: SIZE.small }); }
     else text(c, m, y + h / 2, st, { fill: t.dim, size: SIZE.small });
-    button(c, { x: W - m - BOX.row, y: y + (h - BOX.row) / 2, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'keyboard', id: 'Keybindings' });
+    const by = y + (h - BOX.row) / 2;
+    button(c, { x: W - m - 2 * BOX.row - GAP.item, y: by, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'cog', id: 'Settings' });
+    button(c, { x: W - m - BOX.row, y: by, w: BOX.row, h: BOX.row, variant: 'ghost', icon: 'keyboard', id: 'Keybindings' });
   });
   return h;
 }
@@ -885,6 +888,51 @@ function mergeDialogContent(c, x, y, w, h) {
   const mw = measureButton({ icon: 'merge', label: 'Merge', px: PAD.primary });
   button(c, { x: x + w - P - mw, y: by, icon: 'merge', label: 'Merge', variant: 'primary', px: PAD.primary, id: 'MergeButton' });
   button(c, { x: x + w - P - mw - GAP.item - measureButton({ label: 'Cancel' }), y: by, label: 'Cancel', id: 'Cancel' });
+}
+
+// Settings (2026-09-26, after the app's SettingsDialog): the dialog card's head,
+// then a group per subject, a caption over its controls. FILE MANAGER: the
+// Nautilus checkbox, and under its text (16 + 8 in) the note on the 16 lines it
+// wraps to and, when a running Nautilus has to restart to show the change,
+// Restart Nautilus 8 under the note; a group gap, then Close at the right.
+const SETTINGS_W = 480;
+function wrapLines(str, width, size) {
+  const lines = [];
+  for (const word of str.split(' ')) {
+    const last = lines.length ? lines[lines.length - 1] : null;
+    if (last !== null && tw(last + ' ' + word, size) <= width) lines[lines.length - 1] = last + ' ' + word;
+    else lines.push(word);
+  }
+  return lines;
+}
+function settingsNote(o) {
+  return o.restart ? 'Nautilus picks it up once it restarts.' : 'Right-click a folder or file inside a repository in Nautilus to open it here.';
+}
+function settingsDialogHeight(w, o = {}) {
+  const P = PAD.dialog, indent = BOX.check + GAP.check;
+  const lines = wrapLines(settingsNote(o), w - 2 * P - indent, SIZE.small).length;
+  return DIALOG_HEAD + BOX.line + GAP.caption + BOX.line + GAP.caption + lines * BOX.line
+    + (o.restart ? GAP.item + BOX.control : 0) + GAP.group + BOX.control + P;
+}
+function settingsDialog(c, x, y, w, o = {}) {
+  const h = settingsDialogHeight(w, o);
+  c.group('SettingsDialog', () => {
+    const t = T(), P = PAD.dialog, indent = BOX.check + GAP.check;
+    dialogCard(c, { x, y, w, h, title: 'Settings', subtitle: 'Every change applies at once.', id: 'SettingsDialog/card' });
+    let cy = y + DIALOG_HEAD;
+    sectionLabel(c, x + P, cy + BOX.line / 2, 'File manager'); cy += BOX.line + GAP.caption;
+    checkbox(c, { x: x + P, y: cy, checked: !!o.checked, label: 'Show “Open in Omagit” in Nautilus', id: 'NautilusMenu' }); cy += BOX.line + GAP.caption;
+    wrapLines(settingsNote(o), w - 2 * P - indent, SIZE.small).forEach((l, i) =>
+      text(c, x + P + indent, cy + i * BOX.line + BOX.line / 2, l, { fill: t.dim, size: SIZE.small, id: i ? undefined : 'NautilusNote' }));
+    cy += wrapLines(settingsNote(o), w - 2 * P - indent, SIZE.small).length * BOX.line;
+    if (o.restart) {
+      cy += GAP.item;
+      button(c, { x: x + P + indent, y: cy, label: 'Restart Nautilus', id: 'RestartNautilus' });
+    }
+    const label = 'Close', bw = measureButton({ label, px: PAD.primary });
+    button(c, { x: x + w - P - bw, y: y + h - P - BOX.control, label, variant: 'primary', px: PAD.primary, id: 'CloseButton' });
+  });
+  return h;
 }
 
 // The cog's popover: which agent writes the commit message, with which model
@@ -1099,7 +1147,7 @@ function screen(o) {
     const mw = clampW(240), mx = W - m - mw;
     menuCard(c, { x: mx, y: menuY, w: mw, id: 'MoreMenu', items: [...pageItems, ...syncItems,
       { label: 'Refresh', icon: 'refresh', hint: 'F5' }, { label: 'Open repository…', icon: 'folderOpen', hint: 'Ctrl+O' }, { label: 'Clone…', icon: 'fetch' }, { type: 'sep' },
-      { label: 'Keybindings', icon: 'keyboard', hint: 'Ctrl+K' }] });
+      { label: 'Keybindings', icon: 'keyboard', hint: 'Ctrl+K' }, { label: 'Settings…', icon: 'cog', hint: 'Ctrl+,' }] });
     if (o.overlay === 'filesView') {
       // Qt's rule for a submenu at the screen's edges, with the window for the screen: beside the menu,
       // its first row level with the entry; on the other side where it has no room; over the menu, the
@@ -1121,6 +1169,11 @@ function screen(o) {
     const dw = clampW(640), dh = mergeDialogHeight(dw < 520);
     fillBox(c, 0, 0, W, H, 0.5, { fill: t.bg, id: 'Scrim' });
     mergeDialog(c, Math.round((W - dw) / 2), Math.round((H - dh) / 2), dw, { h: dh });
+  }
+  if (o.overlay === 'settings') { // centred over a scrim like the merge view, as wide as the window lets it
+    const sw = clampW(SETTINGS_W), sh = settingsDialogHeight(sw, o.settings);
+    fillBox(c, 0, 0, W, H, 0.5, { fill: t.bg, id: 'Scrim' });
+    settingsDialog(c, Math.round((W - sw) / 2), Math.round((H - sh) / 2), sw, o.settings);
   }
   if (o.overlay === 'keys') {
     const kw = clampW(800), kh = Math.min(500, H - 2 * m);
@@ -1156,4 +1209,4 @@ function screen(o) {
   return c;
 }
 
-module.exports = { screen, density, agentPopover, commitPopover, newBranchCard, HEAD_BASE, levelFor, topBar, syncDropdown, changesPage, changesTable, actionBar, historyPage, commitsTable, commitDetails, diffPane, miniRail, footer, menuCard, menuHeight, dialogCard, mergeDialog, mergeDialogHeight, keybindingsPanel, FILES, COMMITS, DIFF, tokens, TOP_BAR, SHALLOW, TALL };
+module.exports = { screen, density, agentPopover, commitPopover, newBranchCard, HEAD_BASE, levelFor, topBar, syncDropdown, changesPage, changesTable, actionBar, historyPage, commitsTable, commitDetails, diffPane, miniRail, footer, menuCard, menuHeight, dialogCard, mergeDialog, mergeDialogHeight, settingsDialog, settingsDialogHeight, keybindingsPanel, FILES, COMMITS, DIFF, tokens, TOP_BAR, SHALLOW, TALL };

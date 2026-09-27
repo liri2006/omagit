@@ -1,5 +1,6 @@
 # Nautilus extension: "Open in Omagit" for folders (and files) inside a git repository.
-# Install to ~/.local/share/nautilus-python/extensions/omagit.py and restart Nautilus (nautilus -q).
+# Built into Omagit, whose Settings copy it to ~/.local/share/nautilus-python/extensions/omagit.py;
+# Nautilus loads it when it starts (nautilus -q quits a running one).
 import os
 import shutil
 

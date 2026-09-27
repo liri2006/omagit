@@ -1010,6 +1010,7 @@ void TopBar::fillMoreMenu()
     add(kFetch, tr("Clone…"), tr("Download a repository from a URL or GitHub (Ctrl+Shift+O)"), &TopBar::cloneRequested);
     m_moreMenu->addSeparator();
     add(kKeyboard, tr("Keybindings"), tr("Every keyboard shortcut (Ctrl+K)"), &TopBar::keybindingsRequested);
+    add(kCog, tr("Settings…"), tr("Omagit's settings (Ctrl+,)"), &TopBar::settingsRequested);
 }
 
 // The stacked row's four sync actions: the buttons' own clicks, in the order

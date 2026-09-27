@@ -579,5 +579,26 @@
   "page": "Screens · Half & Quarter",
   "w": 945,
   "h": 400
+ },
+ {
+  "file": "84-Quarter-Settings.svg",
+  "id": "Quarter · Settings",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "85-Quarter-Settings-restart-Nautilus.svg",
+  "id": "Quarter · Settings · restart Nautilus",
+  "page": "Screens · Half & Quarter",
+  "w": 945,
+  "h": 612
+ },
+ {
+  "file": "86-Extra-narrow-Settings.svg",
+  "id": "Extra narrow · Settings",
+  "page": "Screens · Narrow",
+  "w": 340,
+  "h": 612
  }
 ]

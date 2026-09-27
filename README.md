@@ -3,8 +3,8 @@
 A small classic *commit dialog* and *history viewer* for Linux, written in
 C++/Qt 6 and themed by [Omarchy](https://omarchy.org). It shows the pending changes of
 a git repository with a side-by-side diff for the selected file, the commit
-history with a branch graph, and plugs into the Nautilus context menu as
-**Open in Omagit** (only shown inside git repositories).
+history with a branch graph, and can plug into the Nautilus context menu as
+**Open in Omagit** (only shown inside git repositories; switched on in Settings).
 
 ## Features
 
@@ -226,15 +226,18 @@ history with a branch graph, and plugs into the Nautilus context menu as
 
 ## Build & install
 
-Requires `qt6-base` and `git`; the context menu needs `nautilus-python`.
+Requires `qt6-base` and `git`; the Nautilus menu entry needs `nautilus-python`.
 
 ```bash
 ./install.sh
 ```
 
-This builds with `qmake6`, installs `~/.local/bin/omagit`, a desktop entry, an icon and
-`~/.local/share/nautilus-python/extensions/omagit.py`, then restarts Nautilus so the menu
-appears. `./uninstall.sh` removes everything again.
+This builds with `qmake6` and installs `~/.local/bin/omagit`, a desktop entry and an icon.
+Nautilus's **Open in Omagit** entry is not part of the install: tick *Show "Open in Omagit"
+in Nautilus* in Settings (the footer's cog, More → Settings…, or **Ctrl+,**), which writes
+`~/.local/share/nautilus-python/extensions/omagit.py` and offers to restart a running
+Nautilus so it loads the extension; unticking removes the file again. `./uninstall.sh`
+removes everything, the extension included.
 
 To build without installing, `qmake6 omagit.pro && make` — optimised, like the installer;
 `qmake6 CONFIG+=debug omagit.pro && make` builds with debug symbols instead. The source
@@ -254,13 +257,13 @@ omagit [path]            # any directory or file inside a repository (default: c
 header rows are folded away), and with `--mini` under the commit popover's cog (the popover
 opens too).
 
-The footer's info button or **Ctrl+K** opens the keybindings panel, styled after Omarchy's
+The footer's keyboard button or **Ctrl+K** opens the keybindings panel, styled after Omarchy's
 own Super+K menu: type to filter, ↑/↓ move the cursor, **Enter** runs the highlighted
 binding, **Esc** closes. The keys follow lazygit's letters with Ctrl in front (Ctrl+Shift for
 its capitals): Ctrl+F fetch, Ctrl+P pull, Ctrl+Shift+P push, Ctrl+Shift+M merge, Ctrl+Shift+Space
 check all, Ctrl+Shift+A amend, Ctrl+E open, Ctrl+D discard, Ctrl+R recent repositories, Ctrl+S
 filter the history, Ctrl+W whitespace, Ctrl+L syntax colours, Ctrl+Shift+R (or F5) refresh,
-Ctrl+Q quit; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list;
+Ctrl+Q quit, Ctrl+, settings; Ctrl+1, Ctrl+2 and Ctrl+3 are the commit view, the history and the branch list;
 Ctrl+N a new branch (lazygit's n) — from the current branch, from the selected commit in the
 history, and named after the search in the branch list; in its card Enter creates the branch
 and Esc closes it.
@@ -365,6 +368,8 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/BranchPicker.*` | The field-like button showing a branch, tag or commit that opens the branch dropdown (the merge view's two sides, the New branch card's From) |
 | `src/NewBranchCard.*` | The New branch card: name, where it starts, what becomes of the changed files, Switch to it and Create branch |
 | `src/MergeDialog.*` | The merge view: source/destination pickers with swap, the merge-tree verdict, merge and abort |
+| `src/SettingsDialog.*` | Settings: for now whether Nautilus offers Open in Omagit, with a restart of a running Nautilus to show the change |
+| `src/NautilusMenu.*` | Puts the embedded Nautilus extension in the user's extension folder or takes it away, and whether Nautilus, nautilus-python and a running Nautilus are there |
 | `src/LoginDialog.*` | The sign-in: username and password for an https host, an ssh key's passphrase, and whether git will remember it |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |
@@ -376,7 +381,7 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/MainWindow.*` | Window shell: the top bar above the body, modes and sync operations, Docked/Mini layouts and the stacked presentation below the stacking width (its tabs, keys and transitions), the pages and the diff pane, branches, merging, repositories and the working-tree watch |
 | `src/CommitPage.*` | The commit dialog page: message box with the coding-agent flow, the changes list in its three presentations (table, compact and tree, with their delegates and the switcher), its context menu, options and the Commit button — folded into the stacked action bar's options menu below the stacking width |
 | `src/DiffPane.*` | The right pane: Prev/Next and the two-pane / whitespace / syntax toggles above the diff view, with their remembered settings |
-| `src/Footer.*` | The footer bar: the repository path or the latest message, and the keybindings button |
+| `src/Footer.*` | The footer bar: the repository path or the latest message, and the settings and keybindings buttons |
 | `src/UiHelpers.*` | The shell's Nerd Font glyphs and the small widget factories the sections share (section and dim labels, tool / small / dropdown buttons, hairline, menu headers, a drop-down menu kept inside its window) |
 | `src/DesktopExec.*` | A file's default application, read from its desktop entry, and launching it detached |
 | `src/MiniRail.*` | The Mini layout's rail: file miniatures with instant path tooltips, the commit's hash in history mode, Refresh and the commit tile |
@@ -384,4 +389,4 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/AgentPopover.*` | The agent settings card under a cog (the page's, or the commit popover's): agent picker, model rows, the other-model field, the reasoning level track and Generate now, or the install commands when no agent is installed; every choice saved through the commit page at once |
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
 | `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |
-| `nautilus/omagit.py` | Nautilus "Open in Omagit" menu provider |
+| `nautilus/omagit.py` | Nautilus "Open in Omagit" menu provider, built into the app and installed from Settings |

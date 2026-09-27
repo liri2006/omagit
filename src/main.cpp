@@ -3,6 +3,7 @@
 #include "GitRepo.h"
 #include "MainWindow.h"
 #include "CloneDialog.h"
+#include "NautilusMenu.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
 
@@ -86,7 +87,7 @@ int main(int argc, char *argv[])
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, merge, login or clone panel, the Mini layout's commit popover, the New branch card, the stacked layout's sync, more or options menu, or the narrow diff pane's view options, before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|merge|login|clone|commit|newbranch|sync|more|options|diff"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, settings, merge, login or clone panel, the Mini layout's commit popover, the New branch card, the stacked layout's sync, more or options menu, or the narrow diff pane's view options, before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|settings|merge|login|clone|commit|newbranch|sync|more|options|diff"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -141,6 +142,12 @@ int main(int argc, char *argv[])
 
     OmarchyTheme theme;
     theme.apply(app);
+
+    // A Nautilus extension an older build installed is replaced with this
+    // build's, quietly: Settings says so when that fails. A --screenshot run
+    // is a test and leaves the user's files alone.
+    if (!parser.isSet(screenshotOpt))
+        nautilusmenu::refreshIfInstalled(nullptr);
 
     QString error;
     QString root = GitRepo::findRoot(start, &error);
@@ -201,6 +208,7 @@ int main(int argc, char *argv[])
             QTimer::singleShot(after, &window, [&window, menu] {
                 const char *slot = menu == QLatin1String("repo") ? "showRepoMenu"
                     : menu == QLatin1String("keybindings")       ? "showKeybindings"
+                    : menu == QLatin1String("settings")          ? "showSettings"
                     : menu == QLatin1String("agent")             ? "showAgentMenu"
                     : menu == QLatin1String("merge")             ? "showMergeDialog"
                     : menu == QLatin1String("clone")             ? "showCloneDialog"

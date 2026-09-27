@@ -115,6 +115,7 @@ signals:
     void openRepositoryRequested();
     void cloneRequested();
     void keybindingsRequested();
+    void settingsRequested();
     // The bar went to two rows or came back to one.
     void twoRowsChanged(bool on);
     // The more menu is being filled: entries added to `menu` here stand

@@ -3,5 +3,6 @@
     <file>omagit.svg</file>
     <file>check.svg</file>
     <file>partial.svg</file>
+    <file alias="nautilus/omagit.py">../nautilus/omagit.py</file>
 </qresource>
 </RCC>

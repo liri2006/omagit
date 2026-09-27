@@ -61,6 +61,14 @@ Generates the design frames for the Omagit Figma file
   the section "Flow · New branch (2026-09-25)" at the bottom of Screens ·
   Half & Quarter, with prototype clicks between the frames and two flows
   (New branch, New branch from History).
+- Settings (2026-09-26, after the app): the footer carries a settings cog an
+  item gap left of the keys button, More ends with Settings… (Ctrl+,), and
+  `settingsDialog()` (`overlay: 'settings'`, `settings: { checked, restart }`)
+  is the dialog: the dialog card's head, FILE MANAGER with the Nautilus
+  checkbox, the note wrapped under its text (`wrapLines`) and, when a running
+  Nautilus must restart, Restart Nautilus under the note; Close at the right.
+  Frames 84–86: Quarter · Settings, … · restart Nautilus (under Quarter ·
+  Changes / History on Screens · Half & Quarter) and Extra narrow · Settings.
 - `sheets.js` — Cover, Foundations, Components and Layout-rules sheets.
 - `build.js` — the frame list; `out/frames.json` records name, page and x offset.
 
@@ -109,6 +117,9 @@ kind, rect and props, recorded by the builders in `kit.js`) and `out/icons.json`
 - `figma/sync-mini.js` — one-off (2026-09-26): adds the `SyncDropdown/mini`
   component (the two-row bar's borderless miniature) under `SyncDropdown` on
   the Components sheet; `replace-instances.js` uses it for `mini` records.
+- `figma/settings-cog.js` — one-off (2026-09-26): gives every screen's footer
+  its settings cog, a copy of the keys IconButton 32 px to its left with the
+  cog swapped in (Light frames keep their overrides); idempotent.
 - `figma/replace-instances.js` — swaps the flat SVG groups in every frame for
   instances of those components, matched by layer name and position from the
   manifest; light-theme frames get their instances rebound to the Light styles.

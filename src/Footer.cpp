@@ -28,6 +28,9 @@ Footer::Footer(QWidget *parent)
     m_statusTimer->setSingleShot(true);
     connect(m_statusTimer, &QTimer::timeout, this, [this] { m_statusLabel->setFullText(m_idleText); });
     footer->addWidget(m_statusLabel, 1);
+    m_settingsButton = iconButton(kCog, tr("⚙"), tr("Settings (Ctrl+,)"));
+    m_settingsButton->setAccessibleName(tr("Settings"));
+    footer->addWidget(m_settingsButton);
     m_keybindingsButton = iconButton(kKeyboard, tr("K"), tr("Keybindings (Ctrl+K)"));
     m_keybindingsButton->setAccessibleName(tr("Keybindings"));
     footer->addWidget(m_keybindingsButton);
@@ -46,7 +49,8 @@ void Footer::setDensity(const Density &density)
 
 // The design's footer (screens.js footer()): 28 px, its hairline the top
 // pixel row; the status on the window's side margin, and the keybindings
-// button a 24 px ghost square flush with the other margin, centred in the 28.
+// button a 24 px ghost square flush with the other margin, centred in the 28,
+// the settings button the same square an item gap before it.
 void Footer::applyTheme()
 {
     const int margin = space(m_density.margin);

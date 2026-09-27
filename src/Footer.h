@@ -12,7 +12,7 @@ class ElidedLabel;
 }
 
 // The bar under the body: a hairline, then the current path (or the latest
-// message) and the keybindings button. The repository and branch selectors
+// message), the settings button and the keybindings button. The repository and branch selectors
 // moved to the top bar with the layout toggles.
 class Footer : public QWidget
 {
@@ -20,6 +20,7 @@ class Footer : public QWidget
 public:
     explicit Footer(QWidget *parent = nullptr);
 
+    QToolButton *settingsButton() const { return m_settingsButton; }
     QToolButton *keybindingsButton() const { return m_keybindingsButton; }
 
     // The footer's message; `ms` > 0 brings the idle text back after that long.
@@ -32,7 +33,8 @@ public:
 private:
     void applyTheme(); // the design's distances, on the text size of the moment
 
-    QHBoxLayout *m_row; // the status and the button, under the hairline
+    QHBoxLayout *m_row; // the status and the buttons, under the hairline
+    QToolButton *m_settingsButton;
     QToolButton *m_keybindingsButton;
     ui::ElidedLabel *m_statusLabel; // the footer's message, the repository path when there is none
     QTimer *m_statusTimer;

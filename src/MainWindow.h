@@ -87,6 +87,7 @@ public slots:
 
 private slots:
     void showKeybindings();
+    void showSettings();
     void onCurrentRowChanged(const QModelIndex &current);
     void onAmendToggled(bool on);
     void openInEditor();

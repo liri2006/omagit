@@ -14,6 +14,7 @@
 #include "DiffView.h"
 #include "HistoryView.h"
 #include "KeybindingsPanel.h"
+#include "SettingsDialog.h"
 #include "LoginDialog.h"
 #include "CloneDialog.h"
 #include "MiniRail.h"
@@ -172,6 +173,7 @@ void MainWindow::buildUi()
     connect(m_topBar, &TopBar::openRepositoryRequested, this, &MainWindow::openRepositoryDialog);
     connect(m_topBar, &TopBar::cloneRequested, this, &MainWindow::showCloneDialog);
     connect(m_topBar, &TopBar::keybindingsRequested, this, &MainWindow::showKeybindings);
+    connect(m_topBar, &TopBar::settingsRequested, this, &MainWindow::showSettings);
     connect(m_topBar->layoutButton(), &QToolButton::clicked, this, [this](bool mini) {
         setPaneLayout(mini ? PaneLayout::Mini : PaneLayout::Docked);
     });
@@ -203,8 +205,9 @@ void MainWindow::buildUi()
     m_mergeButton = m_topBar->mergeButton();
 
     // The footer (added to the window at the end): the path and messages, the
-    // keybindings.
+    // settings and the keybindings.
     m_footer = new Footer;
+    connect(m_footer->settingsButton(), &QToolButton::clicked, this, &MainWindow::showSettings);
     connect(m_footer->keybindingsButton(), &QToolButton::clicked, this, &MainWindow::showKeybindings);
 
     m_stack = new QStackedWidget;
@@ -422,6 +425,7 @@ QList<MainWindow::Binding> MainWindow::bindings()
     // window folds half of them into the more menu.
     list << Binding{{QKeySequence(Qt::CTRL | Qt::Key_K)}, {}, tr("Keybindings"), {},
                     [this] { showKeybindings(); }, {}, nullptr, false}
+         << Binding{{QKeySequence(Qt::CTRL | Qt::Key_Comma)}, {}, tr("Settings…"), {}, [this] { showSettings(); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_1)}, {}, tr("Commit view"), {},
                     [this] { showTab(TopBar::Tab::Changes); }}
          << Binding{{QKeySequence(Qt::CTRL | Qt::Key_2)}, {}, tr("History view"), {},
@@ -549,6 +553,13 @@ void MainWindow::showKeybindings()
                    b.panelRuns ? b.run : std::function<void()>());
     }
     panel->popup();
+}
+
+void MainWindow::showSettings()
+{
+    auto *dialog = new SettingsDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->show();
 }
 
 void MainWindow::focusHistoryFilter()

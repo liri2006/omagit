@@ -103,6 +103,10 @@ emit(S.screen({ id: 'Extra narrow · Files view submenu', W: 340, H: 612, page: 
 emit(S.screen({ id: 'Extra narrow · Options menu', W: 340, H: 612, page: 'changes', overlay: 'options' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Extra narrow · Agent settings', W: 340, H: 612, page: 'changes', overlay: 'agent', agent: { agent: 'claude', model: '', effort: '' } }), 'Screens · Narrow');
 emit(S.screen({ id: 'Shallow · More menu 945x400', W: 945, H: 400, page: 'changes', overlay: 'more' }), 'Screens · Half & Quarter');
+// Settings (2026-09-26): the footer's cog (left of the keys button), More → Settings…, Ctrl+,.
+emit(S.screen({ id: 'Quarter · Settings', W: 945, H: 612, page: 'changes', overlay: 'settings', settings: {} }), 'Screens · Half & Quarter');
+emit(S.screen({ id: 'Quarter · Settings · restart Nautilus', W: 945, H: 612, page: 'changes', overlay: 'settings', settings: { checked: true, restart: true } }), 'Screens · Half & Quarter');
+emit(S.screen({ id: 'Extra narrow · Settings', W: 340, H: 612, page: 'changes', overlay: 'settings', settings: { checked: true } }), 'Screens · Narrow');
 fs.writeFileSync(OUT + '/frames.json', JSON.stringify(frames, null, 1));
 fs.writeFileSync(OUT + '/manifest.json', JSON.stringify(manifest));
 console.log(frames.length + ' frames total');

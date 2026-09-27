@@ -788,7 +788,7 @@ QLabel#sectionLabel, QLabel#dimLabel { color: %dim%; font-size: %caption%px; fon
 /* The commit popover's hint and the agent popover's small lines: small and
    regular, unlike the bold captions; the notes beside the section captions of
    the agent popover and the New branch card are caption-sized, and regular too. */
-QLabel#commitPopoverHint, QLabel#agentPopoverSmall, QLabel#footerStatus, QLabel#historyCount { color: %dim%; font-size: %small%px; font-weight: normal; }
+QLabel#commitPopoverHint, QLabel#agentPopoverSmall, QLabel#footerStatus, QLabel#historyCount, QLabel#settingsNote { color: %dim%; font-size: %small%px; font-weight: normal; }
 QLabel#agentPopoverNote, QLabel#newBranchNote { color: %dim%; font-size: %caption%px; font-weight: normal; }
 QLabel#captionLabel { font-size: %caption%px; font-weight: bold; }
 QLabel#bigLabel { font-size: %big%px; }

@@ -81,7 +81,7 @@
 <text x="40" y="518.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H ≥ 1000 (tall)</text>
 <text x="220" y="518.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">as normal, with the roomier vertical spacing: blocks and sections 12 apart</text>
 <text x="40" y="542.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H ≥ 560</text>
-<text x="220" y="542.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">normal: footer with status + keys, message box 96 / 80 / 64 by width class (5 / 4 / 3 lines), options row; blocks and sections 8 apart</text>
+<text x="220" y="542.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">normal: footer with status + settings + keys, message box 96 / 80 / 64 by width class (5 / 4 / 3 lines), options row; blocks and sections 8 apart</text>
 <text x="40" y="566.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H &lt; 560 (shallow)</text>
 <text x="220" y="566.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#e0e6ed" xml:space="preserve">footer hidden (status → a transient line in the action bar), one-line message box (a 28 field, grows on focus to 40 %), Amend → ⋯, CHANGES / MESSAGE rows → the top bar's ⋯; blocks 4 apart</text>
 <text x="40" y="590.3" font-family="JetBrains Mono" font-size="12" font-weight="700" fill="#4ecdc4" xml:space="preserve">H &lt; 400</text>
