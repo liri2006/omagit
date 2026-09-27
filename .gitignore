@@ -1,5 +1,5 @@
 build/
-omagit
+/omagit
 Makefile
 tests/Makefile*
 **/.qmake.stash
@@ -9,3 +9,9 @@ moc_*
 qrc_*
 __pycache__/
 *.pyc
+# makepkg's output when a recipe is test-built in place
+/packaging/**/src/
+/packaging/**/pkg/
+/packaging/**/*.pkg.tar.*
+/packaging/**/*.tar.gz
+/packaging/aur/omagit-git/omagit/

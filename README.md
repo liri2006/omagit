@@ -1,10 +1,39 @@
 # Omagit
 
-A small classic *commit dialog* and *history viewer* for Linux, written in
-C++/Qt 6 and themed by [Omarchy](https://omarchy.org). It shows the pending changes of
-a git repository with a side-by-side diff for the selected file, the commit
-history with a branch graph, and can plug into the Nautilus context menu as
-**Open in Omagit** (only shown inside git repositories; switched on in Settings).
+**An Omarchy-native git GUI, built for tiling window managers.**
+
+On a tiling desktop a window rarely keeps its size. Open a browser beside Omagit and it
+gets half the screen; open a terminal as well and it is down to a quarter. Omagit is made
+for that: as its tile shrinks it rearranges itself instead of clipping. Labels turn into
+icons, less-used buttons move into a menu, and below 700 px the window shows one thing at
+a time — Changes, Diff or History — behind tabs, with the diff in a single column.
+Committing, reviewing a diff, browsing the history and pulling or pushing keep
+working down to a 340 px tile, and when the window widens again the full layout comes back
+as you left it, with the same selection and the same place in the diff.
+
+It looks and behaves like part of [Omarchy](https://omarchy.org): colours, fonts, text
+size and icons come from the active Omarchy theme and follow `omarchy theme set` and
+`omarchy display text size` live, the controls follow the Omarchy shell's style, and the
+keyboard shortcuts use lazygit's letters with Ctrl in front.
+
+![The commit view in a full-width window: the changes as a tree, the message box under it, and a side-by-side diff](docs/screenshots/commit.png)
+
+![The same window as a half tile and as two 470 px tiles: the Changes tab and the Diff tab](docs/screenshots/tiles.png)
+
+![The history view with the branch graph, commit details and the diff of a file](docs/screenshots/history.png)
+
+- **Commit** — pending changes as a tree, a compact list or a table, a
+  side-by-side diff (side by side or unified, word-level highlights, syntax
+  colours), amend and discard, and an optional commit message written by Claude Code or
+  Codex.
+- **History** — the whole history with a branch graph, ref labels and search, and each
+  commit's details, files and diffs.
+- **Branches** — switch, create, and merge with a preview that says beforehand whether
+  the merge will conflict.
+- **Sync** — fetch, pull and push with ahead/behind counts and automatic fetching, and
+  sign-in prompts for HTTPS and SSH remotes that can be remembered in the keyring.
+- **Repositories** — recent repositories, any folder, cloning from a URL or from your
+  GitHub repositories, and an optional **Open in Omagit** entry in Nautilus.
 
 ## Features
 
@@ -257,15 +286,29 @@ history with a branch graph, and can plug into the Nautilus context menu as
   offset on top of it).
 - Refreshes when the working tree or index changes.
 
-## Build & install
+## Install
 
-Requires `qt6-base` and `git`; the Nautilus menu entry needs `nautilus-python`.
+Omagit needs `qt6-base`, `git` and a Nerd Font for its icons (every Omarchy install has
+one). Optional: `openssh` for SSH remotes, `libsecret` to remember sign-ins,
+`github-cli` to clone from your GitHub list, `nautilus-python` for the Nautilus entry, and
+Claude Code or Codex for generated commit messages.
+
+From the AUR (`omagit` is the latest release, `omagit-git` the latest commit):
 
 ```bash
-./install.sh
+omarchy pkg aur add omagit
 ```
 
-This builds with `qmake6` and installs `~/.local/bin/omagit`, a desktop entry and an icon.
+From source, for the current user:
+
+```bash
+./install.sh     # builds with qmake6, installs ~/.local/bin/omagit, a desktop entry and an icon
+./uninstall.sh   # removes them again
+```
+
+A copy in `~/.local/bin` comes before a packaged `/usr/bin/omagit` on the PATH, so run
+`./uninstall.sh` before switching to the package.
+
 Nautilus's **Open in Omagit** entry is not part of the install: tick *Show "Open in Omagit"
 in Nautilus* in Settings (the footer's cog, More → Settings…, or **Ctrl+,**), which writes
 `~/.local/share/nautilus-python/extensions/omagit.py` and offers to restart a running
@@ -275,7 +318,12 @@ removes everything, the extension included.
 To build without installing, `qmake6 omagit.pro && make` — optimised, like the installer;
 `qmake6 CONFIG+=debug omagit.pro && make` builds with debug symbols instead. The source
 lists live in `omagit.pri`, which the app and the test projects share, so a new file is
-registered in one place.
+registered in one place. `make install` installs under `PREFIX` (`qmake6 PREFIX=/usr`,
+default `/usr/local`) and into `INSTALL_ROOT` when set. Packages build with
+`CONFIG+=no_screenshot_keys`, which leaves out the test-only `--screenshot-keys` and with
+it Qt's private API, so a Qt update does not break the binary; the recipes for the AUR
+and the Omarchy package repository, and the release steps, are in
+[`packaging/`](packaging/README.md).
 
 ## Usage
 
@@ -316,7 +364,7 @@ branch|repo|agent|keybindings|merge|login|commit|newbranch|sync|more|options|dif
 and action-bar menus and open nothing on a wider window, `more` only where the More button is
 shown, `diff` the diff pane's `…` view options, only where the pane is narrow enough to show
 that button, `newbranch` the New branch card from the current branch), `--screenshot-keys
-m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
+m,a,Down,Return` (development builds only, see Install) then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
 and `@changesTree` in that list focus the list on show, so the keys reach it),
 `--files-view tree|compact|table` lists the pending files that way for one run (exactly those
@@ -428,3 +476,7 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/PaneLayout.h` | The Docked/Mini enum with its glyphs, names and settings keys |
 | `tests/gitrepo_test.cpp` | Checks for status, amend, history, fetch/pull/push, branches/checkout, merging and root switching against scratch repositories |
 | `nautilus/omagit.py` | Nautilus "Open in Omagit" menu provider, built into the app and installed from Settings |
+
+## License
+
+MIT — see [LICENSE](LICENSE).

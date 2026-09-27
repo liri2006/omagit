@@ -75,8 +75,8 @@ constexpr qreal kLineWidth = 2, kLineAlpha = 0.9, kNodeRadius = 4, kNodeRing = 1
 
 // The commit list's columns by the window's width class, in design pixels;
 // 0 is a column the class does not show. Message takes the rest. Author
-// shows in every class, the user's rule (2026-09-25), where the design's
-// narrower frames leave it out.
+// shows in every class, on purpose, although the design's narrower frames
+// leave it out.
 struct CommitColumns {
     int graph, author, date;
 };

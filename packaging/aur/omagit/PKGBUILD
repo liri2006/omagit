@@ -1,0 +1,55 @@
+# Maintainer: Andras Munkacsi <devnull2006 at gmail dot com>
+
+pkgname=omagit
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Omarchy-native git GUI built for tiling window managers'
+arch=('x86_64' 'aarch64')
+url='https://github.com/liri2006/omagit'
+license=('MIT')
+depends=(
+  'git'
+  'glibc'
+  'hicolor-icon-theme'
+  'libgcc'
+  'libstdc++'
+  'qt6-base'
+  'ttf-font-nerd'
+)
+optdepends=(
+  'openssh: ssh remotes and SSH key sign-in'
+  'libsecret: remember sign-ins in the keyring'
+  'github-cli: pick one of your GitHub repositories to clone'
+  'nautilus-python: the "Open in Omagit" entry in Nautilus'
+  'claude-code: write commit messages with Claude Code'
+  'openai-codex: write commit messages with Codex'
+)
+options=('!debug')
+# Filled in by packaging/release.sh once the tag is on GitHub.
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+
+build() {
+  cd "$pkgname-$pkgver"
+  # no_screenshot_keys leaves out a test-only option that needs Qt's private API.
+  qmake6 omagit.pro \
+    CONFIG+=no_screenshot_keys \
+    PREFIX=/usr \
+    QMAKE_CFLAGS_RELEASE="$CFLAGS" \
+    QMAKE_CXXFLAGS_RELEASE="$CXXFLAGS" \
+    QMAKE_LFLAGS_RELEASE="$LDFLAGS"
+  make
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  # Offscreen, with a throw-away config and runtime directory of their own.
+  tests/run.sh
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make INSTALL_ROOT="$pkgdir" install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

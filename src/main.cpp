@@ -15,7 +15,9 @@
 #include <QMessageBox>
 #include <QKeySequence>
 #include <QMenu>
+#ifndef OMAGIT_NO_SCREENSHOT_KEYS
 #include <qpa/qwindowsysteminterface.h>
+#endif
 #include <QPainter>
 #include <QRegularExpression>
 #include <QSettings>
@@ -102,8 +104,11 @@ int main(int argc, char *argv[])
     parser.addOption(askPassOpt);
     QCommandLineOption screenshotSizeOpt(QStringLiteral("screenshot-size"), QStringLiteral("Window size for the --screenshot, as WxH (for testing; the size is not remembered)."), QStringLiteral("WxH"));
     parser.addOption(screenshotSizeOpt);
+#ifndef OMAGIT_NO_SCREENSHOT_KEYS
+    // Left out of package builds (CONFIG+=no_screenshot_keys, see omagit.pro).
     QCommandLineOption screenshotKeysOpt(QStringLiteral("screenshot-keys"), QStringLiteral("Comma-separated keys (m,a,Down,Return) sent to the focused widget once the --screenshot-menu dropdown is open, or to the window; @objectName[:vbar] or @ClassName[:vbar] focuses that (first visible) widget or its vertical scrollbar first (for testing)."), QStringLiteral("keys"));
     parser.addOption(screenshotKeysOpt);
+#endif
     QCommandLineOption filesViewOpt(QStringLiteral("files-view"), QStringLiteral("How the commit dialog lists its files for this run: tree, compact or table (for testing; the choice is not remembered)."), QStringLiteral("tree|compact|table"));
     parser.addOption(filesViewOpt);
     parser.process(app);
@@ -234,9 +239,10 @@ int main(int argc, char *argv[])
                 QMetaObject::invokeMethod(&window, slot);
             });
         }
-        const QStringList keys = parser.value(screenshotKeysOpt).split(QLatin1Char(','), Qt::SkipEmptyParts);
         // The merge view works out its verdict first; keys and the grab wait for it.
         const int settle = menu == QLatin1String("merge") ? 1200 : 0;
+#ifndef OMAGIT_NO_SCREENSHOT_KEYS
+        const QStringList keys = parser.value(screenshotKeysOpt).split(QLatin1Char(','), Qt::SkipEmptyParts);
         if (!keys.isEmpty()) {
             // Inside a dropdown the keys go to its focused field; otherwise
             // to the window itself, where the shortcuts (Ctrl+G, …) live,
@@ -278,6 +284,7 @@ int main(int argc, char *argv[])
                 QWindowSystemInterface::flushWindowSystemEvents();
             });
         }
+#endif
         QTimer::singleShot(after + (menu.isEmpty() ? 0 : 500 + settle), &window, [&window, file] {
             QPixmap shot = window.grab();
             // A dialog (the merge view) and a dropdown are windows of their own: paint them on top.

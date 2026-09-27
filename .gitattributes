@@ -1,0 +1,7 @@
+# Left out of release tarballs (`git archive`, GitHub's tag downloads): the
+# Figma generator, the design and review notes, and agent settings are not
+# needed to build, test or install Omagit.
+/design export-ignore
+/docs export-ignore
+/.claude export-ignore
+/packaging export-ignore

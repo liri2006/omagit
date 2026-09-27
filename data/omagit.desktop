@@ -1,11 +1,12 @@
 [Desktop Entry]
 Type=Application
 Name=Omagit
-Comment=Review pending changes and diffs of a git repository
+GenericName=Git GUI
+Comment=Omarchy-native git GUI built for tiling windows
 Exec=omagit %f
 Icon=omagit
 Terminal=false
 Categories=Development;RevisionControl;Qt;
-Keywords=git;diff;commit;
+Keywords=git;diff;commit;history;branch;merge;
 StartupWMClass=omagit
 MimeType=inode/directory;
