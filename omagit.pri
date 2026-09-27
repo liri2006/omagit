@@ -6,15 +6,19 @@
 # tests/tests.pro builds exactly these with `QT -= gui`, so nothing listed
 # here may reach for QtGui or QtWidgets.
 OMAGIT_CORE_SOURCES = \
+    $$PWD/src/AgentKeeper.cpp \
     $$PWD/src/AskPass.cpp \
     $$PWD/src/CredentialKeeper.cpp \
+    $$PWD/src/SshKeys.cpp \
     $$PWD/src/GitRepo.cpp \
     $$PWD/src/RemoteSync.cpp \
     $$PWD/src/CommitMessageAgent.cpp
 
 OMAGIT_CORE_HEADERS = \
+    $$PWD/src/AgentKeeper.h \
     $$PWD/src/AskPass.h \
     $$PWD/src/CredentialKeeper.h \
+    $$PWD/src/SshKeys.h \
     $$PWD/src/GitRepo.h \
     $$PWD/src/RemoteSync.h \
     $$PWD/src/CommitMessageAgent.h \
@@ -44,6 +48,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/MergeDialog.cpp \
     $$PWD/src/LoginDialog.cpp \
     $$PWD/src/MessageDialog.cpp \
+    $$PWD/src/SshKeyDialog.cpp \
     $$PWD/src/CloneDialog.cpp \
     $$PWD/src/NautilusMenu.cpp \
     $$PWD/src/SettingsDialog.cpp \
@@ -82,6 +87,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/MergeDialog.h \
     $$PWD/src/LoginDialog.h \
     $$PWD/src/MessageDialog.h \
+    $$PWD/src/SshKeyDialog.h \
     $$PWD/src/CloneDialog.h \
     $$PWD/src/NautilusMenu.h \
     $$PWD/src/SettingsDialog.h \

@@ -97,19 +97,39 @@ history with a branch graph, and can plug into the Nautilus context menu as
   dialog ends the asking for the whole operation, remotes still to come included.
   Whether it is remembered is git's business and the dialog says which: a configured
   credential helper (libsecret and friends) keeps it. Without one the dialog offers
-  **Remember this sign-in**, ticked: once the fetch, pull, push or clone worked, Omagit adds
-  `credential.<scheme>://<host>.helper = libsecret` for that one server to your global git
-  configuration and hands the login to `git credential approve`, so git's libsecret helper
-  keeps it in your keyring and the server stops asking — Omagit itself writes no password
-  anywhere. (Every Omarchy machine has the helper and the keyring; Omarchy's keyring has no
+  **Remember this sign-in**, ticked: once the fetch, pull, push or clone worked, Omagit hands
+  the login to git's libsecret helper (`git credential approve`), which keeps it in your
+  keyring, and then adds `credential.<scheme>://<host>.helper = libsecret` for that one server
+  to your global git configuration, so git asks the keyring first and the server stops asking
+  — Omagit itself writes no password anywhere. (A configuration that turns credential helpers
+  off for the remote gets no such offer.) (Every Omarchy machine has the helper and the keyring; Omarchy's keyring has no
   password of its own, so a personal access token is the better thing to keep there, as the
   dialog says.) Untick it and the login is used once and forgotten. The note names the helper by its program
   (`store`, `libsecret`, `gh`) and shows its whole command on hover; a clone's sign-in reads
   git's global configuration, since a clone uses no repository's. For a plain-HTTP remote the
   dialog warns that the password is sent unencrypted (this machine's loopback excepted). Only
-  what you start asks: an automatic fetch that runs into a sign-in says "Sign-in needed for
-  *host* — Fetch (Ctrl+F) to sign in" in the footer instead of an error, leaves the Fetch
-  button unmarked and backs off as before.
+  what you start asks: an automatic fetch runs with no askpass at all (not even one the
+  session set up, nor the system's ssh-askpass), and one that runs into a sign-in — a password,
+  an ssh key to unlock, a host key to confirm — says "Sign-in needed for *host* — Fetch (Ctrl+F)
+  to sign in" in the footer instead of an error, leaves the Fetch button unmarked and backs
+  off as before. A host whose key changed stays a loud error. ssh's question about a host it
+  has never seen becomes **Trust *host*?** with the key's fingerprint and a *Trust and connect*
+  button (the "yes" ssh wants); a failed fetch, pull or push shows ssh's own reason
+  ("Permission denied (publickey)") with git's full output under it.
+- **SSH keys**: when the server turns down the key ssh offered, the error offers **Choose SSH
+  key…** — a list of the key pairs in `~/.ssh` (name, type, comment; path and fingerprint on
+  hover), ssh's own choice, or any other key file. The choice becomes the repository's
+  `core.sshCommand` (`ssh -i <key> -o IdentitiesOnly=yes`), so ssh offers that key and no other
+  for it, and the operation runs again. The Clone dialog has the same choice as an **SSH key**
+  field under an ssh URL whenever ssh would not find the key by itself (more than one pair, or
+  one under a name of its own); `git clone -c core.sshCommand=…` saves it in the new repository.
+  An exported `GIT_SSH_COMMAND` outranks the setting, and both windows say so.
+- **Key passphrases**: with an ssh-agent reachable (`SSH_AUTH_SOCK` set and answering, as a desktop
+  session normally provides), the passphrase dialog offers **Keep unlocked until logout**, ticked:
+  once the operation worked, Omagit runs `ssh-add <key>` and answers its prompt from memory through
+  its own askpass, so the agent keeps the key and ssh stops asking. Without an agent (a bare
+  Hyprland session starts none) there is no box, and the note says plainly that the passphrase is
+  asked for every time.
 - **Merge** (the top bar's button after Fetch, Ctrl+Shift+M): a merge view
   with the branch to merge on the left and the branch it goes into on the right — the current
   branch to begin with, the main line (or the branch committed to most recently) on the other
@@ -385,6 +405,9 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/NautilusMenu.*` | Puts the embedded Nautilus extension in the user's extension folder or takes it away, and whether Nautilus, nautilus-python and a running Nautilus are there |
 | `src/LoginDialog.*` | The sign-in: username and password for an https host, an ssh key's passphrase, and whether git will remember it |
 | `src/CredentialKeeper.*` | Remembers a sign-in the user asked to keep: names git's libsecret helper for that server and hands the login to `git credential approve` |
+| `src/AgentKeeper.*` | Keeps a key unlocked until logout: `ssh-add` with the passphrase fed through an askpass of its own |
+| `src/SshKeys.*` | The key pairs in `~/.ssh` (type, comment, fingerprint) and a repository's `core.sshCommand` as the way it picks one |
+| `src/SshKeyDialog.*` | The key picker offered after a refused key: writes `core.sshCommand` and runs the operation again |
 | `src/MessageDialog.*` | Errors, warnings and questions (a failed pull or push, discarding a change) in the dialog kit instead of a QMessageBox, never wider than the window it opens over |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |

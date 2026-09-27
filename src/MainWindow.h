@@ -5,6 +5,7 @@
 #include "GitRepo.h"
 #include "Grid.h"
 #include "PaneLayout.h"
+#include "AgentKeeper.h"
 #include "CredentialKeeper.h"
 #include "RemoteSync.h"
 #include "TopBar.h"
@@ -70,6 +71,8 @@ public:
     // Sign-ins the user asked to have remembered, from a clone made before the
     // window opened: git keeps them (CredentialKeeper).
     void keepLogins(const QList<KeptLogin> &logins);
+    // Keys whose passphrase that clone was given, to keep unlocked (AgentKeeper).
+    void unlockKeys(const QList<AgentKey> &keys);
     // The --files-view override: the commit page lists its files as `key`
     // ("compact", "tree" or "table") spells it, for this run only.
     void setFilesView(const QString &key);
@@ -112,6 +115,10 @@ private slots:
     // The same dialog with a made-up github.com request, so a screenshot of
     // it can be taken (--screenshot-menu login); the answers go nowhere.
     void showLoginDialog();
+    // Which ssh key this repository signs in with (SshKeyDialog): offered by a
+    // pull, push or fetch the server turned the key down for, which it then
+    // runs again (`retry`); --screenshot-menu sshkey shows it on its own.
+    void chooseSshKey(RemoteSync::Op retry = RemoteSync::None);
     void showRepoMenu();
     void openRepositoryDialog();
     void showCloneDialog();
@@ -256,6 +263,7 @@ private:
     GitRepo *m_repo;
     RemoteSync *m_sync;
     CredentialKeeper *m_keeper;
+    AgentKeeper *m_agentKeeper;
     Mode m_mode = CommitMode;
     PaneLayout m_layout = PaneLayout::Docked;
     CommitPage *m_commitPage;

@@ -21,9 +21,12 @@
 #include "../src/HistoryModel.h"
 #include "../src/HistoryView.h"
 #include "../src/AgentPopover.h"
+#include "../src/AgentKeeper.h"
 #include "../src/AskPass.h"
 #include "../src/KeybindingsPanel.h"
 #include "../src/LoginDialog.h"
+#include "../src/SshKeys.h"
+#include "../src/SshKeyDialog.h"
 #include "../src/MessageDialog.h"
 #include "../src/MainWindow.h"
 #include "../src/MergeDialog.h"
@@ -60,6 +63,7 @@
 #include <QListView>
 #include <QMouseEvent>
 #include <QListWidget>
+#include <QLocalServer>
 #include <QLocale>
 #include <QMenu>
 #include <QJsonArray>
@@ -13303,11 +13307,12 @@ esac
         return dialog;
     }
 
-    // Whether any visible label of the dialog says `text`.
+    // Whether any visible label of the dialog says `text` — as it reads, that
+    // is, without the zero-width spaces a long path gets to wrap at.
     static bool says(LoginDialog *dialog, const QString &text)
     {
         for (const QLabel *label : dialog->findChildren<QLabel *>())
-            if (label->isVisible() && label->text().contains(text))
+            if (label->isVisible() && QString(label->text()).remove(QChar(0x200B)).contains(text))
                 return true;
         return false;
     }
@@ -13560,14 +13565,19 @@ esac
 
     // Nothing would keep the login, so the dialog offers to have git keep it
     // — ticked from the start, saying where it goes and that a token is the
-    // better thing to keep there. A remote a helper keeps already, a key's
-    // passphrase and a git without the helper get no such box.
+    // better thing to keep there. A remote a helper keeps already, a remote
+    // the configuration turns the helpers off for, a key's passphrase and a
+    // git without the helper get no such box.
     void loginDialogOffersToRememberTheSignIn()
     {
-        QTemporaryDir dir, bin;
-        QVERIFY(dir.isValid() && bin.isValid());
+        QTemporaryDir dir, bin, config;
+        QVERIFY(dir.isValid() && bin.isValid() && config.isValid());
+        // Nothing of this machine's configuration: no helper configured at
+        // all, rather than one turned off.
+        QVERIFY(writeFixture(config.filePath("gitconfig"), QByteArray()));
+        ScopedEnv global("GIT_CONFIG_GLOBAL", config.filePath("gitconfig").toUtf8());
+        ScopedEnv system("GIT_CONFIG_NOSYSTEM", "1");
         QVERIFY(git(dir.path(), {"init", "-q", "-b", "main"}));
-        QVERIFY(git(dir.path(), {"config", "credential.helper", ""}));
         QVERIFY(writeFixture(bin.filePath("git-credential-omagittest"), "#!/bin/sh\nexit 0\n"));
         QVERIFY(QFile::setPermissions(bin.filePath("git-credential-omagittest"),
                                       QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
@@ -13594,6 +13604,19 @@ esac
         QVERIFY(!passphrase->findChild<QCheckBox *>(QStringLiteral("rememberSignIn")));
         QVERIFY(!passphrase->remember());
 
+        // A repository that turns the helpers off on purpose: nothing keeps
+        // the login, and nothing is to be offered to keep it either.
+        QTemporaryDir offDir;
+        QVERIFY(offDir.isValid());
+        QVERIFY(git(offDir.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(git(offDir.path(), {"config", "credential.helper", ""}));
+        GitRepo off(offDir.path());
+        std::unique_ptr<LoginDialog> turnedOff(login(userPrompt, false, &off));
+        QVERIFY(!turnedOff->findChild<QCheckBox *>(QStringLiteral("rememberSignIn")));
+        QVERIFY(!turnedOff->remember());
+        QVERIFY(says(turnedOff.get(), QStringLiteral("Not remembered")));
+        QVERIFY(says(turnedOff.get(), QStringLiteral("turned off")));
+
         QVERIFY(git(dir.path(), {"config", "credential.https://example.com.helper", "store"}));
         std::unique_ptr<LoginDialog> kept(login(userPrompt, false, &repo));
         QVERIFY(!kept->findChild<QCheckBox *>(QStringLiteral("rememberSignIn")));
@@ -13619,6 +13642,388 @@ esac
         QCOMPARE(credentialHelperName(QStringLiteral("!/usr/bin/gh auth git-credential")), QStringLiteral("gh"));
         QCOMPARE(credentialHelperName(QStringLiteral("manager")), QStringLiteral("manager"));
         QCOMPARE(credentialHelperName(QStringLiteral("git-credential-")), QStringLiteral("git-credential-"));
+    }
+
+    // A way on from an error: a button of its own in front of OK, whose
+    // number exec() gives back when it is the one clicked.
+    void messageDialogOffersAChoice()
+    {
+        MessageDialog box(MessageDialog::Error, QStringLiteral("Fetch failed"), QStringLiteral("Permission denied"));
+        const int choose = box.addChoice(QStringLiteral("Choose SSH key…"));
+        QVERIFY(choose > int(QDialog::Accepted));
+        box.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&box));
+        QCOMPARE(box.defaultButton()->text(), QStringLiteral("OK"));
+        QPushButton *button = nullptr;
+        for (QPushButton *b : box.findChildren<QPushButton *>())
+            if (b->text() == QStringLiteral("Choose SSH key…"))
+                button = b;
+        QVERIFY(button);
+        button->click();
+        QCOMPARE(box.result(), choose);
+    }
+
+    // Two key pairs in a home of the test's own: the key picker lists ssh's
+    // own choice and then each pair, comes up on the key the repository's
+    // core.sshCommand names, and says so when the environment has the last word.
+    void sshKeyDialogListsTheKeyPairs()
+    {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+        const QString ssh = QDir(home.path()).filePath(QStringLiteral(".ssh"));
+        QVERIFY(QDir().mkpath(ssh));
+        const QByteArray pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJs+UX4FrcSY4qShNMKUNPQ9OiF4dYT6FglkbmVSUK6z test-key\n";
+        for (const QString name : {"id_ed25519", "gitea"}) {
+            QVERIFY(writeFixture(QDir(ssh).filePath(name), "private"));
+            QVERIFY(writeFixture(QDir(ssh).filePath(name + QStringLiteral(".pub")), pub));
+        }
+        ScopedEnv homeEnv("HOME", home.path().toUtf8());
+        const QString gitea = QDir(ssh).filePath(QStringLiteral("gitea"));
+
+        SshKeyDialog fresh(QStringLiteral("demo"), QString());
+        auto *list = fresh.findChild<QListWidget *>(QStringLiteral("sshKeys"));
+        QVERIFY(list);
+        QCOMPARE(list->count(), 3);
+        QVERIFY(list->item(0)->text().startsWith(QStringLiteral("ssh's choice")));
+        QVERIFY(list->item(1)->text().startsWith(QStringLiteral("gitea · ED25519 · test-key")));
+        QVERIFY(fresh.chosenKey().isEmpty());
+        list->setCurrentRow(1);
+        QCOMPARE(fresh.chosenKey(), gitea);
+
+        SshKeyDialog set(QStringLiteral("demo"), sshkeys::sshCommand(gitea));
+        QCOMPARE(set.chosenKey(), gitea);
+
+        // A key from elsewhere gets a row of its own.
+        set.selectKey(QStringLiteral("/somewhere/else/deploy"));
+        QCOMPARE(set.chosenKey(), QStringLiteral("/somewhere/else/deploy"));
+
+        const auto says = [](const SshKeyDialog &dialog, const QString &text) {
+            for (const QLabel *label : dialog.findChildren<QLabel *>())
+                if (!label->isHidden() && label->text().contains(text))
+                    return true;
+            return false;
+        };
+        SshKeyDialog custom(QStringLiteral("demo"), QStringLiteral("ssh -o ProxyJump=bastion"));
+        QVERIFY(says(custom, QStringLiteral("This replaces the repository's core.sshCommand")));
+        ScopedEnv overriding("GIT_SSH_COMMAND", "ssh -i /x");
+        SshKeyDialog overridden(QStringLiteral("demo"), QString());
+        QVERIFY(says(overridden, QStringLiteral("GIT_SSH_COMMAND is set")));
+    }
+
+    // The clone dialog's key field: there for an ssh URL when ssh would not
+    // find the key by itself, and what it holds goes into the new repository
+    // as core.sshCommand (the clone -c saves it before the first fetch).
+    void cloneOffersAnSshKeyForSshUrls()
+    {
+        QTemporaryDir home, source, destination, config;
+        QVERIFY(home.isValid() && source.isValid() && destination.isValid() && config.isValid());
+        const QString ssh = QDir(home.path()).filePath(QStringLiteral(".ssh"));
+        QVERIFY(QDir().mkpath(ssh));
+        const QByteArray pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJs+UX4FrcSY4qShNMKUNPQ9OiF4dYT6FglkbmVSUK6z test-key\n";
+        QVERIFY(writeFixture(QDir(ssh).filePath(QStringLiteral("id_ed25519")), "private"));
+        QVERIFY(writeFixture(QDir(ssh).filePath(QStringLiteral("id_ed25519.pub")), pub));
+        ScopedEnv homeEnv("HOME", home.path().toUtf8());
+        if (!sshkeys::overridingVariable().isEmpty())
+            QSKIP("GIT_SSH_COMMAND is set, which outranks core.sshCommand");
+
+        // One key under ssh's default name: ssh finds it anyway, no field.
+        {
+            CloneDialog dialog(destination.path());
+            dialog.show();
+            dialog.findChild<QLineEdit *>("cloneUrl")->setText("ssh://git@example.com/team/repo.git");
+            QVERIFY(!dialog.findChild<BranchPicker *>("cloneSshKey")->isVisible());
+        }
+
+        const QString gitea = QDir(ssh).filePath(QStringLiteral("gitea"));
+        QVERIFY(writeFixture(gitea, "private"));
+        QVERIFY(writeFixture(gitea + QStringLiteral(".pub"), pub));
+        QVERIFY(git(source.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(commit(source.path(), "Cloned commit", 1));
+        // Rewritten to a local path, so the clone needs no network — and no ssh.
+        const QByteArray gitConfig = "[url \"" + source.path().toUtf8() + "\"]\n    insteadOf = ssh://git@clone.invalid/team/repo.git\n";
+        QVERIFY(writeFixture(config.filePath("gitconfig"), gitConfig));
+        ScopedEnv global("GIT_CONFIG_GLOBAL", config.filePath("gitconfig").toUtf8());
+        ScopedEnv system("GIT_CONFIG_NOSYSTEM", "1");
+
+        CloneDialog dialog(destination.path());
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+        auto *url = dialog.findChild<QLineEdit *>("cloneUrl");
+        auto *picker = dialog.findChild<BranchPicker *>("cloneSshKey");
+        url->setText("https://example.com/team/repo.git");
+        QVERIFY(!picker->isVisible());
+        url->setText("ssh://git@clone.invalid/team/repo.git");
+        QVERIFY(picker->isVisible());
+        QCOMPARE(picker->branch(), QStringLiteral("ssh's choice"));
+        // Tab goes from the URL to the key that goes with it.
+        QVERIFY(activate(&dialog));
+        url->setFocus();
+        QTest::keyClick(url, Qt::Key_Tab);
+        QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(picker));
+        dialog.setSshKey(gitea);
+        QCOMPARE(picker->branch(), QStringLiteral("gitea"));
+
+        QSignalSpy accepted(&dialog, &QDialog::accepted);
+        dialog.findChild<QPushButton *>("cloneAccept")->click();
+        QTRY_COMPARE_WITH_TIMEOUT(accepted.size(), 1, 10000);
+        GitRepo cloned(dialog.repositoryPath());
+        QCOMPARE(sshkeys::repoCommand(&cloned), sshkeys::sshCommand(gitea));
+    }
+
+    // A clone the server turns the key down for brings the key field up,
+    // even with no key pair in ~/.ssh to list — its menu still has "Other
+    // key file…" — and the status says where to look. ssh here is a script
+    // that refuses every key.
+    void aCloneRefusedForItsKeyShowsTheKeyField()
+    {
+        if (!sshkeys::overridingVariable().isEmpty())
+            QSKIP("GIT_SSH_COMMAND is set, so git would not run the ssh on PATH");
+        QTemporaryDir home, bin, destination, config;
+        QVERIFY(home.isValid() && bin.isValid() && destination.isValid() && config.isValid());
+        QVERIFY(QDir().mkpath(QDir(home.path()).filePath(QStringLiteral(".ssh"))));
+        QVERIFY(writeFixture(bin.filePath(QStringLiteral("ssh")),
+                             "#!/bin/sh\necho 'git@example.invalid: Permission denied (publickey).' >&2\nexit 255\n",
+                             true));
+        QVERIFY(writeFixture(config.filePath(QStringLiteral("gitconfig")), QByteArray()));
+        ScopedEnv homeEnv("HOME", home.path().toUtf8());
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+        ScopedEnv global("GIT_CONFIG_GLOBAL", config.filePath(QStringLiteral("gitconfig")).toUtf8());
+        ScopedEnv system("GIT_CONFIG_NOSYSTEM", "1");
+
+        CloneDialog dialog(destination.path());
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+        auto *picker = dialog.findChild<BranchPicker *>(QStringLiteral("cloneSshKey"));
+        QVERIFY(picker);
+        dialog.findChild<QLineEdit *>(QStringLiteral("cloneUrl"))->setText(
+            QStringLiteral("ssh://git@example.invalid/team/repo.git"));
+        QVERIFY(!picker->isVisible()); // nothing to choose from yet
+        auto *accept = dialog.findChild<QPushButton *>(QStringLiteral("cloneAccept"));
+        QVERIFY(accept->isEnabled());
+        accept->click();
+        QLabel *status = cloneLabel(dialog, QStringLiteral("Status"));
+        QVERIFY(status);
+        QTRY_VERIFY_WITH_TIMEOUT(status->text().contains(QStringLiteral("SSH key")), 30000);
+        QVERIFY2(status->text().startsWith(QStringLiteral("Clone failed")), qPrintable(status->text()));
+        QVERIFY(picker->isVisible());
+        QVERIFY(!dialog.cloned());
+    }
+
+    // A fetch the server turns the key down for offers to choose another:
+    // the error's "Choose SSH key…" opens the key picker, the choice becomes
+    // the repository's core.sshCommand, and the fetch runs again with it —
+    // ssh here being a script that refuses every key and notes what it got.
+    void aRefusedKeyCanBeSwappedAndTriedAgain()
+    {
+        if (!sshkeys::overridingVariable().isEmpty())
+            QSKIP("GIT_SSH_COMMAND is set, which outranks core.sshCommand");
+        QTemporaryDir home, bin;
+        QVERIFY(home.isValid() && bin.isValid());
+        const QString ssh = QDir(home.path()).filePath(QStringLiteral(".ssh"));
+        QVERIFY(QDir().mkpath(ssh));
+        const QString gitea = QDir(ssh).filePath(QStringLiteral("gitea"));
+        QVERIFY(writeFixture(gitea, "private"));
+        QVERIFY(writeFixture(gitea + QStringLiteral(".pub"),
+                             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJs+UX4FrcSY4qShNMKUNPQ9OiF4dYT6FglkbmVSUK6z test-key\n"));
+        const QString log = bin.filePath(QStringLiteral("ssh.log"));
+        QVERIFY(writeFixture(bin.filePath(QStringLiteral("ssh")),
+                             "#!/bin/sh\necho \"$@\" >> '" + log.toUtf8() + "'\n"
+                             "echo 'git@example.invalid: Permission denied (publickey).' >&2\nexit 255\n"));
+        QVERIFY(QFile::setPermissions(bin.filePath(QStringLiteral("ssh")),
+                                      QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        ScopedEnv homeEnv("HOME", home.path().toUtf8());
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+
+        WindowFixture f = mainWindow();
+        QVERIFY(f.window);
+        QVERIFY(git(f.repo->root(), {"remote", "add", "origin", "ssh://git@example.invalid/team/repo.git"}));
+        auto *sync = f.window->findChild<RemoteSync *>();
+        QVERIFY(sync);
+        sync->refreshState();
+
+        // Through the dialogs as they come: the first error's "Choose SSH
+        // key…", the picker's key, and the second error's OK.
+        int errors = 0;
+        bool picked = false;
+        QTimer driver;
+        driver.setInterval(20);
+        connect(&driver, &QTimer::timeout, &driver, [&] {
+            QWidget *modal = QApplication::activeModalWidget();
+            if (auto *box = qobject_cast<MessageDialog *>(modal)) {
+                ++errors;
+                QPushButton *target = box->defaultButton();
+                if (errors == 1)
+                    for (QPushButton *b : box->findChildren<QPushButton *>())
+                        if (b->text() == QStringLiteral("Choose SSH key…"))
+                            target = b;
+                target->click();
+            } else if (auto *keys = qobject_cast<SshKeyDialog *>(modal)) {
+                keys->selectKey(gitea);
+                picked = true;
+                keys->accept();
+            }
+        });
+        driver.start();
+        sync->fetch();
+        QTRY_VERIFY_WITH_TIMEOUT(errors >= 2, 30000);
+        driver.stop();
+        QVERIFY(picked);
+        QCOMPARE(sshkeys::repoCommand(f.repo.get()), sshkeys::sshCommand(gitea));
+        QFile calls(log);
+        QVERIFY(calls.open(QIODevice::ReadOnly));
+        const QStringList lines = QString::fromUtf8(calls.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        QVERIFY2(lines.size() >= 2, qPrintable(lines.join(QLatin1Char('\n'))));
+        QVERIFY(!lines.constFirst().contains(QStringLiteral("-i ")));
+        QVERIFY2(lines.constLast().contains(QStringLiteral("-i ") + gitea), qPrintable(lines.constLast()));
+    }
+
+    // A key's passphrase gets the agent's offer only where an agent answers:
+    // then "Keep unlocked until logout", ticked, and a note saying how long;
+    // without one, the note says plainly that the passphrase is asked for
+    // every time. A path ssh cut short (it names 100 characters at most) is
+    // no path ssh-add could use, so it gets no offer.
+    void loginDialogOffersToKeepAKeyUnlocked()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString socket = dir.filePath(QStringLiteral("agent"));
+        QLocalServer agent;
+        QVERIFY(agent.listen(socket));
+        const QString prompt = QStringLiteral("Enter passphrase for key '/home/x/.ssh/id_ed25519': ");
+        {
+            ScopedEnv sock("SSH_AUTH_SOCK", socket.toUtf8());
+            QVERIFY(sshkeys::agentReachable());
+            std::unique_ptr<LoginDialog> offered(login(prompt));
+            auto *box = offered->findChild<QCheckBox *>(QStringLiteral("keepUnlocked"));
+            QVERIFY(box && box->isVisible() && box->isChecked());
+            QCOMPARE(box->text(), QStringLiteral("Keep unlocked until logout"));
+            QVERIFY(offered->keepUnlocked());
+            QVERIFY(!offered->remember());
+            QVERIFY(says(offered.get(), QStringLiteral("ssh-agent keeps the key unlocked until you log out")));
+            box->setChecked(false);
+            QVERIFY(!offered->keepUnlocked());
+            QVERIFY(says(offered.get(), QStringLiteral("you'll be asked for this passphrase every time")));
+
+            const QString cut = QStringLiteral("/tmp/") + QString(95, QLatin1Char('k'));
+            std::unique_ptr<LoginDialog> truncated(login(QStringLiteral("Enter passphrase for key '%1': ").arg(cut)));
+            QVERIFY(!truncated->findChild<QCheckBox *>(QStringLiteral("keepUnlocked")));
+
+            // ssh told to use another agent never asks the one at
+            // SSH_AUTH_SOCK, so a key handed to that one would not be found.
+            ScopedEnv command("GIT_SSH_COMMAND", "ssh -o IdentityAgent=none");
+            std::unique_ptr<LoginDialog> elsewhere(login(prompt));
+            QVERIFY(!elsewhere->findChild<QCheckBox *>(QStringLiteral("keepUnlocked")));
+            QVERIFY(!elsewhere->keepUnlocked());
+        }
+        ScopedEnv none("SSH_AUTH_SOCK", QByteArray());
+        QVERIFY(!sshkeys::agentReachable());
+        std::unique_ptr<LoginDialog> plain(login(prompt));
+        QVERIFY(!plain->findChild<QCheckBox *>(QStringLiteral("keepUnlocked")));
+        QVERIFY(!plain->keepUnlocked());
+        QVERIFY(says(plain.get(), QStringLiteral("you'll be asked for this passphrase every time")));
+        QVERIFY(says(plain.get(), QStringLiteral("no ssh-agent is running")));
+    }
+
+    // ssh-add hands a key to an agent of the test's own, the passphrase coming
+    // from memory through Omagit's own askpass; a passphrase that does not
+    // open the key is turned down once and reported, not tried again.
+    void agentKeeperKeepsAKeyUnlocked()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+        const QString sshAgent = QStandardPaths::findExecutable(QStringLiteral("ssh-agent"));
+        const QString sshAdd = QStandardPaths::findExecutable(QStringLiteral("ssh-add"));
+        const QString sshKeygen = QStandardPaths::findExecutable(QStringLiteral("ssh-keygen"));
+        if (sshAgent.isEmpty() || sshAdd.isEmpty() || sshKeygen.isEmpty())
+            QSKIP("ssh-agent, ssh-add or ssh-keygen is missing");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto keygen = [&](const QString &name, const QString &passphrase) {
+            return QProcess::execute(sshKeygen, {QStringLiteral("-q"), QStringLiteral("-t"), QStringLiteral("ed25519"),
+                                                 QStringLiteral("-N"), passphrase, QStringLiteral("-C"), name,
+                                                 QStringLiteral("-f"), dir.filePath(name)}) == 0;
+        };
+        QVERIFY(keygen(QStringLiteral("good"), QStringLiteral("pass-123")));
+        QVERIFY(keygen(QStringLiteral("other"), QStringLiteral("right-one")));
+
+        const QString socket = dir.filePath(QStringLiteral("agent.sock"));
+        QProcess agent;
+        agent.start(sshAgent, {QStringLiteral("-D"), QStringLiteral("-a"), socket});
+        QVERIFY(agent.waitForStarted());
+        const auto stop = qScopeGuard([&agent] {
+            agent.kill();
+            agent.waitForFinished(2000);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(socket), 5000);
+        ScopedEnv sock("SSH_AUTH_SOCK", socket.toUtf8());
+        QVERIFY(sshkeys::agentReachable());
+
+        AgentKeeper keeper;
+        keeper.setHelperPath(binary);
+        QSignalSpy finished(&keeper, &AgentKeeper::finished);
+        keeper.add({AgentKey{dir.filePath(QStringLiteral("good")), QStringLiteral("pass-123")}});
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 30000);
+        QVERIFY2(finished.first().first().toStringList().isEmpty(),
+                 qPrintable(finished.first().first().toStringList().join(QLatin1Char('\n'))));
+        const auto listed = [&] {
+            QProcess list;
+            list.start(sshAdd, {QStringLiteral("-l")});
+            list.waitForFinished();
+            return QString::fromUtf8(list.readAllStandardOutput());
+        };
+        QVERIFY(listed().contains(QStringLiteral("good")));
+
+        keeper.add({AgentKey{dir.filePath(QStringLiteral("other")), QStringLiteral("wrong")}});
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 2, 30000);
+        QVERIFY(!finished.at(1).first().toStringList().isEmpty());
+        QVERIFY(!listed().contains(QStringLiteral("other")));
+    }
+
+    // ssh asking whether to trust a host it has no key for is a question to
+    // confirm, not to type an answer to: the dialog shows the fingerprint and
+    // its button says "yes". It is nobody's credential, so there is no note
+    // about helpers and no offer to remember it; and a key file's long path
+    // may wrap after any slash instead of being cut off.
+    void loginDialogConfirmsAHostKeyAndWrapsKeyPaths()
+    {
+        std::unique_ptr<LoginDialog> host(login(QStringLiteral(
+            "The authenticity of host '[localhost]:2222 ([127.0.0.1]:2222)' can't be established.\n"
+            "ED25519 key fingerprint is:\nSHA256:6SmzKAmTTz9KYV4ztf1H346dOHXEy3Kl1yrujM+HiBM\n"
+            "Are you sure you want to continue connecting (yes/no/[fingerprint])? ")));
+        QVERIFY(says(host.get(), QStringLiteral("Trust localhost:2222?")));
+        QVERIFY(says(host.get(), QStringLiteral("SHA256:6SmzKAmTTz9KYV4ztf1H346dOHXEy3Kl1yrujM+HiBM")));
+        QVERIFY(says(host.get(), QStringLiteral("ED25519")));
+        QVERIFY(!host->findChild<QLineEdit *>(QStringLiteral("secretEdit"))->isVisible());
+        QVERIFY(!host->findChild<QLineEdit *>(QStringLiteral("usernameEdit"))->isVisible());
+        QVERIFY(!host->findChild<QCheckBox *>(QStringLiteral("rememberSignIn")));
+        QVERIFY(!says(host.get(), QStringLiteral("credential helper")));
+        QPushButton *trust = signInButton(host.get());
+        QVERIFY(trust && trust->isEnabled());
+        QCOMPARE(trust->text(), QStringLiteral("Trust and connect"));
+        QCOMPARE(host->answer(), QStringLiteral("yes"));
+
+        std::unique_ptr<LoginDialog> pin(login(QStringLiteral("Enter PIN for 'PIV Card Holder pin': ")));
+        QVERIFY(!says(pin.get(), QStringLiteral("credential helper")));
+
+        const QString key = QStringLiteral("/tmp/some/quite/long/directory/structure/for/keys/id_test");
+        std::unique_ptr<LoginDialog> passphrase(login(QStringLiteral("Enter passphrase for key '%1': ").arg(key)));
+        QLabel *heading = nullptr;
+        for (QLabel *label : passphrase->findChildren<QLabel *>())
+            if (label->text().startsWith(QStringLiteral("Unlock")))
+                heading = label;
+        QVERIFY(heading);
+        QVERIFY(heading->text().contains(QStringLiteral("/​id_test")));
+        QVERIFY(QString(heading->text()).remove(QChar(0x200B)).endsWith(key));
+        QVERIFY(heading->width() <= passphrase->width());
+        // Nothing to select and copy the invisible break points out of; the
+        // path as it stands is on the tooltip.
+        QCOMPARE(heading->textInteractionFlags(), Qt::NoTextInteraction);
+        QCOMPARE(heading->toolTip(), QStringLiteral("Unlock ") + key);
+        // ssh names at most 100 characters of the path; one that long was cut.
+        const QString cut = QStringLiteral("/tmp/") + QString(95, QLatin1Char('k'));
+        std::unique_ptr<LoginDialog> truncated(login(QStringLiteral("Enter passphrase for key '%1': ").arg(cut)));
+        QVERIFY(says(truncated.get(), cut + QStringLiteral("…")));
     }
 
     // A password for a plain-http remote crosses the network as it is typed,
@@ -13766,6 +14171,22 @@ esac
                                             QStringLiteral("store"))},
                                      QUrl())
                     .isEmpty());
+
+        // Turned off is an empty list the configuration asked for: a reset
+        // that applies with nothing after it. A helper after the reset, or no
+        // entry at all, is something else.
+        bool turnedOff = false;
+        credentialHelpersFor(storeThenClear, remote, &turnedOff);
+        QVERIFY(turnedOff);
+        credentialHelpersFor(clearThenStore, remote, &turnedOff);
+        QVERIFY(!turnedOff);
+        turnedOff = true;
+        credentialHelpersFor({}, remote, &turnedOff);
+        QVERIFY(!turnedOff);
+        // A reset for another host leaves this one as it was.
+        turnedOff = true;
+        credentialHelpersFor(storeThenClear, QUrl(QStringLiteral("https://other.example")), &turnedOff);
+        QVERIFY(!turnedOff);
     }
 
     // The whole way round with git itself: `git credential fill` asks the
@@ -13841,8 +14262,41 @@ esac
                                         &where));
         QCOMPARE(where, QStringLiteral("localhost:3300"));
         QVERIFY(!RemoteSync::needsSignIn("fatal: Authentication failed for 'https://example.com/x.git/'\n"));
+        // ssh with nobody to ask: a key it could not unlock, a host it has no
+        // key for. A host whose key changed is an alarm, not a sign-in.
+        QVERIFY(RemoteSync::needsSignIn("git@localhost: Permission denied (publickey).\n"
+                                        "fatal: Could not read from remote repository.\n",
+                                        &where));
+        QCOMPARE(where, QStringLiteral("localhost"));
+        QVERIFY(RemoteSync::needsSignIn("Host key verification failed.\n"
+                                        "fatal: Could not read from remote repository.\n",
+                                        &where));
+        QVERIFY(where.isEmpty());
+        QVERIFY(!RemoteSync::needsSignIn(
+            "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+            "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n"
+            "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+            "IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\n"
+            "Host key verification failed.\nfatal: Could not read from remote repository.\n"));
         QVERIFY(!RemoteSync::needsSignIn(
             "fatal: unable to access 'https://example.com/': Could not resolve host: example.com\n"));
+        // A hard failure is the error, whatever sign-in words come with it: a
+        // changed host key before the key refusal, a host that does not
+        // resolve after git's prompt, a connection that was refused.
+        QVERIFY(!RemoteSync::needsSignIn(
+            "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+            "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n"
+            "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+            "git@localhost: Permission denied (publickey).\n"
+            "fatal: Could not read from remote repository.\n",
+            &where));
+        QVERIFY(where.isEmpty());
+        QVERIFY(!RemoteSync::needsSignIn(
+            "fatal: could not read Username for 'https://x': terminal prompts disabled\n"
+            "fatal: unable to access 'https://x/': Could not resolve host: x\n"));
+        QVERIFY(!RemoteSync::needsSignIn("ssh: connect to host x port 22: Connection refused\n"
+                                         "git@x: Permission denied (publickey).\n"
+                                         "fatal: Could not read from remote repository.\n"));
     }
 
     // A failed pull or push is said once: the line of git's output that names
@@ -13865,6 +14319,18 @@ esac
                  qPrintable(text));
         QVERIFY(text.contains(QStringLiteral("hint: Updates were rejected")));
         QVERIFY(RemoteSync::failureText("").isEmpty());
+        // When ssh gave up, git only says it could not read from the remote;
+        // what ssh said is the headline, and git's lines follow with the rest.
+        const QString ssh = RemoteSync::failureText("git@localhost: Permission denied (publickey).\n"
+                                                    "fatal: Could not read from remote repository.\n\n"
+                                                    "Please make sure you have the correct access rights\n");
+        QVERIFY2(ssh.startsWith(QStringLiteral("git@localhost: Permission denied (publickey).\n\n")), qPrintable(ssh));
+        QVERIFY(ssh.contains(QStringLiteral("correct access rights")));
+        // Said once: the headline was git's first line, which is not repeated.
+        QCOMPARE(ssh.count(QStringLiteral("Permission denied")), 1);
+        const QString https = RemoteSync::failureText("fatal: unable to access 'https://x/': SSL problem\n"
+                                                      "hint: see git help config\n");
+        QCOMPARE(https, QStringLiteral("unable to access 'https://x/': SSL problem\n\nhint: see git help config"));
     }
 
     // An automatic fetch has no dialog to ask with, so a remote that wants a
@@ -13878,6 +14344,18 @@ esac
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         QVERIFY(signInRepo(dir.path(), server->serverPort(), {QStringLiteral("origin")}));
+
+        // An askpass the session has set up is not the automatic fetch's to
+        // run either: it would put somebody else's dialog on screen.
+        QTemporaryDir tools;
+        QVERIFY(tools.isValid());
+        const QString asked = tools.filePath(QStringLiteral("asked"));
+        QVERIFY(writeFixture(tools.filePath(QStringLiteral("askpass")),
+                             "#!/bin/sh\ntouch '" + asked.toUtf8() + "'\necho nobody\n"));
+        QVERIFY(QFile::setPermissions(tools.filePath(QStringLiteral("askpass")),
+                                      QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        ScopedEnv sessionAskPass("GIT_ASKPASS", tools.filePath(QStringLiteral("askpass")).toUtf8());
+        ScopedEnv sessionSshAskPass("SSH_ASKPASS", tools.filePath(QStringLiteral("askpass")).toUtf8());
 
         GitRepo repo(dir.path());
         RemoteSync sync(&repo);
@@ -13895,6 +14373,60 @@ esac
                                       .arg(server->serverPort()));
         QVERIFY(sync.lastFetchNeedsSignIn());
         QVERIFY(!sync.lastFetchOk());
+        QVERIFY(!QFile::exists(asked));
+    }
+
+    // ssh in an automatic fetch asks nobody either — not a window, and not
+    // the terminal Omagit may have been started from: it is told to use an
+    // askpass whatever else it has (SSH_ASKPASS_REQUIRE=force), and that
+    // askpass is `false`, which says no to everything. ssh here is a script
+    // that notes what it was given and turns the key down, as a server does
+    // when the key ssh would have had to unlock was skipped.
+    void automaticFetchOverSshAsksNobody()
+    {
+        if (qEnvironmentVariableIsSet("GIT_SSH_COMMAND"))
+            QSKIP("GIT_SSH_COMMAND is set, so git would not run the ssh on PATH");
+        QTemporaryDir dir, bin, config;
+        QVERIFY(dir.isValid() && bin.isValid() && config.isValid());
+        // No core.sshCommand of this machine's between git and the ssh below.
+        QVERIFY(writeFixture(config.filePath(QStringLiteral("gitconfig")), QByteArray()));
+        ScopedEnv global("GIT_CONFIG_GLOBAL", config.filePath(QStringLiteral("gitconfig")).toUtf8());
+        ScopedEnv system("GIT_CONFIG_NOSYSTEM", "1");
+        const QString log = bin.filePath(QStringLiteral("ssh.log"));
+        QVERIFY(writeFixture(bin.filePath(QStringLiteral("ssh")),
+                             "#!/bin/sh\necho \"$SSH_ASKPASS_REQUIRE|$SSH_ASKPASS\" >> '" + log.toUtf8() + "'\n"
+                             "echo 'git@example.invalid: Permission denied (publickey).' >&2\nexit 255\n",
+                             true));
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+
+        QVERIFY(git(dir.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(commit(dir.path(), QStringLiteral("A"), 1));
+        QVERIFY(git(dir.path(), {"remote", "add", "origin", "ssh://git@example.invalid/team/repo.git"}));
+        QVERIFY(git(dir.path(), {"config", "branch.main.remote", "origin"}));
+        QVERIFY(git(dir.path(), {"config", "branch.main.merge", "refs/heads/main"}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome,
+                    [&](const AskPassRequest &request) { sync.askPass()->cancel(request.id); });
+        sync.setActive(true); // the first automatic fetch follows shortly
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.done, 30000);
+        sync.setActive(false); // no fetch of the backoff outliving the test
+
+        QVERIFY(outcome.automatic);
+        QVERIFY(!outcome.ok);
+        QVERIFY2(sync.lastFetchNeedsSignIn(), qPrintable(outcome.message));
+        QVERIFY(seen.isEmpty());
+        QFile calls(log);
+        QVERIFY(calls.open(QIODevice::ReadOnly));
+        const QStringList lines = QString::fromUtf8(calls.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        QVERIFY(!lines.isEmpty());
+        for (const QString &line : lines) {
+            QVERIFY2(line.startsWith(QStringLiteral("force|")) && line.endsWith(QStringLiteral("/false")),
+                     qPrintable(line));
+        }
     }
 
     // A clone is as fresh as a fetch: the window opened on one waits a whole

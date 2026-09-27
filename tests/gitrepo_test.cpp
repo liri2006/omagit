@@ -6,6 +6,7 @@
 #include "../src/GitRepo.h"
 #include "../src/DesktopExec.h"
 #include "../src/RemoteSync.h"
+#include "../src/SshKeys.h"
 
 #include <QBuffer>
 #include <QCoreApplication>
@@ -1247,6 +1248,25 @@ static void testAskPassPrompts()
     CHECK(parseAskPassPrompt(QStringLiteral("Username for 'http://example.com': ")).context
           == "http://example.com");
 
+    // ssh meeting a host it has no key for: confirmed in the dialog, and the
+    // host is the name without the brackets ssh puts around one with a port.
+    r = parseAskPassPrompt(QStringLiteral(
+        "The authenticity of host '[localhost]:2222 ([127.0.0.1]:2222)' can't be established.\n"
+        "ED25519 key fingerprint is:\nSHA256:6SmzKAmTTz9KYV4ztf1H346dOHXEy3Kl1yrujM+HiBM\n"
+        "This key is not known by any other names.\n"
+        "Are you sure you want to continue connecting (yes/no/[fingerprint])? "));
+    CHECK(r.kind == AskPassRequest::HostKey);
+    CHECK(r.host == "localhost:2222");
+    CHECK(r.fingerprint == "SHA256:6SmzKAmTTz9KYV4ztf1H346dOHXEy3Kl1yrujM+HiBM");
+    // Older ssh puts the fingerprint on the line, with a full stop after it.
+    r = parseAskPassPrompt(QStringLiteral(
+        "The authenticity of host 'github.com (140.82.121.4)' can't be established.\n"
+        "ED25519 key fingerprint is SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU.\n"
+        "Are you sure you want to continue connecting (yes/no/[fingerprint])? "));
+    CHECK(r.kind == AskPassRequest::HostKey);
+    CHECK(r.host == "github.com");
+    CHECK(r.fingerprint == "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU");
+
     r = parseAskPassPrompt(QStringLiteral("Enter passphrase for key '/home/x/.ssh/id_ed25519': "));
     CHECK(r.kind == AskPassRequest::Passphrase);
     CHECK(r.keyPath == "/home/x/.ssh/id_ed25519");
@@ -1400,11 +1420,13 @@ static bool writeScript(const QString &path, const QByteArray &body)
     return f.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
 }
 
-// A remembered sign-in is git's to keep: the helper is named for that one
-// server in the global configuration, and the login goes to it through
-// `git credential approve`. A helper that cannot store it takes the entry
-// added for it back out. The helper here is a script standing in for
-// libsecret, and the global configuration a file of the test's own.
+// A remembered sign-in is git's to keep: the login goes to the helper through
+// `git credential approve`, and then the helper is named for that one server
+// in the global configuration. A helper that cannot store it leaves the
+// configuration alone; an entry that cannot be written takes the stored login
+// back out with `git credential reject`. The helper here is a script standing
+// in for libsecret that notes what it was handed, and the global
+// configuration a file of the test's own.
 static void testCredentialKeeper()
 {
     QTemporaryDir dir;
@@ -1412,8 +1434,10 @@ static void testCredentialKeeper()
     const QString bin = dir.filePath("bin");
     CHECK(QDir().mkpath(bin));
     const QString stored = dir.filePath("stored");
+    const QString erased = dir.filePath("erased");
     CHECK(writeScript(bin + "/git-credential-omagittest",
-                      "#!/bin/sh\n[ \"$1\" = store ] && cat > \"" + stored.toUtf8() + "\"\nexit 0\n"));
+                      "#!/bin/sh\ncase \"$1\" in\nstore) cat > \"" + stored.toUtf8() + "\" ;;\n"
+                      "erase) cat > \"" + erased.toUtf8() + "\" ;;\nesac\nexit 0\n"));
     CHECK(writeScript(bin + "/git-credential-omagitfail",
                       "#!/bin/sh\n[ \"$1\" = store ] && echo 'no keyring to store in' >&2 && exit 1\nexit 0\n"));
     const QString config = dir.filePath("gitconfig");
@@ -1427,6 +1451,10 @@ static void testCredentialKeeper()
         p.waitForFinished();
         return QString::fromUtf8(p.readAllStandardOutput()).split('\n', Qt::SkipEmptyParts);
     };
+    const auto contents = [](const QString &path) {
+        QFile f(path);
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+    };
 
     CHECK(CredentialKeeper::configKey("http://localhost:3300") == "credential.http://localhost:3300.helper");
     CHECK(CredentialKeeper::configKey("https://example.com:8443/team/repo")
@@ -1438,11 +1466,11 @@ static void testCredentialKeeper()
     const KeptLogin login{"http://127.0.0.1:3300", "alice", "s3cret"};
     CHECK(CredentialKeeper::keepNow({login}).isEmpty());
     CHECK(named("credential.http://127.0.0.1:3300.helper") == QStringList{"omagittest"});
-    QFile store(stored);
-    CHECK(store.open(QIODevice::ReadOnly));
-    const QByteArray description = store.readAll();
+    const QByteArray description = contents(stored);
     for (const char *line : {"protocol=http\n", "host=127.0.0.1:3300\n", "username=alice\n", "password=s3cret\n"})
         CHECK(description.contains(line));
+    // The server alone, where the sign-in was for the server alone.
+    CHECK(!description.contains("path="));
     // A second sign-in to the server names the helper once, not twice.
     CHECK(CredentialKeeper::keepNow({login}).isEmpty());
     CHECK(named("credential.http://127.0.0.1:3300.helper") == QStringList{"omagittest"});
@@ -1465,11 +1493,44 @@ static void testCredentialKeeper()
         CHECK(named("credential.https://example.org.helper") == QStringList{"omagittest"});
     }
 
-    // Nowhere to store it: said so, and git is not left pointing at the helper.
+    // Nowhere to store it: said so, and git was never pointed at the helper —
+    // the configuration file is as it was, not even an emptied section left.
     CredentialKeeper::setHelper("omagitfail");
+    const QByteArray configBefore = contents(config);
     const QStringList errors = CredentialKeeper::keepNow({KeptLogin{"https://fail.example", "carol", "pw"}});
     CHECK(errors.size() == 1 && errors.constFirst().contains("no keyring to store in"));
     CHECK(named("credential.https://fail.example.helper").isEmpty());
+    CHECK(contents(config) == configBefore);
+
+    // A sign-in git prompted for with a path (credential.useHttpPath) is kept
+    // under that path, where git will ask for it again; the helper entry
+    // still covers the whole server.
+    CredentialKeeper::setHelper("omagittest");
+    CHECK(CredentialKeeper::keepNow({KeptLogin{"https://example.com/team/repo.git", "erin", "pw"}}).isEmpty());
+    const QByteArray withPath = contents(stored);
+    CHECK(withPath.contains("path=team/repo.git\n") && withPath.contains("username=erin\n"));
+    CHECK(named("credential.https://example.com.helper") == QStringList{"omagittest"});
+
+    // The entry cannot be written (the global configuration's directory is
+    // read-only): said so, and the login just stored is taken back out of
+    // the keyring. Root writes there all the same, so it is not tried as root.
+    if (geteuid() != 0) {
+        const QString locked = dir.filePath("locked");
+        CHECK(QDir().mkpath(locked));
+        const QString lockedConfig = locked + "/gitconfig";
+        CHECK(writeScript(lockedConfig, ""));
+        CHECK(QFile::setPermissions(locked, QFile::ReadOwner | QFile::ExeOwner));
+        {
+            EnvGuard readOnly("GIT_CONFIG_GLOBAL", lockedConfig.toUtf8());
+            QFile::remove(erased);
+            const QStringList failed = CredentialKeeper::keepNow({KeptLogin{"https://locked.example", "frank", "pw"}});
+            CHECK(failed.size() == 1);
+            CHECK(contents(stored).contains("username=frank\n")); // stored first
+            CHECK(QFileInfo::exists(erased) && contents(erased).contains("username=frank\n"));
+            CHECK(named("credential.https://locked.example.helper").isEmpty());
+        }
+        CHECK(QFile::setPermissions(locked, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+    }
 
     CredentialKeeper::setHelper("omagit-no-such-helper");
     CHECK(!CredentialKeeper::helperAvailable());
@@ -1489,6 +1550,105 @@ static void testCredentialKeeper()
           && keep.constFirst().username == "dave" && keep.constFirst().password == "pw");
     askPass.endOperation();
     CHECK(askPass.loginsToKeep().isEmpty());
+
+    // A key's passphrase to keep in ssh-agent, under the key file it opened.
+    QObject::disconnect(&askPass, &AskPass::requestReceived, nullptr, nullptr);
+    QObject::connect(&askPass, &AskPass::requestReceived, &askPass, [&](const AskPassRequest &request) {
+        askPass.answerSecret(request.id, "open-sesame", true);
+    });
+    const auto unlocked = runAskPassClient(askPass.socketPath(), "Enter passphrase for key '/home/x/.ssh/id_work': ");
+    CHECK(unlocked.code == 0 && unlocked.out == "open-sesame\n");
+    const QList<AgentKey> keys = askPass.keysToUnlock();
+    CHECK(keys.size() == 1 && keys.constFirst().path == "/home/x/.ssh/id_work" && keys.constFirst().passphrase == "open-sesame");
+    askPass.endOperation();
+    CHECK(askPass.keysToUnlock().isEmpty());
+}
+
+// The key pairs of ~/.ssh, and core.sshCommand as the way a repository picks
+// one: found by their public halves, read the way ssh-keygen -l reads them,
+// quoted for the shell git runs the command with and read back out of it.
+static void testSshKeys()
+{
+    QTemporaryDir home;
+    CHECK(home.isValid());
+    EnvGuard homeGuard("HOME", home.path().toUtf8());
+    const QString ssh = home.filePath(".ssh");
+    CHECK(QDir().mkpath(ssh));
+    const QByteArray pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJs+UX4FrcSY4qShNMKUNPQ9OiF4dYT6FglkbmVSUK6z omagit-ssh-test\n";
+    const auto file = [&](const QString &name, const QByteArray &body) { CHECK(writeScript(ssh + "/" + name, body)); };
+    file("id_ed25519", "private");
+    file("id_ed25519.pub", pub);
+    file("work key", "private");
+    file("work key.pub", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7 work laptop\n");
+    file("lonely.pub", pub);          // no private half
+    file("broken", "private");
+    file("broken.pub", "not a key\n"); // no public key in it
+    file("config", "Host x\n");
+    file("known_hosts", "");
+
+    CHECK(sshkeys::directory() == ssh);
+    const QList<sshkeys::Key> keys = sshkeys::find();
+    CHECK(keys.size() == 2);
+    if (keys.size() == 2) {
+        CHECK(keys.at(0).name() == "id_ed25519" && keys.at(1).name() == "work key");
+        CHECK(keys.at(0).type == "ED25519" && keys.at(0).comment == "omagit-ssh-test");
+        // What ssh-keygen -l says of that key.
+        CHECK(keys.at(0).fingerprint == "SHA256:UqjEO/FjGgtgTVLOXwHKCnSmpbUjKxS74myrJ8LfFXk");
+        CHECK(keys.at(1).type == "RSA" && keys.at(1).comment == "work laptop");
+    }
+    CHECK(sshkeys::isDefaultIdentity(ssh + "/id_ed25519"));
+    CHECK(!sshkeys::isDefaultIdentity(ssh + "/work key"));
+    CHECK(!sshkeys::isDefaultIdentity("/elsewhere/id_ed25519"));
+
+    for (const QString path : {"/home/me/.ssh/id_x", "/home/me/my keys/it's", "/k/$HOME/`x`"}) {
+        const QString command = sshkeys::sshCommand(path);
+        CHECK(command.endsWith(" -o IdentitiesOnly=yes"));
+        CHECK(sshkeys::keyOf(command) == path);
+    }
+    CHECK(sshkeys::sshCommand("/home/me/.ssh/id_x") == "ssh -i /home/me/.ssh/id_x -o IdentitiesOnly=yes");
+    CHECK(sshkeys::keyOf("ssh -i \"/a b/c\" -o X=y") == "/a b/c");
+    CHECK(sshkeys::keyOf("ssh -i/x/y") == "/x/y");
+    CHECK(sshkeys::keyOf("ssh -o ProxyJump=bastion").isEmpty());
+
+    for (const char *url : {"ssh://git@host/x.git", "git+ssh://host/x.git", "git@github.com:o/r.git", "host:o/r",
+                            "[::1]:o/r.git"})
+        CHECK(sshkeys::isSshUrl(url));
+    for (const char *url : {"https://host/x.git", "http://host:3300/x.git", "/abs/path", "./rel:x", "file:///x", ""})
+        CHECK(!sshkeys::isSshUrl(url));
+
+    QTemporaryDir dir;
+    CHECK(dir.isValid());
+    git(dir.path(), {"init", "-q", "-b", "main"});
+    GitRepo repo(dir.path());
+    CHECK(sshkeys::repoCommand(&repo).isEmpty());
+    CHECK(sshkeys::setRepoKey(&repo, "/k/my key"));
+    CHECK(sshkeys::repoCommand(&repo) == sshkeys::sshCommand("/k/my key"));
+    CHECK(sshkeys::keyOf(sshkeys::repoCommand(&repo)) == "/k/my key");
+    CHECK(sshkeys::setRepoKey(&repo, QString()));
+    CHECK(sshkeys::repoCommand(&repo).isEmpty());
+    CHECK(sshkeys::setRepoKey(&repo, QString())); // nothing left to remove is fine too
+
+    // What outranks core.sshCommand: GIT_SSH_COMMAND, set at all — empty
+    // too. GIT_SSH does not, as git goes by it only with no command configured.
+    {
+        const bool hadCommand = qEnvironmentVariableIsSet("GIT_SSH_COMMAND");
+        const QByteArray command = qgetenv("GIT_SSH_COMMAND");
+        qunsetenv("GIT_SSH_COMMAND");
+        {
+            EnvGuard gitSsh("GIT_SSH", "/usr/bin/ssh");
+            CHECK(sshkeys::overridingVariable().isEmpty());
+        }
+        {
+            EnvGuard empty("GIT_SSH_COMMAND", "");
+            CHECK(sshkeys::overridingVariable() == "GIT_SSH_COMMAND");
+        }
+        if (hadCommand)
+            qputenv("GIT_SSH_COMMAND", command);
+    }
+
+    QString where;
+    CHECK(RemoteSync::keyRefused("git@example.com: Permission denied (publickey).\n", &where) && where == "example.com");
+    CHECK(!RemoteSync::keyRefused("fatal: Authentication failed for 'https://example.com/'\n"));
 }
 
 static void testAskPassServer()
@@ -1754,6 +1914,7 @@ int main(int argc, char **argv)
     testAskPassServer();
     testAskPassKeepsLiveSockets();
     testCredentialKeeper();
+    testSshKeys();
     if (failures == 0)
         printf("all checks passed\n");
     return failures == 0 ? 0 : 1;

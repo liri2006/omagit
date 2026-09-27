@@ -14,8 +14,9 @@ public:
     // Big is the merge view's 36 px picker with a big control's 12 of
     // padding; Control a 28 px one with a control's 8 (the New branch card).
     enum class Size { Big, Control };
-    // The glyph in front of the name: what the name is.
-    enum class Kind { Branch, Tag, Commit };
+    // The glyph in front of the name: what the name is (Key: the clone
+    // dialog's ssh key, which borrows the picker for a field of its own).
+    enum class Kind { Branch, Tag, Commit, Key };
 
     explicit BranchPicker(Size size = Size::Big, QWidget *parent = nullptr);
 

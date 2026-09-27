@@ -2,6 +2,7 @@
 #include "CredentialKeeper.h"
 #include "GitRepo.h"
 #include "OmarchyTheme.h"
+#include "SshKeys.h"
 #include "UiHelpers.h"
 
 #include <QCheckBox>
@@ -161,9 +162,10 @@ bool remoteUrlMatchesTarget(const QString &remoteUrl, const QUrl &target)
             || url.userName() == target.userName());
 }
 
-QStringList credentialHelpersFor(const QStringList &configEntries, const QUrl &target)
+QStringList credentialHelpersFor(const QStringList &configEntries, const QUrl &target, bool *turnedOff)
 {
     QStringList helpers;
+    bool reset = false; // the last entry that applied was an empty one
     for (const QString &entry : configEntries) {
         // key, newline, value — and no newline at all for a key git was given
         // without one, which is as empty a value as an empty string.
@@ -190,7 +192,10 @@ QStringList credentialHelpersFor(const QStringList &configEntries, const QUrl &t
             helpers.clear();
         else
             helpers.append(helper);
+        reset = helper.isEmpty();
     }
+    if (turnedOff)
+        *turnedOff = reset;
     return helpers;
 }
 
@@ -275,21 +280,39 @@ LoginDialog::LoginDialog(const AskPassRequest &request, GitRepo *repo, QWidget *
     setAttribute(Qt::WA_DeleteOnClose);
     setSizeGripEnabled(false);
 
-    // In this order: which helper it is decides whether the flag is set, and
-    // the two as arguments of one call would be read in whichever order.
+    // In this order: which helper it is decides whether the flags are set, and
+    // the three as arguments of one call would be read in whichever order.
     bool forEveryRemote = true;
-    const QString helper = credentialHelperFor(repo, request, &forEveryRemote);
-    m_note = noteText(helper, forEveryRemote);
+    bool turnedOff = false;
+    const QString helper = credentialHelperFor(repo, request, &forEveryRemote, &turnedOff);
+    m_note = noteText(helper, forEveryRemote, turnedOff);
     if (request.kind != AskPassRequest::Passphrase && credentialHelperName(helper) != helper)
         m_noteTip = helper;
     // A clone has no repository configuration to inspect yet.
     if (!repo && (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password))
         m_note = tr("Git's configured credential helpers manage saved credentials.");
     // Nothing would keep this login: git is offered the helper to keep it
-    // with, ticked, where git has that helper (CredentialKeeper).
-    m_offerRemember = repo && helper.isEmpty()
+    // with, ticked, where git has that helper (CredentialKeeper). Not where
+    // the configuration turns the helpers off for this remote, though: an
+    // empty `credential.helper` is somebody's decision that nothing keeps it.
+    m_offerRemember = repo && helper.isEmpty() && !turnedOff
         && (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password)
         && CredentialKeeper::helperAvailable();
+    // A key's passphrase is the agent's to keep, where there is an agent to
+    // keep it — and where the prompt named the key whole: ssh names at most
+    // 100 characters of its path, and ssh-add needs all of it (AgentKeeper).
+    // Nor where ssh is told to use another agent than SSH_AUTH_SOCK's, by an
+    // IdentityAgent in GIT_SSH_COMMAND or the repository's core.sshCommand:
+    // the key would go to an agent this ssh never asks. (ssh_config's own
+    // IdentityAgent is not inspected.)
+    const auto otherAgent = [repo] {
+        for (const QString &command : {qEnvironmentVariable("GIT_SSH_COMMAND"), sshkeys::repoCommand(repo)})
+            if (command.contains(QLatin1String("IdentityAgent"), Qt::CaseInsensitive))
+                return true;
+        return false;
+    };
+    m_offerUnlock = request.kind == AskPassRequest::Passphrase && !request.keyPath.isEmpty()
+        && request.keyPath.size() < 100 && sshkeys::agentReachable() && !otherAgent();
 
     buildUi();
     applyTheme();
@@ -298,7 +321,10 @@ LoginDialog::LoginDialog(const AskPassRequest &request, GitRepo *repo, QWidget *
     // On the first thing still to fill in: the username of a fresh sign-in,
     // the password when the username is already known.
     const bool askUser = m_userEdit->isVisibleTo(this) && !m_userEdit->isReadOnly() && m_userEdit->text().isEmpty();
-    (askUser ? static_cast<QWidget *>(m_userEdit) : m_secretEdit)->setFocus();
+    if (m_request.kind == AskPassRequest::HostKey)
+        m_signInButton->setFocus();
+    else
+        (askUser ? static_cast<QWidget *>(m_userEdit) : m_secretEdit)->setFocus();
 }
 
 // git names the user in the URL of a password prompt; a username prompt is
@@ -309,14 +335,29 @@ bool LoginDialog::wantsUsername() const
         || (m_request.kind == AskPassRequest::Password && !m_request.user.isEmpty());
 }
 
+// A path or URL a label may break after any slash: a label wraps between
+// words only, and a key file's path is one long word that would be cut off.
+// The zero-width spaces are for the layout; nothing reads the heading back.
+static QString breakable(QString text)
+{
+    text.replace(QLatin1Char('/'), QStringLiteral("/​"));
+    return text;
+}
+
 QString LoginDialog::headingText() const
 {
     switch (m_request.kind) {
     case AskPassRequest::Username:
     case AskPassRequest::Password:
         return tr("Sign in to %1").arg(m_request.host.isEmpty() ? m_request.target : m_request.host);
-    case AskPassRequest::Passphrase:
-        return tr("Unlock %1").arg(ui::tildePath(m_request.keyPath));
+    case AskPassRequest::Passphrase: {
+        // ssh names the key with at most 100 characters of its path (its
+        // prompt is "…for key '%.100s'"), so a path of that length was cut.
+        const QString more = m_request.keyPath.size() >= 100 ? QStringLiteral("…") : QString();
+        return tr("Unlock %1").arg(breakable(ui::tildePath(m_request.keyPath)) + more);
+    }
+    case AskPassRequest::HostKey:
+        return tr("Trust %1?").arg(m_request.host.isEmpty() ? tr("this host") : m_request.host);
     case AskPassRequest::Other:
         break;
     }
@@ -329,6 +370,16 @@ QString LoginDialog::headingText() const
 
 QString LoginDialog::hintText() const
 {
+    // What ssh has to go on: the key the host sent, which only the host's
+    // owner can vouch for. Trusting it is what the dialog asks.
+    if (m_request.kind == AskPassRequest::HostKey) {
+        static const QRegularExpression type(QStringLiteral("(\\w+) key fingerprint is"));
+        const QString keyType = type.match(m_request.prompt).captured(1);
+        return tr("ssh has not connected to this host before. Its %1 key fingerprint is\n%2\n"
+                  "Trust it only if that is the host's own key.")
+            .arg(keyType.isEmpty() ? tr("host") : keyType,
+                 m_request.fingerprint.isEmpty() ? tr("(not given)") : m_request.fingerprint);
+    }
     // What is typed for a plain-http remote crosses the network as it is;
     // only this machine's own loopback is spared the warning.
     if (m_request.kind == AskPassRequest::Username || m_request.kind == AskPassRequest::Password) {
@@ -375,10 +426,12 @@ QString LoginDialog::hintText() const
 // or one `git credential fill` put on its own) falls back to the prompt's own
 // URL, which is the best that can be said about it.
 QString LoginDialog::credentialHelperFor(GitRepo *repo, const AskPassRequest &request,
-                                         bool *forEveryRemote)
+                                         bool *forEveryRemote, bool *turnedOff)
 {
     if (forEveryRemote)
         *forEveryRemote = true;
+    if (turnedOff)
+        *turnedOff = false;
     if (!repo)
         return QString();
     // Both reads are configuration and answer in milliseconds; the timeout is
@@ -418,11 +471,19 @@ QString LoginDialog::credentialHelperFor(GitRepo *repo, const AskPassRequest &re
     // path. Where they do not (one path has a helper, another has none), the
     // prompt alone does not say which of them git is signing in to, so the
     // helper that was found is the one named and the note hedges about it.
+    // The helpers count as turned off only where every one of them has them
+    // turned off: one remote git may be signing in to with a helper left
+    // standing, or with none configured at all, is enough to say otherwise.
     QStringList answers; // one per candidate, empty where nothing keeps it
+    bool allOff = true;
     for (const QUrl &candidate : std::as_const(candidates)) {
-        const QStringList helpers = credentialHelpersFor(entries, candidate);
+        bool off = false;
+        const QStringList helpers = credentialHelpersFor(entries, candidate, &off);
         answers.append(helpers.isEmpty() ? QString() : helpers.constLast());
+        allOff = allOff && off;
     }
+    if (turnedOff)
+        *turnedOff = allOff;
     QString answer;
     bool agree = true;
     for (const QString &helper : std::as_const(answers)) {
@@ -435,10 +496,18 @@ QString LoginDialog::credentialHelperFor(GitRepo *repo, const AskPassRequest &re
     return answer;
 }
 
-QString LoginDialog::noteText(const QString &credentialHelper, bool forEveryRemote) const
+QString LoginDialog::noteText(const QString &credentialHelper, bool forEveryRemote, bool turnedOff) const
 {
     if (m_request.kind == AskPassRequest::Passphrase)
-        return tr("Not remembered — ssh-agent keeps the key unlocked once you add it");
+        return tr("Not remembered — you'll be asked for this passphrase every time, as no ssh-agent is "
+                  "running to keep the key unlocked");
+    if (m_request.kind == AskPassRequest::HostKey)
+        return tr("ssh adds the host to your known hosts and does not ask again");
+    // A question of git's or ssh's own is no credential of anybody's.
+    if (m_request.kind == AskPassRequest::Other)
+        return QString();
+    if (credentialHelper.isEmpty() && turnedOff)
+        return tr("Not remembered — credential helpers are turned off for this remote");
     if (credentialHelper.isEmpty())
         return tr("Not remembered — no credential helper is configured");
     // Two remotes of this host, kept by different helpers: naming one of them
@@ -459,6 +528,13 @@ void LoginDialog::buildUi()
     m_heading = new QLabel(headingText());
     m_heading->setWordWrap(true);
     m_heading->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    // A heading with break points in its path is for reading only: selected
+    // and copied, the zero-width spaces would go along into the terminal the
+    // path is pasted into. The path is on the tooltip as it stands.
+    if (m_heading->text().contains(QChar(0x200B))) {
+        m_heading->setTextInteractionFlags(Qt::NoTextInteraction);
+        m_heading->setToolTip(QString(m_heading->text()).remove(QChar(0x200B)));
+    }
     m_hint = ui::dimLabel(hintText());
     m_hint->setWordWrap(true);
     m_hint->setVisible(!m_hint->text().isEmpty());
@@ -497,6 +573,11 @@ void LoginDialog::buildUi()
         m_userEdit->setFocusPolicy(Qt::ClickFocus);
         m_userEdit->setToolTip(tr("The user the remote's URL names"));
     }
+    // A host key is confirmed, not typed: the button answers ssh's "yes".
+    if (m_request.kind == AskPassRequest::HostKey) {
+        m_secretCaption->hide();
+        m_secretEdit->hide();
+    }
 
     // The offer to remember the login, with the note under it saying what
     // that means — or, with nothing to offer, the note alone.
@@ -505,15 +586,24 @@ void LoginDialog::buildUi()
     if (m_offerRemember) {
         m_remember = new QCheckBox(tr("Remember this sign-in"));
         m_remember->setObjectName(QStringLiteral("rememberSignIn"));
-        m_remember->setChecked(true);
-        m_remember->setCursor(Qt::PointingHandCursor);
         m_remember->setToolTip(tr("Adds %1 = %2 to your git configuration; git's %2 helper keeps the login")
                                    .arg(CredentialKeeper::configKey(m_request.context), CredentialKeeper::helper()));
+    } else if (m_offerUnlock) {
+        // The same box for a key: kept unlocked by the session's agent.
+        m_remember = new QCheckBox(tr("Keep unlocked until logout"));
+        m_remember->setObjectName(QStringLiteral("keepUnlocked"));
+        m_remember->setToolTip(tr("ssh-add hands the key to the ssh-agent at %1")
+                                   .arg(qEnvironmentVariable("SSH_AUTH_SOCK")));
+    }
+    if (m_remember) {
+        m_remember->setChecked(true);
+        m_remember->setCursor(Qt::PointingHandCursor);
         foot->addWidget(m_remember);
     }
     m_noteLabel = ui::dimLabel(shownNote());
     m_noteLabel->setWordWrap(true);
     m_noteLabel->setToolTip(m_noteTip);
+    m_noteLabel->setVisible(!m_noteLabel->text().isEmpty());
     foot->addWidget(m_noteLabel);
     layout->addLayout(foot);
     if (m_remember) {
@@ -529,7 +619,7 @@ void LoginDialog::buildUi()
     m_cancelButton->setCursor(Qt::PointingHandCursor);
     m_cancelButton->setAutoDefault(false);
     connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
-    m_signInButton = new QPushButton(tr("Sign in"));
+    m_signInButton = new QPushButton(m_request.kind == AskPassRequest::HostKey ? tr("Trust and connect") : tr("Sign in"));
     m_signInButton->setCursor(Qt::PointingHandCursor);
     m_signInButton->setDefault(true);
     ui::setPrimary(m_signInButton); // 16 in, the dialog's primary action
@@ -571,8 +661,10 @@ void LoginDialog::applyTheme()
     m_footLayout->setSpacing(ui::space(ui::gap::caption));
     if (m_remember)
         m_remember->setFont(t->uiFont());
-    m_fieldsGap->changeSize(0, ui::space(ui::gap::group) - ui::space(ui::gap::caption), QSizePolicy::Minimum,
-                            QSizePolicy::Fixed);
+    // A host key has no fields to put a gap between.
+    const int fieldsGap = m_request.kind == AskPassRequest::HostKey
+        ? 0 : ui::space(ui::gap::group) - ui::space(ui::gap::caption);
+    m_fieldsGap->changeSize(0, fieldsGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
     m_buttonRow->setSpacing(ui::space(ui::gap::item));
     // Bold at the base size, like the merge view's verdict headline: the
     // stylesheet decides the size, the font the weight.
@@ -593,19 +685,31 @@ void LoginDialog::applyTheme()
 
 void LoginDialog::updateAcceptable()
 {
+    if (m_request.kind == AskPassRequest::HostKey)
+        return; // nothing to fill in
     const bool haveUser = !wantsUsername() || !m_userEdit->text().trimmed().isEmpty();
     m_signInButton->setEnabled(haveUser && !m_secretEdit->text().isEmpty());
 }
 
 bool LoginDialog::remember() const
 {
-    return m_remember && m_remember->isChecked();
+    return m_offerRemember && m_remember && m_remember->isChecked();
+}
+
+bool LoginDialog::keepUnlocked() const
+{
+    return m_offerUnlock && m_remember && m_remember->isChecked();
 }
 
 // What the foot of the dialog says: where a remembered login goes and what is
-// best kept there, or else whether anything keeps it at all.
+// best kept there, how long an unlocked key stays so, or else whether
+// anything keeps it at all.
 QString LoginDialog::shownNote() const
 {
+    if (keepUnlocked())
+        return tr("ssh-agent keeps the key unlocked until you log out, and ssh stops asking for it");
+    if (m_offerUnlock)
+        return tr("Not remembered — you'll be asked for this passphrase every time");
     if (!remember())
         return m_note;
     return tr("Kept in your keyring by git's %1 helper. A personal access token is safer to keep "
@@ -621,6 +725,11 @@ QString LoginDialog::username() const
 QString LoginDialog::password() const
 {
     return m_secretEdit->text();
+}
+
+QString LoginDialog::answer() const
+{
+    return m_request.kind == AskPassRequest::HostKey ? QStringLiteral("yes") : m_secretEdit->text();
 }
 
 // As tall as its content, like the merge view: the fields do not move when

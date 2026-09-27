@@ -31,6 +31,10 @@ public:
     // is asked here (throwing changes away, rewriting published history) is
     // not easily taken back.
     void setAcceptText(const QString &text);
+    // A way on from the message — "Choose SSH key…" after a refused key — as
+    // a button in front of the others. exec() returns the number this gives
+    // back when it is the one clicked.
+    int addChoice(const QString &text);
 
     Kind kind() const { return m_kind; }
     QString title() const;
@@ -58,4 +62,5 @@ private:
     QTextEdit *m_text;
     QPushButton *m_cancelButton = nullptr, *m_acceptButton;
     QString m_iconColor; // the stylesheet in force on the glyph
+    int m_choices = 0;
 };

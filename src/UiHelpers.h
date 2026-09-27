@@ -96,6 +96,8 @@ constexpr uint kClose = 0xF0156;
 // md-source_branch_plus: a new branch (the branch menu's last row, the New
 // branch card's Create button); md-tag_outline: a tag in the branch menu.
 constexpr uint kBranchPlus = 0xF14CA, kTagOutline = 0xF04FC;
+// md-key: an ssh key (the clone dialog's key field, the key picker).
+constexpr uint kKey = 0xF0306;
 // md-alert_circle_outline, md-alert, md-information_outline: an error under
 // a field, a warning note, and a note that only informs.
 constexpr uint kAlertCircleOutline = 0xF05D6, kAlert = 0xF0026, kInfoOutline = 0xF02FD;

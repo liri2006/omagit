@@ -13,10 +13,12 @@ class QLocalSocket;
 // One prompt git or ssh put to its askpass helper, taken apart so a dialog
 // can say what it is asking for. Git asks in two steps ("Username for
 // 'https://github.com': ", then "Password for 'https://me@github.com': ");
-// ssh asks once for the passphrase of a key file. Anything else — a host key
-// to confirm, a smartcard PIN — arrives as Other with git's own words.
+// ssh asks once for the passphrase of a key file, and asks whether to trust a
+// host whose key it has never seen (HostKey: the dialog confirms, and the
+// answer is "yes"). Anything else — a smartcard PIN — arrives as Other with
+// git's or ssh's own words.
 struct AskPassRequest {
-    enum Kind { Username, Password, Passphrase, Other };
+    enum Kind { Username, Password, Passphrase, HostKey, Other };
 
     // Which asking this is: every prompt AskPass takes up gets a number of its
     // own, and an answer has to name it. A dialog whose request was dropped
@@ -29,6 +31,7 @@ struct AskPassRequest {
     QString host;     // "github.com", empty when the target is not a URL — the dialog's heading
     QString user;     // the user the URL already names, empty when it names none
     QString keyPath;  // the key file of a passphrase prompt
+    QString fingerprint; // a HostKey prompt's "SHA256:…" of the key the host sent
     // What an answer belongs to, and what it is remembered under: the
     // credential context git itself keys credentials by — the scheme, the
     // host, the port and, when git's prompt carries one (credential.useHttpPath
@@ -63,6 +66,13 @@ int askPassClient(const QString &socketPath, const QString &prompt, QIODevice *o
 // to git once the operation it signed in worked.
 struct KeptLogin {
     QString context, username, password;
+};
+
+// An ssh key the user asked to keep unlocked until they log out: the key file
+// its passphrase prompt named and the passphrase that opened it. AgentKeeper
+// hands it to ssh-agent once the operation it was asked for worked.
+struct AgentKey {
+    QString path, passphrase;
 };
 
 // The app's end of that conversation: a local socket the helper processes of
@@ -130,7 +140,9 @@ public:
     // wanted; that is not kept. `remember` marks a login the user asked to
     // have remembered past the operation (loginsToKeep()).
     void answerLogin(int id, const QString &username, const QString &password, bool remember = false);
-    void answerSecret(int id, const QString &secret);
+    // `keepUnlocked` marks a key passphrase the user asked to have kept in
+    // ssh-agent (keysToUnlock()).
+    void answerSecret(int id, const QString &secret, bool keepUnlocked = false);
     // The user closed the dialog: the helper exits 1 and git gives up — and
     // so does every further prompt of this operation, without asking again.
     // Ignored, down to that, for a request that is no longer the current one:
@@ -144,6 +156,9 @@ public:
     // worth keeping once the operation worked — git keeps no login it turned
     // down — and endOperation() forgets them, so they are taken first.
     QList<KeptLogin> loginsToKeep() const { return m_keep.values(); }
+    // The same for keys to keep unlocked in ssh-agent: taken once the
+    // operation worked (the passphrase then did), before endOperation().
+    QList<AgentKey> keysToUnlock() const { return m_unlock.values(); }
     // The operation that prompted is over: forget the logins it collected,
     // what was answered and the cancelled flag. The prompt on screen goes with
     // it, and so does every helper still waiting its turn behind that one —
@@ -186,6 +201,7 @@ private:
     // somebody else there replaces it, which is what git does anyway.
     QHash<QString, Login> m_logins;
     QHash<QString, KeptLogin> m_keep; // context → a login to remember
+    QHash<QString, AgentKey> m_unlock; // key file → a key to keep unlocked
     // Questions an answer was already given for, as context and user, so that
     // being asked again can be told from being asked about somebody else.
     QSet<QString> m_answered;

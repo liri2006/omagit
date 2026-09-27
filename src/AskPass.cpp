@@ -140,8 +140,29 @@ AskPassRequest parseAskPassPrompt(const QString &prompt)
         r.kind = AskPassRequest::Password;
     else if (lower.contains(QLatin1String("passphrase")))
         r.kind = AskPassRequest::Passphrase;
+    else if (lower.contains(QLatin1String("continue connecting (yes/no")))
+        r.kind = AskPassRequest::HostKey;
     else
         return r; // a question of git's or ssh's own: it is shown as it stands
+
+    // ssh, meeting a host it has no key for: "The authenticity of host
+    // '[example.com]:2222 ([10.0.0.1]:2222)' can't be established. ED25519
+    // key fingerprint is SHA256:…". The host is the name in front of the
+    // address, without the brackets ssh puts around a host with a port.
+    if (r.kind == AskPassRequest::HostKey) {
+        static const QRegularExpression host(QStringLiteral("authenticity of host '([^' ]+)"));
+        static const QRegularExpression fingerprint(QStringLiteral("(SHA256:[A-Za-z0-9+/=]+)"));
+        QString name = host.match(text).captured(1);
+        static const QRegularExpression bracketed(QStringLiteral("^\\[(.+)\\](:\\d+)?$"));
+        const auto m = bracketed.match(name);
+        if (m.hasMatch())
+            name = m.captured(1) + m.captured(2);
+        r.target = name;
+        r.host = name;
+        r.fingerprint = fingerprint.match(text).captured(1);
+        r.context = prompt;
+        return r;
+    }
 
     // What stands between the first and the last quote: the URL git asks
     // about, or the key file ssh wants unlocked. Both use single quotes.
@@ -395,10 +416,18 @@ void AskPass::answerLogin(int id, const QString &username, const QString &passwo
     reply(m_request.kind == AskPassRequest::Password ? password : username, true);
 }
 
-void AskPass::answerSecret(int id, const QString &secret)
+void AskPass::answerSecret(int id, const QString &secret, bool keepUnlocked)
 {
     if (!isCurrent(id))
         return;
+    // The last passphrase given for a key is the one that counts: ssh asks
+    // again after a wrong one, and only the answer that opened it is kept.
+    if (m_request.kind == AskPassRequest::Passphrase && !m_request.keyPath.isEmpty()) {
+        if (keepUnlocked)
+            m_unlock.insert(m_request.keyPath, {m_request.keyPath, secret});
+        else
+            m_unlock.remove(m_request.keyPath);
+    }
     m_answered.insert(answeredKey(m_request));
     reply(secret, true);
 }
@@ -449,6 +478,7 @@ void AskPass::endOperation()
     }
     m_logins.clear();
     m_keep.clear();
+    m_unlock.clear();
     m_answered.clear();
     m_cancelled = false;
 }

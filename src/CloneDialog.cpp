@@ -1,9 +1,12 @@
 #include "CloneDialog.h"
 #include "AskPass.h"
+#include "BranchPicker.h"
 #include "GitRepo.h"
 #include "LoginDialog.h"
 #include "OmarchyTheme.h"
 #include "ProcessUtil.h"
+#include "RemoteSync.h"
+#include "TickMenu.h"
 #include "UiHelpers.h"
 
 #include <QButtonGroup>
@@ -199,6 +202,25 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     m_urlHintGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
     urlLayout->addItem(m_urlHintGap);
     urlLayout->addWidget(ui::dimLabel(tr("HTTPS, HTTP or SSH · git@github.com:owner/repo.git")));
+    // Which ssh key the clone signs in with, for an ssh URL: ssh's own choice
+    // unless the user picks one of theirs (updateKeyRow() says when it shows).
+    m_keyRow = new QWidget;
+    m_keyLayout = new QVBoxLayout(m_keyRow);
+    m_keyCaption = ui::sectionLabel(tr("SSH key"));
+    m_keyPicker = new BranchPicker(BranchPicker::Size::Control);
+    m_keyPicker->setObjectName(QStringLiteral("cloneSshKey"));
+    m_keyPicker->setAccessibleName(tr("SSH key"));
+    m_keyCaption->setBuddy(m_keyPicker);
+    m_keyNote = ui::dimLabel();
+    m_keyNote->setWordWrap(true);
+    m_keyLayout->addWidget(m_keyCaption);
+    m_keyLayout->addWidget(m_keyPicker);
+    m_keyLayout->addWidget(m_keyNote);
+    urlLayout->addWidget(m_keyRow);
+    m_keyRow->hide();
+    connect(m_keyPicker, &QToolButton::clicked, this, &CloneDialog::showKeyMenu);
+    m_keys = sshkeys::find();
+    setSshKey(QString());
     m_sources->addWidget(urlPage);
 
     // The GitHub page keeps its three rows whatever it has to say, so it
@@ -357,7 +379,7 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
             if (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password)
                 m_askPass->answerLogin(request.id, dialog->username(), dialog->password(), dialog->remember());
             else
-                m_askPass->answerSecret(request.id, dialog->password());
+                m_askPass->answerSecret(request.id, dialog->answer(), dialog->keepUnlocked());
         });
         connect(dialog, &QDialog::rejected, m_askPass, [this, request] { m_askPass->cancel(request.id); });
         connect(m_askPass, &AskPass::requestDropped, dialog, [this, dialog, request](int id) {
@@ -376,7 +398,8 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     setFixedWidth(ui::space(kDialogWidth));
     setTabOrder(m_urlTab, m_githubTab);
     setTabOrder(m_githubTab, m_url);
-    setTabOrder(m_url, m_search);
+    setTabOrder(m_url, m_keyPicker); // the key field comes after the URL it goes with
+    setTabOrder(m_keyPicker, m_search);
     setTabOrder(m_search, m_repositories);
     setTabOrder(m_repositories, m_folder);
     setTabOrder(m_folder, m_browse);
@@ -415,8 +438,17 @@ void CloneDialog::applyTheme()
     m_progress->setFixedHeight(space(kProgressHeight));
     m_heading->setFont(theme->titleFont());
     placeOnLine(m_heading, theme->titleFont(), box::row);
-    for (QLabel *label : {m_urlCaption, m_folderCaption})
+    for (QLabel *label : {m_urlCaption, m_folderCaption, m_keyCaption})
         placeOnLine(label, theme->captionFont(), box::line);
+    // A group gap over the key field (the URL page's caption gap is part of it).
+    m_keyLayout->setContentsMargins(0, space(gap::group) - caption, 0, 0);
+    m_keyLayout->setSpacing(caption);
+    m_keyNote->setFont(theme->captionFont());
+    const QString noteColor = QStringLiteral("color: %1;").arg(theme->color(QStringLiteral("yellow")).name());
+    if (noteColor != m_keyNoteColor) {
+        m_keyNoteColor = noteColor;
+        m_keyNote->setStyleSheet(noteColor);
+    }
     for (auto *edit : {m_url, m_folder, m_search}) {
         edit->setFont(theme->uiFont());
         edit->setFixedHeight(space(box::control));
@@ -502,6 +534,87 @@ void CloneDialog::updateDestination()
     }
     updateMessage();
     m_clone->setEnabled(valid && !m_process && !m_cloning && !m_loading);
+    updateKeyRow(); // the URL may have become an ssh one, or stopped being one
+}
+
+// The key goes with an ssh URL typed on the URL tab; the GitHub tab clones
+// over https, where gh signs in.
+bool CloneDialog::keyApplies() const
+{
+    return m_sources->currentIndex() == 0 && sshkeys::isSshUrl(m_url->text());
+}
+
+void CloneDialog::updateKeyRow()
+{
+    // Only worth a field when ssh would not find the key by itself: more than
+    // one pair to choose from, one under a name of its own, or a key already
+    // chosen — or once the server has turned down the key ssh found, when
+    // the field is the way on even with no pair in ~/.ssh (its menu has
+    // "Other key file…").
+    const bool choice = m_keyNeeded || m_keys.size() > 1 || !m_keyPath.isEmpty()
+        || (m_keys.size() == 1 && !sshkeys::isDefaultIdentity(m_keys.constFirst().path));
+    const bool show = keyApplies() && choice;
+    const QString overriding = sshkeys::overridingVariable();
+    const QString note = overriding.isEmpty() || m_keyPath.isEmpty()
+        ? QString()
+        : tr("%1 is set in Omagit's environment, and git goes by it instead of this key.").arg(overriding);
+    const bool changed = m_keyRow->isHidden() == show || m_keyNote->text() != note;
+    m_keyNote->setText(note);
+    m_keyNote->setVisible(!note.isEmpty());
+    m_keyRow->setVisible(show);
+    if (changed)
+        refit();
+}
+
+void CloneDialog::setSshKey(const QString &path)
+{
+    m_keyPath = path;
+    QString tip = tr("ssh offers the keys it would anywhere else: its configuration, the agent, id_ed25519 and its kin");
+    bool found = false;
+    for (const sshkeys::Key &key : std::as_const(m_keys)) {
+        if (key.path == path) {
+            tip = ui::tildePath(key.path) + QLatin1Char('\n') + key.fingerprint;
+            found = true;
+        }
+    }
+    if (!path.isEmpty() && !found) // a key file from elsewhere: its path is all there is to say
+        tip = ui::tildePath(path);
+    m_keyPicker->setBranch(path.isEmpty() ? tr("ssh's choice") : QFileInfo(path).fileName(), BranchPicker::Kind::Key);
+    m_keyPicker->setToolTip(tip);
+    updateKeyRow();
+}
+
+void CloneDialog::showKeyMenu()
+{
+    TickMenu menu(this);
+    menu.setToolTipsVisible(true);
+    const auto add = [&](const QString &text, const QString &path, const QString &tip) {
+        QAction *action = menu.addAction(text);
+        action->setCheckable(true);
+        action->setChecked(path == m_keyPath);
+        action->setToolTip(tip);
+        connect(action, &QAction::triggered, this, [this, path] { setSshKey(path); });
+    };
+    add(tr("ssh's choice — its configuration and agent"), QString(), m_keyPicker->toolTip());
+    menu.addSeparator();
+    bool listed = m_keyPath.isEmpty();
+    for (const sshkeys::Key &key : std::as_const(m_keys)) {
+        add(key.comment.isEmpty() ? QStringLiteral("%1 · %2").arg(key.name(), key.type)
+                                  : QStringLiteral("%1 · %2 · %3").arg(key.name(), key.type, key.comment),
+            key.path, ui::tildePath(key.path) + QLatin1Char('\n') + key.fingerprint);
+        listed = listed || key.path == m_keyPath;
+    }
+    if (!listed) // a key file from elsewhere, chosen before
+        add(QFileInfo(m_keyPath).fileName(), m_keyPath, ui::tildePath(m_keyPath));
+    menu.addSeparator();
+    QAction *other = menu.addAction(tr("Other key file…"));
+    connect(other, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(this, tr("SSH key"), sshkeys::directory());
+        if (!path.isEmpty())
+            setSshKey(path.endsWith(QLatin1String(".pub")) ? path.chopped(4) : path);
+    });
+    menu.setMinimumWidth(m_keyPicker->width());
+    menu.exec(m_keyPicker->mapToGlobal(QPoint(0, m_keyPicker->height())));
 }
 
 // An edit means the user has started over: whatever the last command ended
@@ -856,6 +969,10 @@ void CloneDialog::clone()
         args << QStringLiteral("-c") << QStringLiteral("credential.https://github.com.helper=")
              << QStringLiteral("-c") << QStringLiteral("credential.https://github.com.helper=!gh auth git-credential");
     }
+    // clone -c saves the key in the new repository before it fetches, so the
+    // clone signs in with it and every fetch, pull and push after it does.
+    if (keyApplies() && !m_keyPath.isEmpty())
+        args << QStringLiteral("-c") << QStringLiteral("core.sshCommand=") + sshkeys::sshCommand(m_keyPath);
     args << QStringLiteral("--progress") << QStringLiteral("--") << url << m_cloneTarget;
     m_cloning = true;
     setStatus(tr("Cloning %1…").arg(repositoryName(url)));
@@ -863,12 +980,25 @@ void CloneDialog::clone()
         const bool cancelled = m_askPass->cancelled();
         // Logins to remember are only worth remembering once the clone worked.
         m_loginsToKeep = ok ? m_askPass->loginsToKeep() : QList<KeptLogin>();
+        m_keysToUnlock = ok ? m_askPass->keysToUnlock() : QList<AgentKey>();
         m_askPass->endOperation();
         m_cloning = false;
         setBusy(false);
         if (!ok) {
-            setStatus(cancelled ? tr("Clone cancelled — not signed in.")
-                                : tr("Clone failed.\n%1").arg(fewLines(error.right(kMessageBytes), true)), true);
+            const QString lines = fewLines(error.right(kMessageBytes), true);
+            if (cancelled) {
+                setStatus(tr("Clone cancelled — not signed in."), true);
+            } else if (RemoteSync::keyRefused(error.toUtf8())) {
+                // The server does not know the key ssh offered: the key field
+                // comes up (and stays, for the dialog's life) to choose the
+                // one it does know before cloning again.
+                m_keyNeeded = true;
+                updateKeyRow();
+                setStatus(tr("Clone failed — the server turned down the key ssh offered. "
+                             "Choose the key it knows under SSH key.\n%1").arg(lines), true);
+            } else {
+                setStatus(tr("Clone failed.\n%1").arg(lines), true);
+            }
             return;
         }
         m_repositoryPath = m_cloneTarget;

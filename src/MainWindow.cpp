@@ -11,6 +11,8 @@
 #include "Footer.h"
 #include "MergeDialog.h"
 #include "MessageDialog.h"
+#include "SshKeyDialog.h"
+#include "SshKeys.h"
 #include "DiffModel.h"
 #include "DiffView.h"
 #include "HistoryView.h"
@@ -205,6 +207,15 @@ void MainWindow::buildUi()
     // for worked: git keeps it, through its credential helper.
     m_keeper = new CredentialKeeper(this);
     connect(m_sync, &RemoteSync::loginsToKeep, m_keeper, &CredentialKeeper::keep);
+    // A key the user asked to keep unlocked, once the passphrase opened it:
+    // the session's ssh-agent keeps it until they log out.
+    m_agentKeeper = new AgentKeeper(this);
+    connect(m_sync, &RemoteSync::keysToUnlock, m_agentKeeper, &AgentKeeper::add);
+    connect(m_agentKeeper, &AgentKeeper::finished, this, [this](const QStringList &errors) {
+        if (!errors.isEmpty())
+            showStatus(tr("The key could not be kept unlocked: %1").arg(errors.constFirst().section(QLatin1Char('\n'), 0, 0)),
+                       kErrorStatusMs);
+    });
     connect(m_keeper, &CredentialKeeper::finished, this, [this](const QStringList &errors) {
         if (!errors.isEmpty())
             showStatus(tr("The sign-in could not be remembered: %1").arg(errors.constFirst().section(QLatin1Char('\n'), 0, 0)),
@@ -774,6 +785,11 @@ void MainWindow::keepLogins(const QList<KeptLogin> &logins)
     m_keeper->keep(logins);
 }
 
+void MainWindow::unlockKeys(const QList<AgentKey> &keys)
+{
+    m_agentKeeper->add(keys);
+}
+
 // --files-view: this run lists the pending files the given way, whatever the
 // settings say, and leaves the saved choice alone. main() has already checked
 // the spelling; anything else would land on the table.
@@ -1330,7 +1346,15 @@ void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, cons
         const QString title = op == RemoteSync::Fetch ? tr("Fetch failed")
                             : op == RemoteSync::Pull  ? tr("Pull failed")
                                                       : tr("Push failed");
-        MessageDialog::error(this, title, message);
+        // The title says what failed; the text need not say it again.
+        const QString prefix = title + QStringLiteral(": ");
+        MessageDialog box(MessageDialog::Error, title, message.startsWith(prefix) ? message.mid(prefix.size()) : message,
+                          this);
+        // The server knows none of the keys ssh offered: which one it does is
+        // for the user to say, and the operation runs again with it.
+        const int choose = m_sync->keyWasRefused() ? box.addChoice(tr("Choose SSH key…")) : -1;
+        if (box.exec() == choose && choose != -1)
+            QTimer::singleShot(0, this, [this, op] { chooseSshKey(op); });
     }
     showStatus(message.section(QLatin1Char('\n'), 0, 0), ok ? kMediumStatusMs : kErrorStatusMs);
     if (op != RemoteSync::Fetch || ok)
@@ -1339,6 +1363,28 @@ void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, cons
 
 // ---------------------------------------------------------------------------
 // Signing in
+
+void MainWindow::chooseSshKey(RemoteSync::Op retry)
+{
+    SshKeyDialog dialog(QFileInfo(m_repo->root()).fileName(), sshkeys::repoCommand(m_repo), this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    const QString key = dialog.chosenKey();
+    QString error;
+    if (!sshkeys::setRepoKey(m_repo, key, &error)) {
+        MessageDialog::error(this, tr("SSH key"), error);
+        return;
+    }
+    showStatus(key.isEmpty() ? tr("ssh chooses the key for this repository again")
+                             : tr("This repository signs in with %1").arg(tildePath(key)),
+               kMediumStatusMs);
+    switch (retry) {
+    case RemoteSync::Fetch: m_sync->fetch(); break;
+    case RemoteSync::Pull: m_sync->pull(); break;
+    case RemoteSync::Push: m_sync->push(); break;
+    case RemoteSync::None: break;
+    }
+}
 
 void MainWindow::onAskPassRequest(const AskPassRequest &request)
 {
@@ -1356,7 +1402,7 @@ void MainWindow::onAskPassRequest(const AskPassRequest &request)
         if (kind == AskPassRequest::Username || kind == AskPassRequest::Password)
             askPass->answerLogin(id, dialog->username(), dialog->password(), dialog->remember());
         else
-            askPass->answerSecret(id, dialog->password());
+            askPass->answerSecret(id, dialog->answer(), dialog->keepUnlocked());
     });
     connect(dialog, &QDialog::rejected, askPass, [askPass, id] { askPass->cancel(id); });
     // Nobody is waiting for this one any more: git let it go, or the operation
@@ -1581,6 +1627,7 @@ void MainWindow::showCloneDialog()
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     connect(dialog, &QDialog::accepted, this, [this, dialog] {
         m_keeper->keep(dialog->loginsToKeep());
+        m_agentKeeper->add(dialog->keysToUnlock());
         if (openRepository(dialog->repositoryPath()) && dialog->cloned())
             m_sync->markFetched();
     });

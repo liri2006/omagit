@@ -1,12 +1,14 @@
 #pragma once
 
 #include "AskPass.h"
+#include "SshKeys.h"
 
 #include <QDialog>
 #include <QProcess>
 #include <QString>
 #include <functional>
 
+class BranchPicker;
 class QBoxLayout;
 class QFrame;
 class QHBoxLayout;
@@ -33,9 +35,18 @@ public:
     // Whether repositoryPath() is a clone made just now, and not an existing
     // repository the dialog was asked to open.
     bool cloned() const { return m_cloned; }
+    // The ssh key the clone signs in with, saved as the new repository's
+    // core.sshCommand (sshkeys); empty for ssh's own choice. The field for it
+    // shows for an ssh URL when ~/.ssh holds a key ssh would not offer by
+    // itself — more than one pair, or one under a name of its own — and from
+    // the moment a clone failed on a key the server turned down.
+    QString sshKey() const { return m_keyPath; }
+    void setSshKey(const QString &path);
     // The sign-ins of that clone the user asked to have remembered, for
     // whoever opens it to hand to CredentialKeeper.
     QList<KeptLogin> loginsToKeep() const { return m_loginsToKeep; }
+    // And the keys the user asked to keep unlocked (AgentKeeper).
+    QList<AgentKey> keysToUnlock() const { return m_keysToUnlock; }
     static QString defaultFolder(const QString &repositoryRoot = QString());
     static QString repositoryName(const QString &url);
 
@@ -76,6 +87,10 @@ private:
     // second line of message or a taller list moves nothing else about.
     void fitToContent();
     void refit();
+    // Shows the ssh key field where it applies (sshKey()), and says what it holds.
+    void updateKeyRow();
+    void showKeyMenu();
+    bool keyApplies() const;
 
     AskPass *m_askPass;
     QProcess *m_process = nullptr;
@@ -93,6 +108,15 @@ private:
     QHBoxLayout *m_accountRow, *m_folderRow, *m_destinationRow, *m_buttonRow;
     QSpacerItem *m_urlHintGap, *m_destinationGap; // an item gap under a captioned field
     QProgressBar *m_progress;
+    // The ssh key field under the URL: its caption, the picker, and a note
+    // when an exported GIT_SSH_COMMAND overrides it.
+    QWidget *m_keyRow;
+    QVBoxLayout *m_keyLayout;
+    QLabel *m_keyCaption, *m_keyNote;
+    BranchPicker *m_keyPicker;
+    QString m_keyPath, m_keyNoteColor;
+    QList<sshkeys::Key> m_keys;
+    bool m_keyNeeded = false; // a clone failed on a refused key: the field stays on
     QString m_repositoryPath, m_cloneTarget, m_suggestedName;
     // The hint the destination fields ask for, the last word from a command,
     // and the colour the message label carries because of it.
@@ -102,6 +126,7 @@ private:
     bool m_statusIsAlert = false;
     bool m_cloned = false;
     QList<KeptLogin> m_loginsToKeep;
+    QList<AgentKey> m_keysToUnlock;
     bool m_refitPending = false;
     bool m_cloning = false;
     bool m_loading = false;

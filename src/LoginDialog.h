@@ -29,9 +29,15 @@ class QVBoxLayout;
 // `target` — a passphrase, or a question of git's own — is covered by nothing,
 // so only the unqualified entries count towards it.
 //
+// `turnedOff`, where given, says whether the list is empty because the
+// configuration says so: an entry that applies emptied it and no helper was
+// appended after that — `credential.helper =` written on purpose, for this
+// remote or for all of them. An empty list with no such entry is merely a
+// configuration that names no helper.
+//
 // A pure function: the matching is the part worth testing, and it has no
 // business running git.
-QStringList credentialHelpersFor(const QStringList &configEntries, const QUrl &target);
+QStringList credentialHelpersFor(const QStringList &configEntries, const QUrl &target, bool *turnedOff = nullptr);
 
 // Whether `remoteUrl` — the URL a remote of the repository is configured with
 // — is the place `target`, the URL a prompt names, asks about. Git matches
@@ -81,9 +87,16 @@ public:
     // any other single-field) prompt the answer is the password.
     QString username() const;
     QString password() const;
+    // What goes back to a question that is not a login: the passphrase or
+    // answer typed, or, for a host key, the "yes" the button stands for.
+    QString answer() const;
     // Whether the user asked for the login to be remembered: the box offered,
     // ticked from the start, when nothing would keep the login otherwise.
     bool remember() const;
+    // Whether the user asked for the key to stay unlocked until they log out:
+    // the box a passphrase gets, ticked from the start, when an ssh-agent is
+    // there to keep it (AgentKeeper).
+    bool keepUnlocked() const;
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -98,15 +111,19 @@ private:
     // `forEveryRemote` is false when the repository has several remotes the
     // prompt could be about and they are not kept by the same helper, so the
     // note can hedge instead of promising one of the two answers.
-    QString noteText(const QString &credentialHelper, bool forEveryRemote) const;
+    // `turnedOff` is true when the configuration turns the helpers off for
+    // every one of them (credentialHelpersFor()).
+    QString noteText(const QString &credentialHelper, bool forEveryRemote, bool turnedOff) const;
     QString shownNote() const;
-    static QString credentialHelperFor(GitRepo *repo, const AskPassRequest &request, bool *forEveryRemote);
+    static QString credentialHelperFor(GitRepo *repo, const AskPassRequest &request, bool *forEveryRemote,
+                                       bool *turnedOff);
     bool wantsUsername() const;
 
     AskPassRequest m_request;
     QString m_note;
     QString m_noteTip; // the helper's whole command, where the note shortens it
     bool m_offerRemember = false;
+    bool m_offerUnlock = false;
 
     QLabel *m_heading;
     QLabel *m_hint;

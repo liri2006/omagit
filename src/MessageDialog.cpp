@@ -89,6 +89,18 @@ void MessageDialog::setAcceptText(const QString &text)
     m_acceptButton->setText(text);
 }
 
+int MessageDialog::addChoice(const QString &text)
+{
+    // After Accepted (1): what exec() returns for the first choice, and on.
+    const int result = 2 + m_choices++;
+    auto *button = new QPushButton(text);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setAutoDefault(false);
+    connect(button, &QPushButton::clicked, this, [this, result] { done(result); });
+    m_buttonRow->insertWidget(1 + m_choices - 1, button); // after the stretch, before Cancel/OK
+    return result;
+}
+
 QString MessageDialog::title() const
 {
     return m_title->text();

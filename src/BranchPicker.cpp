@@ -19,6 +19,7 @@ uint glyphFor(BranchPicker::Kind kind)
     switch (kind) {
     case BranchPicker::Kind::Tag: return ui::kTagOutline;
     case BranchPicker::Kind::Commit: return ui::kCommit;
+    case BranchPicker::Kind::Key: return ui::kKey;
     case BranchPicker::Kind::Branch: break;
     }
     return ui::kBranch;

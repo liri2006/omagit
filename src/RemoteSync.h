@@ -46,11 +46,20 @@ public:
     // asks, so the window points there instead of reporting an error.
     bool lastFetchNeedsSignIn() const { return m_lastFetchNeedsSignIn; }
 
-    // Whether git's error output `err` is a credential prompt that an
-    // automatic fetch turned down (GIT_TERMINAL_PROMPT=0 and no askpass), and
-    // if so `where` gets the host (and port) it was for, empty when git did not
-    // name one. Pure, for the tests.
+    // Whether git's error output `err` is a sign-in that an automatic fetch
+    // turned down (GIT_TERMINAL_PROMPT=0 and no askpass): git's credential
+    // prompt, or ssh's — a key the server turned down or ssh could not unlock
+    // ("Permission denied (publickey)"), a host key nobody confirmed ("Host
+    // key verification failed."). If so `where` gets the host (and port) it
+    // was for, empty when neither named one. A host key that has changed is
+    // never a sign-in, and neither is a hard failure (a host that does not
+    // resolve, a connection refused or timed out, no network) whatever else
+    // the output says. Pure, for the tests.
     static bool needsSignIn(const QByteArray &err, QString *where = nullptr);
+    // Whether git's error output says the server turned down the ssh keys it
+    // was offered ("user@host: Permission denied (publickey)."); `where` gets
+    // the host. Pure, for the tests.
+    static bool keyRefused(const QByteArray &err, QString *where = nullptr);
     // What a failed pull or push says about itself, from git's error output
     // `err`: the line that names the error, and under it, when git said more
     // than that one line, all of it. Pure, for the tests.
@@ -86,6 +95,10 @@ public:
     // Whether the operation that just finished failed because the sign-in
     // was cancelled. Valid while finished() is being delivered.
     bool signInCancelled() const { return m_signInCancelled; }
+    // Whether the user's own operation that just finished failed on a key the
+    // server does not know, so the window can offer to choose another. Valid
+    // while finished() is being delivered.
+    bool keyWasRefused() const { return m_keyRefused; }
 
     // Which git command an operation runs, for tooltips.
     QStringList fetchArgs() const;
@@ -110,6 +123,9 @@ signals:
     // The operation that just finished worked, and signed in with logins the
     // user asked to have remembered (AskPass::loginsToKeep()).
     void loginsToKeep(const QList<KeptLogin> &logins);
+    // The same for ssh keys the user asked to keep unlocked
+    // (AskPass::keysToUnlock()), their passphrase having just opened them.
+    void keysToUnlock(const QList<AgentKey> &keys);
 
 private:
     void start(Op op, const QStringList &args);
@@ -126,6 +142,7 @@ private:
     AskPass *m_askPass;
     bool m_autoOp = false; // the running fetch was started automatically
     bool m_signInCancelled = false;
+    bool m_keyRefused = false;
     int m_behindBefore = 0, m_aheadBefore = 0;
     QDateTime m_lastFetch;
     bool m_lastFetchOk = true;

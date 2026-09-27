@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QUrl>
 
 namespace {
@@ -26,42 +27,92 @@ constexpr int kTransferTimeoutMs = 300000;
 QString firstLine(const QByteArray &text)
 {
     const QStringList lines = QString::fromUtf8(text).trimmed().split(QLatin1Char('\n'));
-    for (const QString &line : lines) {
+    for (qsizetype i = 0; i < lines.size(); ++i) {
+        const QString &line = lines.at(i);
         // git prefixes its errors with "fatal: " / "error: "; the dialog says that already.
-        for (const char *prefix : {"fatal: ", "error: "})
-            if (line.startsWith(QLatin1String(prefix)))
-                return line.mid(int(strlen(prefix))).trimmed();
+        for (const char *prefix : {"fatal: ", "error: "}) {
+            if (!line.startsWith(QLatin1String(prefix)))
+                continue;
+            // All git says when ssh gave up; what ssh said is the news
+            // ("Permission denied (publickey).", "Host key verification failed.").
+            if (line.contains(QLatin1String("Could not read from remote repository"))) {
+                for (qsizetype j = i - 1; j >= 0; --j) {
+                    const QString said = lines.at(j).trimmed();
+                    if (!said.isEmpty() && !said.startsWith(QLatin1Char('@')))
+                        return said;
+                }
+            }
+            return line.mid(int(strlen(prefix))).trimmed();
+        }
     }
     return lines.constFirst().trimmed();
 }
 } // namespace
 
-// git's prompt code, word for word and untranslated: "could not read Username
-// for 'https://example.com': terminal prompts disabled" (or Password, with the
-// user in the URL). The URL is the remote's without its path.
 QString RemoteSync::failureText(const QByteArray &err)
 {
     const QString output = QString::fromUtf8(err).trimmed();
     if (output.isEmpty())
         return QString();
-    // All of it under the headline, where there is more to it than that line.
+    // All of it under the headline, where there is more to it than that line
+    // — and without that line again, when it is the one git started with.
     const QString headline = firstLine(err);
-    return output.contains(QLatin1Char('\n')) ? headline + QStringLiteral("\n\n") + output : headline;
+    QString first = output.section(QLatin1Char('\n'), 0, 0).trimmed();
+    for (const char *prefix : {"fatal: ", "error: "})
+        if (first.startsWith(QLatin1String(prefix)))
+            first = first.mid(int(strlen(prefix)));
+    const QString rest = first == headline ? output.section(QLatin1Char('\n'), 1).trimmed() : output;
+    return rest.isEmpty() ? headline : headline + QStringLiteral("\n\n") + rest;
 }
 
+// ssh's own words for a key the server turned down, "user@host: Permission
+// denied (publickey…", with the host it named.
+bool RemoteSync::keyRefused(const QByteArray &err, QString *where)
+{
+    static const QRegularExpression denied(
+        QStringLiteral("(?:^|\\n)(?:[^@\\s]+@)?([^:\\s]+): Permission denied \\(publickey"));
+    const auto match = denied.match(QString::fromUtf8(err));
+    if (match.hasMatch() && where)
+        *where = match.captured(1);
+    return match.hasMatch();
+}
+
+// git's prompt code, word for word and untranslated: "could not read Username
+// for 'https://example.com': terminal prompts disabled" (or Password, with the
+// user in the URL). The URL is the remote's without its path. ssh, with nobody
+// to ask: "git@example.com: Permission denied (publickey)." for a key it could
+// not unlock (or one the server does not know, which the user's own fetch
+// then says), and a bare "Host key verification failed." for a host it has no
+// key for. A host whose key has changed is no sign-in: ssh warns of an
+// eavesdropper, and that stays the error it is. Neither is a remote that could
+// not be reached at all — a name that does not resolve, a refused or timed-out
+// connection, no network, or curl's "unable to access" — even where the output
+// also carries one of the lines above: that is the error to report, and no
+// sign-in would get past it.
 bool RemoteSync::needsSignIn(const QByteArray &err, QString *where)
 {
     const QString text = QString::fromUtf8(err);
-    if (!text.contains(QLatin1String("terminal prompts disabled")))
-        return false;
-    if (where) {
-        static const QRegularExpression prompt(QStringLiteral("could not read \\w+ for '([^']+)'"));
-        const QUrl url(prompt.match(text).captured(1));
-        *where = url.host();
-        if (!where->isEmpty() && url.port() != -1)
-            *where += QLatin1Char(':') + QString::number(url.port());
+    if (where)
+        where->clear();
+    for (const char *failure : {"REMOTE HOST IDENTIFICATION HAS CHANGED", "Could not resolve host",
+                                "Could not resolve hostname", "Connection refused", "Connection timed out",
+                                "Network is unreachable", "unable to access"}) {
+        if (text.contains(QLatin1String(failure)))
+            return false;
     }
-    return true;
+    if (text.contains(QLatin1String("terminal prompts disabled"))) {
+        if (where) {
+            static const QRegularExpression prompt(QStringLiteral("could not read \\w+ for '([^']+)'"));
+            const QUrl url(prompt.match(text).captured(1));
+            *where = url.host();
+            if (!where->isEmpty() && url.port() != -1)
+                *where += QLatin1Char(':') + QString::number(url.port());
+        }
+        return true;
+    }
+    if (keyRefused(err, where))
+        return true;
+    return text.contains(QLatin1String("Host key verification failed."));
 }
 
 RemoteSync::RemoteSync(GitRepo *repo, QObject *parent)
@@ -306,6 +357,29 @@ void RemoteSync::start(Op op, const QStringList &args)
     QStringList env;
     if (!m_autoOp && m_askPass->listen())
         env = m_askPass->env();
+    // An automatic fetch asks nobody, whatever the session has set up: no
+    // askpass of git's (an empty GIT_ASKPASS stands for none, core.askPass
+    // included), and none of ssh's either — not the system's ssh-askpass,
+    // which it would reach for with DISPLAY set, and not the terminal Omagit
+    // was started from, which SSH_ASKPASS_REQUIRE=never would fall back to.
+    // `force` with `false` as the askpass answers every question of ssh's
+    // "no" without a terminal or a window: a key's passphrase is not given, so
+    // the key is skipped and the server says "Permission denied (publickey)",
+    // and an unknown host ends in "Host key verification failed." — both of
+    // them needsSignIn().
+    //
+    // What this does not stop is a credential helper that asks for itself: a
+    // libsecret helper whose keyring has a password and is still locked may
+    // bring up the desktop keyring's own unlock prompt, once per session,
+    // during an automatic fetch. Emptying the helper list, or hiding D-Bus
+    // from git, would stop remembered logins from working in the background
+    // at all, so that prompt is accepted; Omarchy's own keyring has no
+    // password and never asks.
+    if (m_autoOp) {
+        const QString no = QStandardPaths::findExecutable(QStringLiteral("false"));
+        env << QStringLiteral("GIT_ASKPASS=") << QStringLiteral("SSH_ASKPASS_REQUIRE=force")
+            << QStringLiteral("SSH_ASKPASS=") + (no.isEmpty() ? QStringLiteral("/bin/false") : no);
+    }
     m_process = m_repo->runAsync(full, this, [this, op](int code, const QByteArray &out, const QByteArray &err) {
         onFinished(op, code, out, err);
     }, op == Fetch ? kFetchTimeoutMs : kTransferTimeoutMs, env);
@@ -321,12 +395,14 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     // a message box, and the credentials of this operation are dropped.
     const bool cancelled = !ok && m_askPass->cancelled();
     m_signInCancelled = cancelled;
+    m_keyRefused = !ok && !cancelled && !automatic && keyRefused(err);
     // An automatic fetch has no dialog to ask with, so a remote that wants a
     // password turns it down; the user's own fetch would have asked.
     QString signInHost;
     const bool signInNeeded = !ok && automatic && op == Fetch && needsSignIn(err, &signInHost);
     // Logins to remember are only worth remembering once they worked.
     const QList<KeptLogin> keep = ok ? m_askPass->loginsToKeep() : QList<KeptLogin>();
+    const QList<AgentKey> unlock = ok ? m_askPass->keysToUnlock() : QList<AgentKey>();
     m_askPass->endOperation();
     m_op = None;
     m_autoOp = false;
@@ -351,8 +427,10 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
         else if (signInNeeded)
             message = signInHost.isEmpty() ? tr("Sign-in needed — Fetch (Ctrl+F) to sign in")
                                            : tr("Sign-in needed for %1 — Fetch (Ctrl+F) to sign in").arg(signInHost);
+        else if (!ok && automatic)
+            message = tr("Automatic fetch failed: %1").arg(firstLine(err));
         else if (!ok)
-            message = (automatic ? tr("Automatic fetch failed: %1") : tr("Fetch failed: %1")).arg(firstLine(err));
+            message = tr("Fetch failed: %1").arg(failureText(err));
         else if (m_state.behind > 0)
             message = m_state.behind == 1 ? tr("Fetched — 1 commit to pull from %1").arg(upstream)
                                           : tr("Fetched — %1 commits to pull from %2").arg(m_state.behind).arg(upstream);
@@ -393,5 +471,7 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     emit finished(op, ok, automatic, message);
     if (!keep.isEmpty())
         emit loginsToKeep(keep);
+    if (!unlock.isEmpty())
+        emit keysToUnlock(unlock);
     scheduleAutoFetch();
 }

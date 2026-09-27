@@ -687,12 +687,14 @@ QLineEdit#cloneName {
 }
 QLineEdit#cloneName:hover { background: %fill4%; border-bottom-color: %bd25%; }
 QLineEdit#cloneName:focus { background: %fill8%; color: %fg%; border-bottom-color: %acc%; }
-QListWidget#cloneRepositories {
+QListWidget#cloneRepositories, QListWidget#sshKeys {
     background: %bg%; border: 1px solid %bd40%; border-radius: 0; outline: 0;
 }
-QListWidget#cloneRepositories::item { padding: %listtop%px %cellpad%px %listbottom%px %cellpad%px; border: none; }
-QListWidget#cloneRepositories::item:hover { background: %fill4%; }
-QListWidget#cloneRepositories::item:selected { background: %fill8%; color: %acc%; }
+QListWidget#cloneRepositories::item, QListWidget#sshKeys::item {
+    padding: %listtop%px %cellpad%px %listbottom%px %cellpad%px; border: none;
+}
+QListWidget#cloneRepositories::item:hover, QListWidget#sshKeys::item:hover { background: %fill4%; }
+QListWidget#cloneRepositories::item:selected, QListWidget#sshKeys::item:selected { background: %fill8%; color: %acc%; }
 /* What stands in for the list of repositories, framed as the list itself is. */
 QFrame#clonePlaceholder { background: %bg%; border: 1px solid %bd40%; }
 /* The idle bar has an empty range, so a transparent track shows nothing. */

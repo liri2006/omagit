@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
     QCommandLineOption amendOpt(QStringLiteral("amend"), QStringLiteral("Open the commit dialog with \"Amend last commit\" ticked."));
     QCommandLineOption screenshotAfterOpt(QStringLiteral("screenshot-after"), QStringLiteral("Milliseconds to wait before taking the --screenshot (default 800)."), QStringLiteral("ms"), QStringLiteral("800"));
     QCommandLineOption noFetchOpt(QStringLiteral("no-fetch"), QStringLiteral("Do not fetch by itself to keep the Pull count current."));
-    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, settings, merge, login or clone panel, the Mini layout's commit popover, the New branch card, the stacked layout's sync, more or options menu, or the narrow diff pane's view options, before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|settings|merge|login|clone|commit|newbranch|sync|more|options|diff"));
+    QCommandLineOption screenshotMenuOpt(QStringLiteral("screenshot-menu"), QStringLiteral("Open the branch, repo, agent, keybindings, settings, merge, login or clone panel, the Mini layout's commit popover, the New branch card, the stacked layout's sync, more or options menu, the narrow diff pane's view options, or the SSH key picker, before taking the --screenshot (for testing)."), QStringLiteral("branch|repo|agent|keybindings|settings|merge|login|clone|commit|newbranch|sync|more|options|diff|sshkey"));
     parser.addOption(screenshotOpt);
     parser.addOption(screenshotAfterOpt);
     parser.addOption(selectOpt);
@@ -163,6 +163,7 @@ int main(int argc, char *argv[])
     }
     bool freshClone = false;
     QList<KeptLogin> loginsToKeep;
+    QList<AgentKey> keysToUnlock;
     if (root.isEmpty()) {
         CloneDialog dialog(CloneDialog::defaultFolder(), nullptr, true);
         if (dialog.exec() != QDialog::Accepted)
@@ -170,6 +171,7 @@ int main(int argc, char *argv[])
         root = dialog.repositoryPath();
         freshClone = dialog.cloned();
         loginsToKeep = dialog.loginsToKeep();
+        keysToUnlock = dialog.keysToUnlock();
     }
 
     GitRepo repo(root);
@@ -193,6 +195,7 @@ int main(int argc, char *argv[])
     if (freshClone)
         window.markFreshClone();
     window.keepLogins(loginsToKeep);
+    window.unlockKeys(keysToUnlock);
     // Whatever page the flags above asked for: the override only changes how
     // the commit dialog lists its files, never which page is on.
     if (!filesView.isEmpty())
@@ -226,6 +229,7 @@ int main(int argc, char *argv[])
                     : menu == QLatin1String("options")           ? "showOptionsMenu"
                     : menu == QLatin1String("diff")              ? "showDiffOptionsMenu"
                     : menu == QLatin1String("newbranch")         ? "showNewBranchCard"
+                    : menu == QLatin1String("sshkey")            ? "chooseSshKey"
                                                                  : "showBranchMenu";
                 QMetaObject::invokeMethod(&window, slot);
             });
