@@ -1509,9 +1509,12 @@ class NautilusScope
 {
 public:
     enum Tool { NoTools = 0, FakeNautilus = 1, FakeOmagit = 2 };
-    // What the fake's `nautilus -q` does: kill the serving one and exit 0,
-    // sleep until it is killed (its pid in quit.pid), or exit 3.
-    enum class Quit { Kill, Hang, Fail };
+    // What the fake's `nautilus -q` does: kill the serving one and exit 255,
+    // as Nautilus 50's does after a quit that worked; sleep until it is
+    // killed (its pid in quit.pid); exit 3 and quit nothing; or not start at
+    // all — the whole fake then names an interpreter that is not there, so
+    // it is set only once a serving one is running.
+    enum class Quit { Kill, Hang, Fail, Unstartable };
 
     explicit NautilusScope(int tools = FakeNautilus, Quit quit = Quit::Kill)
         : m_sleep(QStandardPaths::findExecutable(QStringLiteral("sleep")))
@@ -1542,12 +1545,17 @@ public:
 
     bool setQuit(Quit quit)
     {
+        // A new file, not the one a serving fake is still reading.
+        const QString path = m_bin.filePath(QStringLiteral("nautilus"));
+        QFile::remove(path);
+        if (quit == Quit::Unstartable)
+            return writeFixture(path, "#!" + m_bin.filePath(QStringLiteral("missing")).toUtf8() + "\n", true);
         const QByteArray sleep = m_sleep.toUtf8();
         const QByteArray quitting = quit == Quit::Kill
-            ? "[ -f \"$dir/serve.pid\" ] && read pid < \"$dir/serve.pid\" && kill \"$pid\"\n    exit 0"
+            ? "[ -f \"$dir/serve.pid\" ] && read pid < \"$dir/serve.pid\" && kill \"$pid\"\n    exit 255"
             : quit == Quit::Hang ? "echo $$ > \"$dir/quit.pid\"\n    exec '" + sleep + "' 1000"
                                  : QByteArray("exit 3");
-        return writeFixture(m_bin.filePath(QStringLiteral("nautilus")),
+        return writeFixture(path,
                             "#!/bin/sh\n"
                             "dir='" + m_bin.path().toUtf8() + "'\n"
                             "case \"$1\" in\n"
@@ -8228,7 +8236,7 @@ esac
 
     // Ticked while Nautilus runs, the box offers the restart that loads the
     // extension; the restart quits the running one, starts a new one once it
-    // is gone, and the offer goes away.
+    // is gone, and the offer goes away. The quit's exit 255 is no failure.
     void theSettingsRestartNautilus()
     {
         NautilusScope scope(NautilusScope::FakeNautilus | NautilusScope::FakeOmagit);
@@ -8270,11 +8278,13 @@ esac
     // while that one runs.
     void theSettingsForgetARestartErrorOnTheNextTry()
     {
-        NautilusScope scope(NautilusScope::FakeNautilus, NautilusScope::Quit::Fail);
+        NautilusScope scope(NautilusScope::FakeNautilus);
         QVERIFY(scope.isValid());
         if (nautilusmenu::nautilusRunning())
             QSKIP("A Nautilus of this user is running: the restart would quit it");
         QVERIFY(scope.serve());
+        // Fails at once, where a quit that quits nothing waits out the deadline.
+        QVERIFY(scope.setQuit(NautilusScope::Quit::Unstartable));
 
         SettingsDialog dialog;
         dialog.show();
@@ -8290,20 +8300,21 @@ esac
         QVERIFY(box->isChecked());
         QVERIFY(restart->isVisible());
         restart->click();
-        QTRY_VERIFY2(note->text().contains(QStringLiteral("exit 3")), qPrintable(note->text()));
+        QTRY_VERIFY(restart->isEnabled());
+        const QString error = note->text();
+        QVERIFY2(!error.isEmpty() && error != QStringLiteral("Restarting Nautilus…"), qPrintable(error));
         QVERIFY(note->styleSheet().contains(red));
         QVERIFY(restart->isVisible());
-        QVERIFY(restart->isEnabled());
 
         // Read before the event loop runs again: the quit cannot have failed yet.
         restart->click();
         QCOMPARE(note->text(), QStringLiteral("Restarting Nautilus…"));
         QVERIFY(note->styleSheet().isEmpty());
         QVERIFY(!restart->isEnabled());
-        // It fails the same way, and nothing was started.
-        QTRY_VERIFY2(note->text().contains(QStringLiteral("exit 3")), qPrintable(note->text()));
+        // It fails the same way.
+        QTRY_VERIFY(restart->isEnabled());
+        QCOMPARE(note->text(), error);
         QVERIFY(note->styleSheet().contains(red));
-        QVERIFY(!scope.log().contains(QStringLiteral("--new-window")));
     }
 
     // A Nautilus started before the extension was written has not loaded it:
@@ -8349,8 +8360,9 @@ esac
     }
 
     // A restart that cannot finish says why and starts nothing: a Nautilus
-    // that does not quit before the deadline (whose quit is killed), a quit
-    // that fails. One whose asker went away still finishes, without a word.
+    // that does not quit before the deadline, whether its quit hangs (and is
+    // killed) or exits without quitting it. One whose asker went away still
+    // finishes, without a word.
     void theNautilusRestartStopsOnFailure()
     {
         NautilusScope scope(NautilusScope::FakeNautilus, NautilusScope::Quit::Hang);
@@ -8377,15 +8389,19 @@ esac
         settle();
         QVERIFY(!scope.log().contains(QStringLiteral("--new-window")));
 
+        QVERIFY(scope.serve());
         QVERIFY(scope.setQuit(NautilusScope::Quit::Fail));
         called = false;
         error.clear();
+        took.restart();
         nautilusmenu::restart(&context, done, 500);
         QTRY_VERIFY(called);
-        QVERIFY2(error.contains(QStringLiteral("exit 3")), qPrintable(error));
+        QVERIFY(took.elapsed() >= 450);
+        QVERIFY2(error.contains(QStringLiteral("did not quit")), qPrintable(error));
         settle();
         QVERIFY(!scope.log().contains(QStringLiteral("--new-window")));
 
+        // The one still serving is the one this quit takes away.
         QVERIFY(scope.setQuit(NautilusScope::Quit::Kill));
         called = false;
         auto *gone = new QObject;

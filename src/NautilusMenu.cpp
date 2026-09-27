@@ -54,19 +54,16 @@ public:
                                                "Nautilus did not quit — close its windows and start it again."));
         });
         connect(m_quit, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-            // A crash still ends in finished(), which says so.
+            // A crash still ends in finished().
             if (error == QProcess::FailedToStart)
                 finish(m_quit->errorString());
         });
-        connect(m_quit, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus status) {
-            if (status != QProcess::NormalExit || exitCode != 0) {
-                finish(QCoreApplication::translate("nautilusmenu", "nautilus -q failed (exit %1)").arg(exitCode));
-                return;
-            }
-            // Asked to quit is not gone yet: a new one started now would hand
-            // its window to the old instance over D-Bus and quit with it.
-            m_poll->start();
-        });
+        // How it ended says nothing: Nautilus 50's exits 255 whether or not
+        // there was one to quit, and it had. Whether the old instance goes
+        // is what counts, and the deadline is there for one that does not.
+        // Asked to quit is not gone yet either: a new one started now would
+        // hand its window to the old instance over D-Bus and quit with it.
+        connect(m_quit, &QProcess::finished, m_poll, qOverload<>(&QTimer::start));
         m_deadline->start(deadlineMs);
         m_quit->start(QStringLiteral("nautilus"), {QStringLiteral("-q")});
     }
