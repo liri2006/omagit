@@ -119,8 +119,9 @@ history with a branch graph, and can plug into the Nautilus context menu as
 - **SSH keys**: when the server turns down the key ssh offered, the error offers **Choose SSH
   key…** — a list of the key pairs in `~/.ssh` (name, type, comment; path and fingerprint on
   hover), ssh's own choice, or any other key file. The choice becomes the repository's
-  `core.sshCommand` (`ssh -i <key> -o IdentitiesOnly=yes`), so ssh offers that key and no other
-  for it, and the operation runs again. The Clone dialog has the same choice as an **SSH key**
+  `core.sshCommand` (`ssh -i <key> -o IdentitiesOnly=yes`): for that repository ssh offers the
+  key first, and after it only keys your ssh config names (`IdentityFile`, on disk or in the
+  agent) — not the rest of the agent's keys — and the operation runs again. The Clone dialog has the same choice as an **SSH key**
   field under an ssh URL whenever ssh would not find the key by itself (more than one pair, or
   one under a name of its own); `git clone -c core.sshCommand=…` saves it in the new repository.
   An exported `GIT_SSH_COMMAND` outranks the setting, and both windows say so.

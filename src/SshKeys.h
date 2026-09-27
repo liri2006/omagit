@@ -11,7 +11,10 @@ class GitRepo;
 // reach a key kept under a name of its own. git has a place for the choice —
 // `core.sshCommand` in the repository's configuration — and that is all
 // Omagit writes: `ssh -i <key> -o IdentitiesOnly=yes`, so ssh offers that key
-// and no other. An exported GIT_SSH_COMMAND outranks it; the windows that
+// first, and after it only identities its own configuration names
+// (IdentityFile entries, from disk or through the agent) — not whatever else
+// the agent holds. A server that knows the chosen key accepts it before any
+// of those. An exported GIT_SSH_COMMAND outranks it; the windows that
 // offer the choice say so. (GIT_SSH does not: git only goes by it when no
 // command is configured.)
 //
@@ -38,8 +41,9 @@ bool readPublicKey(const QString &line, Key *key);
 // identity files (~/.ssh/id_ed25519 and its kin), with no configuration.
 bool isDefaultIdentity(const QString &path);
 
-// What core.sshCommand is set to so that ssh offers `keyPath` and nothing
-// else, quoted for the shell git runs it with.
+// What core.sshCommand is set to so that ssh offers `keyPath` first (and after
+// it only identities ssh's configuration names), quoted for the shell git runs
+// it with.
 QString sshCommand(const QString &keyPath);
 // The key a core.sshCommand hands ssh with -i; empty when it names none.
 QString keyOf(const QString &command);

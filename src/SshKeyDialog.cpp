@@ -32,8 +32,8 @@ SshKeyDialog::SshKeyDialog(const QString &repoName, const QString &currentComman
     head->setContentsMargins(0, 0, 0, 0);
     m_heading = new QLabel(tr("Choose the SSH key for %1").arg(repoName));
     m_heading->setWordWrap(true);
-    m_hint = ui::dimLabel(tr("The server turned down the key ssh offered. The key chosen here is the only one "
-                             "ssh offers for this repository from now on (core.sshCommand in its git configuration)."));
+    m_hint = ui::dimLabel(tr("The server turned down the key ssh offered. From now on ssh offers the key chosen "
+                             "here first for this repository (core.sshCommand in its git configuration)."));
     m_hint->setWordWrap(true);
     head->addWidget(m_heading);
     head->addWidget(m_hint);
