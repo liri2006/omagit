@@ -63,6 +63,9 @@ public:
     void setAmend(bool on);
     // Automatic fetching keeps the Pull count current; off leaves the network alone.
     void setAutoFetchEnabled(bool on);
+    // The repository was cloned just before the window opened on it: the
+    // clone was its fetch, so the first automatic one waits a whole interval.
+    void markFreshClone();
     // The --files-view override: the commit page lists its files as `key`
     // ("compact", "tree" or "table") spells it, for this run only.
     void setFilesView(const QString &key);
@@ -185,6 +188,7 @@ private:
         bool ok = true;
         QString error;
         int interval = 0; // seconds between automatic fetches, 0 when they are off
+        bool needsSignIn = false; // RemoteSync::lastFetchNeedsSignIn()
     };
     // The captions above the two sides of a diff and its "nothing to show" line.
     struct DiffLabels {

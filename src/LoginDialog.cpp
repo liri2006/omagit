@@ -4,9 +4,11 @@
 #include "UiHelpers.h"
 
 #include <QHBoxLayout>
+#include <QHostAddress>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QToolButton>
@@ -22,7 +24,8 @@ constexpr uint kEye = 0xF0208, kEyeOff = 0xF0209;
 // carries two branch pickers side by side. Everything else is the grid's
 // (Grid.h), as the merge view has it: a dialog's 16 of padding, its groups a
 // group gap apart, captions 4 over their 28 px fields, the eye a 24 px ghost
-// square 4 in from the field's right edge.
+// square 4 in from the field's right edge. A narrower window gets a narrower
+// dialog (ui::fitDialogWidth()).
 constexpr int kDialogWidth = 480;
 // How long git may take to say which credential helper is configured. It is
 // a config read, so this is only there to keep a wedged git off the screen.
@@ -189,6 +192,19 @@ QStringList credentialHelpersFor(const QStringList &configEntries, const QUrl &t
     return helpers;
 }
 
+QString credentialHelperName(const QString &helper)
+{
+    QString command = helper.trimmed();
+    if (command.startsWith(QLatin1Char('!')))
+        command = command.mid(1).trimmed(); // a shell command of its own
+    static const QRegularExpression space(QStringLiteral("\\s"));
+    QString name = command.section(space, 0, 0).section(QLatin1Char('/'), -1);
+    const QLatin1String prefix("git-credential-");
+    if (name.startsWith(prefix) && name.size() > prefix.size())
+        name = name.mid(prefix.size());
+    return name.isEmpty() ? helper.trimmed() : name;
+}
+
 // --- The password field ----------------------------------------------------
 
 // A password field with the eye at its right edge: it flips the echo mode and
@@ -262,6 +278,8 @@ LoginDialog::LoginDialog(const AskPassRequest &request, GitRepo *repo, QWidget *
     bool forEveryRemote = true;
     const QString helper = credentialHelperFor(repo, request, &forEveryRemote);
     m_note = noteText(helper, forEveryRemote);
+    if (request.kind != AskPassRequest::Passphrase && credentialHelperName(helper) != helper)
+        m_noteTip = helper;
     // A clone has no repository configuration to inspect yet.
     if (!repo && (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password))
         m_note = tr("Git's configured credential helpers manage saved credentials.");
@@ -304,6 +322,15 @@ QString LoginDialog::headingText() const
 
 QString LoginDialog::hintText() const
 {
+    // What is typed for a plain-http remote crosses the network as it is;
+    // only this machine's own loopback is spared the warning.
+    if (m_request.kind == AskPassRequest::Username || m_request.kind == AskPassRequest::Password) {
+        const QUrl url(m_request.target);
+        const QString host = url.host();
+        if (url.scheme() == QLatin1String("http") && host.compare(QLatin1String("localhost"), Qt::CaseInsensitive) != 0
+            && !QHostAddress(host).isLoopback())
+            return tr("Plain HTTP — the password is sent unencrypted.");
+    }
     if (!m_request.retry)
         return QString();
     return m_request.kind == AskPassRequest::Passphrase
@@ -410,8 +437,8 @@ QString LoginDialog::noteText(const QString &credentialHelper, bool forEveryRemo
     // Two remotes of this host, kept by different helpers: naming one of them
     // outright would promise for a sign-in that may well be the other's.
     if (!forEveryRemote)
-        return tr("Remembered if git's credential helper covers this remote (%1)").arg(credentialHelper);
-    return tr("Remembered by git's credential helper (%1)").arg(credentialHelper);
+        return tr("Remembered if git's credential helper covers this remote (%1)").arg(credentialHelperName(credentialHelper));
+    return tr("Remembered by git's credential helper (%1)").arg(credentialHelperName(credentialHelper));
 }
 
 void LoginDialog::buildUi()
@@ -466,6 +493,7 @@ void LoginDialog::buildUi()
 
     m_noteLabel = ui::dimLabel(m_note);
     m_noteLabel->setWordWrap(true);
+    m_noteLabel->setToolTip(m_noteTip);
     layout->addWidget(m_noteLabel);
     layout->addStretch(1);
 
@@ -562,6 +590,7 @@ void LoginDialog::fitToContent()
 void LoginDialog::showEvent(QShowEvent *event)
 {
     ensurePolished();
+    ui::fitDialogWidth(this, kDialogWidth);
     fitToContent();
     QDialog::showEvent(event);
 }

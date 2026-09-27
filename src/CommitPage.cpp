@@ -1,6 +1,7 @@
 #include "CommitPage.h"
 #include "ChangesTreeModel.h"
 #include "DesktopExec.h"
+#include "MessageDialog.h"
 #include "MessageEdit.h"
 #include "OmarchyTheme.h"
 #include "Settings.h"
@@ -16,7 +17,6 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
-#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
@@ -1640,7 +1640,7 @@ bool CommitPage::commit()
 {
     const QString message = m_message->toPlainText().trimmed();
     if (message.isEmpty()) {
-        QMessageBox::warning(this, tr("Commit"), tr("Please enter a commit message."));
+        MessageDialog::warning(this, tr("Commit"), tr("Please enter a commit message."));
         m_message->setFocus();
         return false;
     }
@@ -1649,21 +1649,20 @@ bool CommitPage::commit()
     if (amend) {
         const QStringList published = m_repo->remoteBranchesContainingHead();
         if (!published.isEmpty()) {
-            const auto answer = QMessageBox::warning(
-                this, tr("Amend last commit"),
-                tr("The last commit is already part of %1.\n\nAmending it rewrites published history; "
-                   "you will have to force-push, and others who have it must rebase.\n\nAmend anyway?")
-                    .arg(published.join(QStringLiteral(", "))),
-                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-            if (answer != QMessageBox::Yes)
+            if (!MessageDialog::confirm(
+                    this, tr("Amend last commit"),
+                    tr("The last commit is already part of %1.\n\nAmending it rewrites published history; "
+                       "you will have to force-push, and others who have it must rebase.\n\nAmend anyway?")
+                        .arg(published.join(QStringLiteral(", "))),
+                    tr("Amend")))
                 return false;
         }
     }
     QString error;
     const bool ok = amend ? m_repo->amendCommit(message, paths, &error) : m_repo->commit(message, paths, &error);
     if (!ok) {
-        QMessageBox::critical(this, amend ? tr("Amend failed") : tr("Commit failed"),
-                              error.isEmpty() ? tr("git commit failed.") : error);
+        MessageDialog::error(this, amend ? tr("Amend failed") : tr("Commit failed"),
+                             error.isEmpty() ? tr("git commit failed.") : error);
         return false;
     }
     const int count = m_model->checkedCount();
@@ -1671,12 +1670,16 @@ bool CommitPage::commit()
     m_message->clear();
     if (amend) {
         m_amend->setChecked(false); // also refreshes
-        emit statusMessage(tr("Amended the last commit on %1 with %2 file(s)").arg(m_repo->branch()).arg(count), 5000);
+        emit statusMessage(count == 1 ? tr("Amended the last commit on %1 with 1 file").arg(m_repo->branch())
+                                      : tr("Amended the last commit on %1 with %2 files").arg(m_repo->branch()).arg(count),
+                           5000);
     } else if (merged) {
         emit statusMessage(tr("Merge committed on %1").arg(m_repo->branch()), 5000);
         emit refreshRequested();
     } else {
-        emit statusMessage(tr("Committed %1 file(s) to %2").arg(count).arg(m_repo->branch()), 5000);
+        emit statusMessage(count == 1 ? tr("Committed 1 file to %1").arg(m_repo->branch())
+                                      : tr("Committed %1 files to %2").arg(count).arg(m_repo->branch()),
+                           5000);
         emit refreshRequested();
     }
     return true;

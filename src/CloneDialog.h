@@ -29,6 +29,9 @@ public:
     explicit CloneDialog(const QString &folder, QWidget *parent = nullptr, bool allowOpen = false);
     ~CloneDialog() override;
     QString repositoryPath() const { return m_repositoryPath; }
+    // Whether repositoryPath() is a clone made just now, and not an existing
+    // repository the dialog was asked to open.
+    bool cloned() const { return m_cloned; }
     static QString defaultFolder(const QString &repositoryRoot = QString());
     static QString repositoryName(const QString &url);
 
@@ -93,6 +96,7 @@ private:
     GitHub m_github = GitHub::Checking;
     int m_visible = 0; // repositories the filter leaves on the list
     bool m_statusIsAlert = false;
+    bool m_cloned = false;
     bool m_refitPending = false;
     bool m_cloning = false;
     bool m_loading = false;

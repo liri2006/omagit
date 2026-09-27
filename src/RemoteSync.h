@@ -41,6 +41,20 @@ public:
     QDateTime lastFetch() const { return m_lastFetch; }
     bool lastFetchOk() const { return m_lastFetchOk; }
     QString lastFetchError() const { return m_lastFetchError; }
+    // Whether the last fetch was an automatic one that stopped at a sign-in
+    // it may not ask for. Not a fault of the remote: the user's own fetch
+    // asks, so the window points there instead of reporting an error.
+    bool lastFetchNeedsSignIn() const { return m_lastFetchNeedsSignIn; }
+
+    // Whether git's error output `err` is a credential prompt that an
+    // automatic fetch turned down (GIT_TERMINAL_PROMPT=0 and no askpass), and
+    // if so `where` gets the host (and port) it was for, empty when git did not
+    // name one. Pure, for the tests.
+    static bool needsSignIn(const QByteArray &err, QString *where = nullptr);
+    // What a failed pull or push says about itself, from git's error output
+    // `err`: the line that names the error, and under it, when git said more
+    // than that one line, all of it. Pure, for the tests.
+    static QString failureText(const QByteArray &err);
 
     bool canFetch() const { return !busy() && !m_state.remotes.isEmpty(); }
     bool canPull() const { return !busy() && m_state.hasUpstream(); }
@@ -55,6 +69,10 @@ public:
     void setActive(bool active);
     // The window came to the front: fetch now unless one happened recently.
     void nudge();
+    // The repository was cloned a moment ago, so its remote-tracking refs are
+    // as fresh as a fetch would make them: the first automatic fetch waits a
+    // whole interval instead of asking a remote the clone has just signed in to.
+    void markFetched();
     // The repository object points somewhere else now (also connected to
     // GitRepo::rootChanged): forget the old one, stop what it was doing,
     // and read the new one.
@@ -62,8 +80,8 @@ public:
 
     // The sign-in server the user's own fetches, pulls and pushes run with:
     // its requestReceived() is what the window shows the login dialog for.
-    // An automatic fetch runs without it and fails silently as before —
-    // nothing the user did not ask for opens a dialog.
+    // An automatic fetch runs without it and ends as lastFetchNeedsSignIn()
+    // instead — nothing the user did not ask for opens a dialog.
     AskPass *askPass() const { return m_askPass; }
     // Whether the operation that just finished failed because the sign-in
     // was cancelled. Valid while finished() is being delivered.
@@ -108,6 +126,7 @@ private:
     int m_behindBefore = 0, m_aheadBefore = 0;
     QDateTime m_lastFetch;
     bool m_lastFetchOk = true;
+    bool m_lastFetchNeedsSignIn = false;
     QString m_lastFetchError;
     int m_interval = kDefaultInterval;
     int m_failures = 0;

@@ -41,6 +41,7 @@ OMAGIT_WIDGET_SOURCES = \
     $$PWD/src/BranchPicker.cpp \
     $$PWD/src/MergeDialog.cpp \
     $$PWD/src/LoginDialog.cpp \
+    $$PWD/src/MessageDialog.cpp \
     $$PWD/src/CloneDialog.cpp \
     $$PWD/src/NautilusMenu.cpp \
     $$PWD/src/SettingsDialog.cpp \
@@ -78,6 +79,7 @@ OMAGIT_WIDGET_HEADERS = \
     $$PWD/src/BranchPicker.h \
     $$PWD/src/MergeDialog.h \
     $$PWD/src/LoginDialog.h \
+    $$PWD/src/MessageDialog.h \
     $$PWD/src/CloneDialog.h \
     $$PWD/src/NautilusMenu.h \
     $$PWD/src/SettingsDialog.h \

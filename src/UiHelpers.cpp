@@ -225,6 +225,18 @@ void setWindowMargin(QWidget *window, int px)
     window->setProperty(kWindowMarginProperty, px);
 }
 
+void fitDialogWidth(QWidget *dialog, int designPx)
+{
+    const QWidget *host = dialog->parentWidget() ? dialog->parentWidget()->window() : nullptr;
+    int width = host ? qMin(space(designPx), host->width() - 2 * windowMargin(host)) : space(designPx);
+    if (QLayout *l = dialog->layout()) {
+        l->invalidate();
+        width = qMax(width, l->totalMinimumSize().width());
+    }
+    if (width != dialog->width() || dialog->minimumWidth() != width || dialog->maximumWidth() != width)
+        dialog->setFixedWidth(width);
+}
+
 QString icon(uint cp, const QString &fallback)
 {
     const QString g = OmarchyTheme::instance()->glyph(cp);
@@ -271,9 +283,13 @@ QString ago(const QDateTime &when)
     const qint64 secs = when.secsTo(QDateTime::currentDateTime());
     if (secs < 60)
         return QCoreApplication::translate("ui", "just now");
+    if (secs < 120)
+        return QCoreApplication::translate("ui", "1 minute ago");
     if (secs < 3600)
-        return QCoreApplication::translate("ui", "%n minute(s) ago", nullptr, int(secs / 60));
-    return QCoreApplication::translate("ui", "%n hour(s) ago", nullptr, int(secs / 3600));
+        return QCoreApplication::translate("ui", "%1 minutes ago").arg(secs / 60);
+    if (secs < 7200)
+        return QCoreApplication::translate("ui", "1 hour ago");
+    return QCoreApplication::translate("ui", "%1 hours ago").arg(secs / 3600);
 }
 
 QLabel *sectionLabel(const QString &text)

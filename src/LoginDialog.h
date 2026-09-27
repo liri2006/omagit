@@ -47,6 +47,15 @@ QStringList credentialHelpersFor(const QStringList &configEntries, const QUrl &t
 // A pure function, for the same reason as the one above.
 bool remoteUrlMatchesTarget(const QString &remoteUrl, const QUrl &target);
 
+// What the note calls a credential helper: the first word of its command, and
+// of a program given as a path its own name without git's prefix — `store
+// --file=/somewhere/long` is "store", `!gh auth git-credential` is "gh",
+// /usr/lib/git-core/git-credential-libsecret is "libsecret". The note's
+// tooltip carries the whole command.
+//
+// A pure function, for the same reason as the two above.
+QString credentialHelperName(const QString &helper);
+
 // The sign-in the app puts on screen when git or ssh asks its askpass helper
 // for something (AskPass): a username and a password for an https remote, the
 // passphrase of an ssh key, or, for anything else, the question in git's own
@@ -91,6 +100,7 @@ private:
 
     AskPassRequest m_request;
     QString m_note;
+    QString m_noteTip; // the helper's whole command, where the note shortens it
 
     QLabel *m_heading;
     QLabel *m_hint;

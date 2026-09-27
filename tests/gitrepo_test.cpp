@@ -11,6 +11,7 @@
 #include <QDataStream>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QLocalServer>
 #include <QLocalSocket>
 #include <QThread>
 #include <QPointer>
@@ -20,12 +21,17 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTextStream>
 
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 static int failures = 0;
 #define CHECK(cond)                                                                                   \
@@ -1316,6 +1322,56 @@ static AskPassRun runAskPassClient(const QString &socketPath, const QString &pro
     return run;
 }
 
+// A socket file nobody serves: bound, never listened on, closed — what a
+// crashed run leaves behind.
+static bool leaveStaleSocket(const QString &path)
+{
+    const QByteArray name = QFile::encodeName(path);
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    if (name.size() >= int(sizeof(address.sun_path)))
+        return false;
+    memcpy(address.sun_path, name.constData(), size_t(name.size()));
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return false;
+    const bool bound = ::bind(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0;
+    ::close(fd);
+    return bound;
+}
+
+// Only leftovers are cleared away: a socket named after a pid this process
+// cannot see is still somebody's while a server answers on it (an Omagit in
+// another pid namespace — a sandbox, a test run under unshare), and a server
+// whose own file was removed all the same listens again when asked to.
+static void testAskPassKeepsLiveSockets()
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    const QString live = dir + QStringLiteral("/omagit-askpass-999999999-live");
+    const QString stale = dir + QStringLiteral("/omagit-askpass-999999998-stale");
+    QLocalServer::removeServer(live);
+    QLocalServer::removeServer(stale);
+    QLocalServer elsewhere;
+    CHECK(elsewhere.listen(live));
+    CHECK(leaveStaleSocket(stale));
+
+    AskPass askPass;
+    CHECK(askPass.listen());
+    CHECK(QFileInfo::exists(live));
+    CHECK(!QFileInfo::exists(stale));
+    elsewhere.close();
+
+    QObject::connect(&askPass, &AskPass::requestReceived, &askPass, [&](const AskPassRequest &request) {
+        askPass.answerSecret(request.id, "back");
+    });
+    CHECK(QFile::remove(askPass.socketPath()));
+    CHECK(askPass.listen());
+    CHECK(QFileInfo::exists(askPass.socketPath()));
+    const auto result = runAskPassClient(askPass.socketPath(), "Token:");
+    CHECK(result.code == 0);
+    CHECK(result.out == "back\n");
+}
+
 static void testAskPassServer()
 {
     AskPass askPass;
@@ -1577,6 +1633,7 @@ int main(int argc, char **argv)
     testAgentCatalogs();
     testAskPassPrompts();
     testAskPassServer();
+    testAskPassKeepsLiveSockets();
     if (failures == 0)
         printf("all checks passed\n");
     return failures == 0 ? 0 : 1;

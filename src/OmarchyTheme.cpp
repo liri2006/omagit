@@ -857,6 +857,10 @@ QFrame#commitDetails { background: transparent; border: 1px solid %bd40%; }
 QTextEdit#commitBody, QTextEdit#commitBody:hover, QTextEdit#commitBody:focus {
     background: transparent; border: none; padding: 0;
 }
+/* A message dialog's text is the dialog's, not a field. */
+QTextEdit#messageText, QTextEdit#messageText:hover, QTextEdit#messageText:focus {
+    background: transparent; border: none; padding: 0;
+}
 QListWidget#mergeFiles { background: transparent; border: none; outline: 0; }
 QListWidget#mergeFiles::item { padding: %linetop%px %linepad%px %linebottom%px %linepad%px; border: none; }
 QListWidget#mergeFiles::item:hover, QListWidget#mergeFiles::item:selected { background: %fill8%; color: %fg%; }

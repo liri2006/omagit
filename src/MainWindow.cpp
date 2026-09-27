@@ -10,6 +10,7 @@
 #include "DiffPane.h"
 #include "Footer.h"
 #include "MergeDialog.h"
+#include "MessageDialog.h"
 #include "DiffModel.h"
 #include "DiffView.h"
 #include "HistoryView.h"
@@ -37,7 +38,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollBar>
@@ -755,6 +755,11 @@ void MainWindow::setAutoFetchEnabled(bool on)
     m_sync->setAutoFetchInterval(on ? autoFetchSecondsSetting() : 0);
 }
 
+void MainWindow::markFreshClone()
+{
+    m_sync->markFetched();
+}
+
 // --files-view: this run lists the pending files the given way, whatever the
 // settings say, and leaves the saved choice alone. main() has already checked
 // the spelling; anything else would land on the table.
@@ -1067,15 +1072,11 @@ void MainWindow::discardChange(const FileChange &change)
         ? tr("Delete %1?\n\nThe file is not in git, so this cannot be undone.").arg(change.path)
         : tr("Discard the changes of %1?\n\nThe file goes back to the latest commit, staged changes included; this cannot be undone.")
               .arg(change.path);
-    QMessageBox box(QMessageBox::Question, tr("Discard changes"), question, QMessageBox::Cancel, this);
-    QPushButton *discard = box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
-    box.setDefaultButton(QMessageBox::Cancel);
-    box.exec();
-    if (box.clickedButton() != discard)
+    if (!MessageDialog::confirm(this, tr("Discard changes"), question, tr("Discard")))
         return;
     QString error;
     if (!m_repo->discardChanges(change, &error))
-        QMessageBox::critical(this, tr("Discard changes failed"), error);
+        MessageDialog::error(this, tr("Discard changes failed"), error);
     refresh();
 }
 
@@ -1215,11 +1216,14 @@ MainWindow::SyncTips MainWindow::syncTips(const UpstreamState &s, RemoteSync::Op
             tips.fetch += tr("\nFetching…");
         else if (fetches.last.isValid() && fetches.ok)
             tips.fetch += tr("\nLast fetched %1").arg(ago(fetches.last));
+        else if (fetches.last.isValid() && fetches.needsSignIn)
+            tips.fetch += tr("\nThe automatic fetch %1 needed a sign-in — fetching here asks for it").arg(ago(fetches.last));
         else if (fetches.last.isValid())
             tips.fetch += tr("\nLast fetch failed %1: %2").arg(ago(fetches.last), fetches.error);
+        const int minutes = qMax(1, fetches.interval / 60);
         if (fetches.interval > 0)
-            tips.fetch += tr("\nFetches by itself every %n minute(s) while the window is open", nullptr,
-                             qMax(1, fetches.interval / 60));
+            tips.fetch += minutes == 1 ? tr("\nFetches by itself every minute while the window is open")
+                                       : tr("\nFetches by itself every %1 minutes while the window is open").arg(minutes);
         else
             tips.fetch += tr("\nAutomatic fetching is off (remote/autoFetchSeconds in omagit.conf)");
     }
@@ -1237,7 +1241,8 @@ MainWindow::SyncTips MainWindow::syncTips(const UpstreamState &s, RemoteSync::Op
     else if (op == RemoteSync::Pull)
         tips.pull = tr("Pulling from %1…").arg(s.upstream);
     else if (s.behind > 0)
-        tips.pull = tr("Pull %n commit(s) from %1 into %2 (Ctrl+P)", nullptr, s.behind).arg(s.upstream, s.branch);
+        tips.pull = s.behind == 1 ? tr("Pull 1 commit from %1 into %2 (Ctrl+P)").arg(s.upstream, s.branch)
+                                  : tr("Pull %1 commits from %2 into %3 (Ctrl+P)").arg(s.behind).arg(s.upstream, s.branch);
     else
         tips.pull = tr("Pull from %1 — nothing new since the last fetch (Ctrl+P)").arg(s.upstream);
 
@@ -1253,7 +1258,8 @@ MainWindow::SyncTips MainWindow::syncTips(const UpstreamState &s, RemoteSync::Op
         tips.push = tr("Publish %1 on %2 and track it from now on — git %3 (Ctrl+Shift+P)")
                         .arg(s.branch, s.remote, pushArgs.join(QLatin1Char(' ')));
     else if (s.ahead > 0)
-        tips.push = tr("Push %n commit(s) from %1 to %2 (Ctrl+Shift+P)", nullptr, s.ahead).arg(s.branch, s.upstream);
+        tips.push = s.ahead == 1 ? tr("Push 1 commit from %1 to %2 (Ctrl+Shift+P)").arg(s.branch, s.upstream)
+                                 : tr("Push %1 commits from %2 to %3 (Ctrl+Shift+P)").arg(s.ahead).arg(s.branch, s.upstream);
     else
         tips.push = tr("Push to %1 — nothing to push (Ctrl+Shift+P)").arg(s.upstream);
 
@@ -1279,14 +1285,17 @@ void MainWindow::updateSyncButtons()
     const UpstreamState &s = m_sync->state();
     const RemoteSync::Op op = m_sync->runningOp();
     const FetchHistory fetches{m_sync->lastFetch(), m_sync->lastFetchOk(), m_sync->lastFetchError(),
-                               m_sync->autoFetchInterval()};
+                               m_sync->autoFetchInterval(), m_sync->lastFetchNeedsSignIn()};
     const SyncTips tips = syncTips(s, op, fetches, m_sync->pushPublishes(), m_sync->pushArgs());
 
     const QColor red = theme->color(QStringLiteral("red"));
     const SyncButtons &b = m_syncButtons;
     b.fetch->setEnabled(m_sync->canFetch());
     b.fetch->setToolTip(tips.fetch);
-    b.fetch->setMark(m_sync->lastFetch().isValid() && !m_sync->lastFetchOk() ? QStringLiteral("!") : QString(), red);
+    // A sign-in the automatic fetch could not ask for is no error: the tooltip
+    // and the footer point at Fetch, and the button stays unmarked.
+    const bool fetchFailed = m_sync->lastFetch().isValid() && !m_sync->lastFetchOk() && !m_sync->lastFetchNeedsSignIn();
+    b.fetch->setMark(fetchFailed ? QStringLiteral("!") : QString(), red);
     b.pull->setEnabled(m_sync->canPull());
     b.pull->setToolTip(tips.pull);
     b.pull->setBusy(op == RemoteSync::Fetch || op == RemoteSync::Pull);
@@ -1307,7 +1316,7 @@ void MainWindow::onSyncFinished(RemoteSync::Op op, bool ok, bool automatic, cons
         const QString title = op == RemoteSync::Fetch ? tr("Fetch failed")
                             : op == RemoteSync::Pull  ? tr("Pull failed")
                                                       : tr("Push failed");
-        QMessageBox::critical(this, title, message);
+        MessageDialog::error(this, title, message);
     }
     showStatus(message.section(QLatin1Char('\n'), 0, 0), ok ? kMediumStatusMs : kErrorStatusMs);
     if (op != RemoteSync::Fetch || ok)
@@ -1363,7 +1372,7 @@ void MainWindow::openInEditor()
     const QString path = QDir(m_repo->root()).filePath(c.path);
     QString error;
     if (!openWithDefaultApp(path, m_repo->root(), &error, c.path))
-        QMessageBox::critical(this, tr("Open failed"), error);
+        MessageDialog::error(this, tr("Open failed"), error);
 }
 
 // ---------------------------------------------------------------------------
@@ -1428,7 +1437,7 @@ void MainWindow::checkoutBranch(const QString &name)
         return;
     QString error;
     if (!m_repo->checkout(name, &error)) {
-        QMessageBox::critical(this, tr("Switch branch"), tr("Could not switch to %1.\n\n%2").arg(name, error));
+        MessageDialog::error(this, tr("Switch branch"), tr("Could not switch to %1.\n\n%2").arg(name, error));
         return;
     }
     refresh();
@@ -1472,9 +1481,12 @@ void MainWindow::updateMergeButtons(const MergeState &merge)
     if (merge.inProgress) {
         tip = merge.conflicts.isEmpty()
             ? tr("A merge of %1 is in progress — Commit merge finishes it; click to abort instead (Ctrl+Shift+M)").arg(merge.source)
-            : tr("A merge of %1 is in progress with %n conflicted file(s) — resolve them and Commit merge, or click to abort (Ctrl+Shift+M)",
-                 nullptr, merge.conflicts.size())
-                  .arg(merge.source);
+            : merge.conflicts.size() == 1
+            ? tr("A merge of %1 is in progress with 1 conflicted file — resolve it and Commit merge, or click to abort (Ctrl+Shift+M)")
+                  .arg(merge.source)
+            : tr("A merge of %1 is in progress with %2 conflicted files — resolve them and Commit merge, or click to abort (Ctrl+Shift+M)")
+                  .arg(merge.source)
+                  .arg(merge.conflicts.size());
     } else {
         tip = tr("Merge another branch into this one — with a look at what it would do first (Ctrl+Shift+M)");
     }
@@ -1553,7 +1565,10 @@ void MainWindow::showCloneDialog()
 {
     auto *dialog = new CloneDialog(CloneDialog::defaultFolder(m_repo->root()), this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dialog, &QDialog::accepted, this, [this, dialog] { openRepository(dialog->repositoryPath()); });
+    connect(dialog, &QDialog::accepted, this, [this, dialog] {
+        if (openRepository(dialog->repositoryPath()) && dialog->cloned())
+            m_sync->markFetched();
+    });
     dialog->show();
 }
 
@@ -1570,8 +1585,8 @@ bool MainWindow::openRepository(const QString &path)
     QString error;
     const QString root = GitRepo::findRoot(path, &error);
     if (root.isEmpty()) {
-        QMessageBox::warning(this, tr("Open repository"),
-                             tr("%1 is not inside a git repository.\n\n%2").arg(tildePath(path), error));
+        MessageDialog::warning(this, tr("Open repository"),
+                               tr("%1 is not inside a git repository.\n\n%2").arg(tildePath(path), error));
         return false;
     }
     if (root == m_repo->root())

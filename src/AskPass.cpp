@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QIODevice>
 #include <QLocalServer>
 #include <QLocalSocket>
@@ -29,6 +30,9 @@ constexpr char kAnswer = 'A', kCancelled = 'C';
 // well be looking a token up somewhere. It gives up in the end so that no
 // git process is left hanging for good.
 constexpr int kConnectTimeoutMs = 5000;
+// How long a socket file may take to answer before it counts as a leftover:
+// one that nobody serves refuses at once.
+constexpr int kProbeTimeoutMs = 200;
 constexpr int kAnswerTimeoutMs = 10 * 60 * 1000;
 constexpr int kPollMs = 250;
 
@@ -79,8 +83,22 @@ QString socketPrefix()
     return QStringLiteral("omagit-askpass-");
 }
 
-// Sockets of earlier runs that ended without cleaning up (a crash, a kill).
-// A file named after a pid that is gone is nobody's socket any more.
+// Whether a server still answers at `path`. The probe says nothing and goes,
+// which a server takes for a helper that gave up before asking.
+bool socketAnswers(const QString &path)
+{
+    QLocalSocket probe;
+    probe.connectToServer(path);
+    const bool live = probe.waitForConnected(kProbeTimeoutMs);
+    probe.abort();
+    return live;
+}
+
+// Sockets of earlier runs that ended without cleaning up (a crash, a kill):
+// a file named after a pid that is gone, and that nothing answers on. The pid
+// alone does not settle it — an Omagit in another pid namespace (a sandbox, a
+// test run under unshare) has a pid this one cannot see, and its socket is
+// very much in use.
 void removeStaleSockets(const QString &dir, const QString &keep)
 {
     const QStringList names = QDir(dir).entryList({socketPrefix() + QStringLiteral("*")}, QDir::System | QDir::Files);
@@ -90,7 +108,7 @@ void removeStaleSockets(const QString &dir, const QString &keep)
             continue;
         bool isPid = false;
         const qint64 pid = name.mid(socketPrefix().size()).section(QLatin1Char('-'), 0, 0).toLongLong(&isPid);
-        if (isPid && !QFile::exists(QStringLiteral("/proc/%1").arg(pid)))
+        if (isPid && !QFile::exists(QStringLiteral("/proc/%1").arg(pid)) && !socketAnswers(path))
             QLocalServer::removeServer(path);
     }
 }
@@ -217,8 +235,13 @@ bool AskPass::listening() const
 
 bool AskPass::listen()
 {
-    if (listening())
+    // The server can outlive its socket file — another process took the file
+    // for a leftover — and a helper sent to that path would find nobody, so
+    // such a server listens again.
+    if (listening() && QFileInfo::exists(m_socketPath))
         return true;
+    if (m_server)
+        m_server->close();
     removeStaleSockets(socketDir(), m_socketPath);
     QLocalServer::removeServer(m_socketPath); // an earlier failed listen by this instance
     if (!m_server) {

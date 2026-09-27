@@ -39,6 +39,7 @@ namespace {
 // (Grid.h), as the merge view and the sign-in dialog have it: a dialog's 16
 // of padding, its groups a group gap apart, controls an item gap apart,
 // captions 4 over their 28 px fields, the list's rows 24 with their text 8 in.
+// A narrower window gets a narrower dialog (ui::fitDialogWidth()).
 constexpr int kDialogWidth = 640;
 // The list area is this many rows tall, whichever page it shows, and the list
 // scrolls beyond them.
@@ -122,7 +123,8 @@ QString CloneDialog::repositoryName(const QString &input)
         const QUrl url(value, QUrl::StrictMode);
         if (!url.isValid() || url.host().isEmpty() || !url.password().isEmpty()
             || url.hasQuery() || url.hasFragment()
-            || (url.scheme() != QLatin1String("https") && url.scheme() != QLatin1String("ssh")))
+            || (url.scheme() != QLatin1String("https") && url.scheme() != QLatin1String("http")
+                && url.scheme() != QLatin1String("ssh")))
             return {};
         path = url.path();
     } else {
@@ -196,7 +198,7 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     // An item gap under the field, with the layout's caption gap before it.
     m_urlHintGap = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
     urlLayout->addItem(m_urlHintGap);
-    urlLayout->addWidget(ui::dimLabel(tr("HTTPS or SSH · git@github.com:owner/repo.git")));
+    urlLayout->addWidget(ui::dimLabel(tr("HTTPS, HTTP or SSH · git@github.com:owner/repo.git")));
     m_sources->addWidget(urlPage);
 
     // The GitHub page keeps its three rows whatever it has to say, so it
@@ -347,7 +349,10 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     });
     connect(m_askPass, &AskPass::requestReceived, this, [this](const AskPassRequest &request) {
         m_timeout->stop();
-        auto *dialog = new LoginDialog(request, nullptr, this);
+        // A clone reads git's system and global configuration and no
+        // repository's, which is what git finds from the file system's root.
+        GitRepo outside(QDir::rootPath());
+        auto *dialog = new LoginDialog(request, &outside, this);
         connect(dialog, &QDialog::accepted, m_askPass, [this, dialog, request] {
             if (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password)
                 m_askPass->answerLogin(request.id, dialog->username(), dialog->password());
@@ -366,7 +371,8 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
     connect(m_askPass, &AskPass::answered, this, [this] { m_timeout->start(); });
     connect(OmarchyTheme::instance(), &OmarchyTheme::changed, this, &CloneDialog::applyTheme);
 
-    // The width is fixed; the height follows the content (fitToContent()).
+    // The width is the design's, or a narrower window's (showEvent()); the
+    // height follows the content (fitToContent()).
     setFixedWidth(ui::space(kDialogWidth));
     setTabOrder(m_urlTab, m_githubTab);
     setTabOrder(m_githubTab, m_url);
@@ -477,7 +483,7 @@ void CloneDialog::updateDestination()
     m_hint.clear();
     bool valid = false;
     if (suggestedName.isEmpty())
-        m_hint = m_sources->currentIndex() == 0 ? tr("Enter an HTTPS or SSH repository URL.") : tr("Choose a repository to clone.");
+        m_hint = m_sources->currentIndex() == 0 ? tr("Enter an HTTPS, HTTP or SSH repository URL.") : tr("Choose a repository to clone.");
     else if (name.isEmpty() || name != name.trimmed() || name == QLatin1String(".") || name == QLatin1String("..")
              || name.contains(QRegularExpression(QStringLiteral("[\\x00-\\x1f\\x7f/\\\\]"))))
         m_hint = tr("Enter a folder name without slashes or leading or trailing spaces.");
@@ -864,6 +870,7 @@ void CloneDialog::clone()
             return;
         }
         m_repositoryPath = m_cloneTarget;
+        m_cloned = true;
         accept();
     }, true);
 }
@@ -912,6 +919,7 @@ void CloneDialog::showEvent(QShowEvent *event)
 {
     ensurePolished();
     updateListHeight();
+    ui::fitDialogWidth(this, kDialogWidth);
     fitToContent();
     QDialog::showEvent(event);
 }

@@ -23,6 +23,7 @@
 #include "../src/AskPass.h"
 #include "../src/KeybindingsPanel.h"
 #include "../src/LoginDialog.h"
+#include "../src/MessageDialog.h"
 #include "../src/MainWindow.h"
 #include "../src/MergeDialog.h"
 #include "../src/MessageEdit.h"
@@ -60,7 +61,6 @@
 #include <QListWidget>
 #include <QLocale>
 #include <QMenu>
-#include <QMessageBox>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -1065,20 +1065,20 @@ void clickAt(QWidget *window, const QPoint &pos, Qt::KeyboardModifiers modifiers
     QTest::mouseClick(target, Qt::LeftButton, modifiers, target->mapFrom(window, pos));
 }
 
-// Clicks the first button of the next modal message box, from inside the
-// event loop its exec() runs. `clicked` says whether one came.
+// Clicks the default button of the next modal message dialog, from inside
+// the event loop its exec() runs. `clicked` says whether one came.
 void clickNextMessageBox(bool *clicked)
 {
     auto *timer = new QTimer;
     timer->setInterval(20);
     QObject::connect(timer, &QTimer::timeout, timer, [timer, clicked] {
-        auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        auto *box = qobject_cast<MessageDialog *>(QApplication::activeModalWidget());
         if (!box)
             return;
         timer->stop();
         timer->deleteLater();
         *clicked = true;
-        QAbstractButton *button = box->buttons().value(0);
+        QAbstractButton *button = box->defaultButton();
         // A real click, in the box's own window: the card must not take it
         // for a press outside itself.
         QTest::mouseClick(button, Qt::LeftButton);
@@ -1685,9 +1685,10 @@ private slots:
         QCOMPARE(CloneDialog::defaultFolder("/tmp/projects/repo"), QString("/tmp/projects"));
         for (const QString url : {"https://github.com/owner/repo.git", "https://example.org/owner/repo/",
                                   "git@github.com:owner/repo.git", "ssh://git@example.org:2222/owner/repo.git",
-                                  "work:owner/repo.git", "git@[::1]:owner/repo.git"})
+                                  "work:owner/repo.git", "git@[::1]:owner/repo.git", "http://host/repo",
+                                  "http://127.0.0.1:3300/owner/repo.git"})
             QCOMPARE(CloneDialog::repositoryName(url), QString("repo"));
-        for (const QString url : {"", "--upload-pack=evil", "/tmp/repo", "file:///tmp/repo", "http://host/repo",
+        for (const QString url : {"", "--upload-pack=evil", "/tmp/repo", "file:///tmp/repo", "ftp://host/repo.git",
                                   "https://host", "https://host/..", "https://host/%2e%2e.git", "git@host:.git",
                                   "https://user:secret@host/repo", "https://host/repo?x", "git@host:repo\nother"})
             QVERIFY2(CloneDialog::repositoryName(url).isEmpty(), qPrintable(url));
@@ -1746,8 +1747,49 @@ private slots:
         dialog.findChild<QPushButton *>("cloneAccept")->click();
         QTRY_COMPARE_WITH_TIMEOUT(accepted.size(), 1, 10000);
         QCOMPARE(dialog.repositoryPath(), destination.filePath("custom folder"));
+        QVERIFY(dialog.cloned());
         GitRepo cloned(dialog.repositoryPath());
         QCOMPARE(cloned.headCommit().subject, QString("Cloned commit"));
+    }
+
+    // Plain http is somewhere to clone from too, and the sign-in of a clone
+    // speaks of git's global configuration — a clone reads no repository's —
+    // naming its helper by the helper's short name, the whole command on hover.
+    void cloneOverHttpSignsInWithTheGlobalHelperNamed()
+    {
+        const QString binary = helperBinary();
+        if (binary.isEmpty())
+            QSKIP("omagit is not built (qmake6 omagit.pro && make); the askpass helper is the binary itself");
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir destination, config;
+        const QString helper = QStringLiteral("store --file=%1").arg(config.filePath("credentials"));
+        QVERIFY(writeFixture(config.filePath("gitconfig"), "[credential]\n    helper = " + helper.toUtf8() + "\n"));
+        ScopedEnv global("GIT_CONFIG_GLOBAL", config.filePath("gitconfig").toUtf8());
+        ScopedEnv system("GIT_CONFIG_NOSYSTEM", "1");
+
+        CloneDialog dialog(destination.path());
+        dialog.show();
+        dialog.findChild<AskPass *>()->setHelperPath(binary);
+        dialog.findChild<QLineEdit *>("cloneUrl")->setText(
+            QStringLiteral("http://127.0.0.1:%1/team/repo.git").arg(server->serverPort()));
+        auto *accept = dialog.findChild<QPushButton *>("cloneAccept");
+        QVERIFY(accept->isEnabled());
+        accept->click();
+
+        LoginDialog *login = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT((login = dialog.findChild<LoginDialog *>()) && login->isVisible(), 30000);
+        QVERIFY(says(login, QStringLiteral("Remembered by git's credential helper (store)")));
+        bool tipped = false;
+        for (const QLabel *label : login->findChildren<QLabel *>())
+            tipped = tipped || label->toolTip() == helper;
+        QVERIFY(tipped);
+        // 127.0.0.1 is this machine: nothing crosses a network to warn about.
+        QVERIFY(!says(login, QStringLiteral("Plain HTTP")));
+
+        login->reject();
+        QTRY_VERIFY_WITH_TIMEOUT(cloneLabel(dialog, "Status")->text().contains("Clone cancelled"), 30000);
+        QVERIFY(!dialog.cloned());
     }
 
     void githubCloneKeepsCredentialsForLaterGitCommands()
@@ -13448,6 +13490,104 @@ esac
         QVERIFY(says(fallback.get(), QStringLiteral("Remembered by git's credential helper (store)")));
     }
 
+    // A dialog is never wider than the window it opens over: the compositor
+    // centres it on that window, and a window tiled at the screen's edge would
+    // leave the rest of a wider one off the screen. The text breaks inside a
+    // URL too long for the width instead of widening the dialog, and the
+    // dialog is as tall as the lines it wraps into.
+    void dialogsFitANarrowWindow()
+    {
+        QWidget host;
+        host.resize(401, 462);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        const int room = host.width() - 2 * ui::windowMargin(&host);
+
+        const QString url = QStringLiteral("https://localhost:3443/") + QString(60, QLatin1Char('x'))
+            + QStringLiteral(".git/");
+        MessageDialog box(MessageDialog::Error, QStringLiteral("Pull failed"),
+                          QStringLiteral("unable to access '%1': SSL certificate problem").arg(url), &host);
+        box.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&box));
+        QVERIFY2(box.width() <= room, qPrintable(QStringLiteral("%1 > %2").arg(box.width()).arg(room)));
+        auto *text = box.findChild<QTextEdit *>(QStringLiteral("messageText"));
+        QVERIFY(text);
+        QVERIFY(text->document()->size().height() <= text->height() + 1);
+        QVERIFY(!text->verticalScrollBar()->isVisible());
+
+        std::unique_ptr<LoginDialog> login(new LoginDialog(
+            parseAskPassPrompt(QStringLiteral("Username for 'https://example.com': ")), nullptr, &host));
+        login->show();
+        QVERIFY(QTest::qWaitForWindowExposed(login.get()));
+        QVERIFY2(login->width() <= room, qPrintable(QStringLiteral("%1 > %2").arg(login->width()).arg(room)));
+
+        // A window with room for it gets the design's width.
+        QWidget wide;
+        wide.resize(1200, 800);
+        wide.show();
+        MessageDialog roomy(MessageDialog::Error, QStringLiteral("Push failed"), QStringLiteral("rejected"), &wide);
+        roomy.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&roomy));
+        QCOMPARE(roomy.width(), ui::space(480));
+    }
+
+    // What a question asks (throwing changes away, rewriting published
+    // history) is not easily taken back: Return means Cancel, and only the
+    // question's own button says yes.
+    void aQuestionDefaultsToCancel()
+    {
+        MessageDialog box(MessageDialog::Question, QStringLiteral("Discard changes"), QStringLiteral("Discard a.txt?"));
+        box.setAcceptText(QStringLiteral("Discard"));
+        box.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&box));
+        QCOMPARE(box.defaultButton()->text(), QStringLiteral("Cancel"));
+        QTest::keyClick(&box, Qt::Key_Return);
+        QCOMPARE(box.result(), int(QDialog::Rejected));
+
+        MessageDialog again(MessageDialog::Question, QStringLiteral("Discard changes"), QStringLiteral("Discard a.txt?"));
+        again.setAcceptText(QStringLiteral("Discard"));
+        again.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&again));
+        QPushButton *discard = nullptr;
+        for (QPushButton *button : again.findChildren<QPushButton *>())
+            if (button->text() == QStringLiteral("Discard"))
+                discard = button;
+        QVERIFY(discard);
+        discard->click();
+        QCOMPARE(again.result(), int(QDialog::Accepted));
+    }
+
+    // The note names a helper by its program, not by its whole command line:
+    // `store --file=/somewhere/long` would otherwise fill the dialog.
+    void credentialHelpersAreNamedShort()
+    {
+        QCOMPARE(credentialHelperName(QStringLiteral("store")), QStringLiteral("store"));
+        QCOMPARE(credentialHelperName(QStringLiteral("store --file=/x/y")), QStringLiteral("store"));
+        QCOMPARE(credentialHelperName(QStringLiteral("cache --timeout=300")), QStringLiteral("cache"));
+        QCOMPARE(credentialHelperName(QStringLiteral("/usr/lib/git-core/git-credential-libsecret")),
+                 QStringLiteral("libsecret"));
+        QCOMPARE(credentialHelperName(QStringLiteral("!gh auth git-credential")), QStringLiteral("gh"));
+        QCOMPARE(credentialHelperName(QStringLiteral("!/usr/bin/gh auth git-credential")), QStringLiteral("gh"));
+        QCOMPARE(credentialHelperName(QStringLiteral("manager")), QStringLiteral("manager"));
+        QCOMPARE(credentialHelperName(QStringLiteral("git-credential-")), QStringLiteral("git-credential-"));
+    }
+
+    // A password for a plain-http remote crosses the network as it is typed,
+    // and the dialog says so — except for this machine's own loopback, which
+    // nothing leaves.
+    void loginDialogWarnsThatPlainHttpIsUnencrypted()
+    {
+        std::unique_ptr<LoginDialog> user(login(QStringLiteral("Username for 'http://example.com': ")));
+        QVERIFY(says(user.get(), QStringLiteral("Plain HTTP")));
+        std::unique_ptr<LoginDialog> password(login(QStringLiteral("Password for 'http://alice@example.com:8080': ")));
+        QVERIFY(says(password.get(), QStringLiteral("Plain HTTP")));
+        for (const QString prompt : {"Username for 'https://example.com': ", "Username for 'http://localhost:3300': ",
+                                     "Username for 'http://127.0.0.1:8080': ", "Username for 'http://[::1]:8080': "}) {
+            std::unique_ptr<LoginDialog> dialog(login(prompt));
+            QVERIFY2(!says(dialog.get(), QStringLiteral("Plain HTTP")), qPrintable(prompt));
+        }
+    }
+
     // Which remote a prompt is about, without git in the way.
     void remoteUrlsStandForThePromptsTheyAnswer()
     {
@@ -13638,6 +13778,100 @@ esac
     // `git fetch`, git meets a 401 from a server this test runs on 127.0.0.1,
     // runs the built binary as its askpass helper, and the prompt arrives here
     // as a request. What the test answers decides how the fetch ends.
+
+    // git's words for a credential prompt it could not put to anyone, and the
+    // host they name — a remote's URL without its path.
+    void signInPromptsAreRecognizedInGitsErrors()
+    {
+        QString where;
+        QVERIFY(RemoteSync::needsSignIn(
+            "fatal: could not read Username for 'https://example.com': terminal prompts disabled\n", &where));
+        QCOMPARE(where, QStringLiteral("example.com"));
+        QVERIFY(RemoteSync::needsSignIn("fatal: could not read Password for 'http://alice@localhost:3300': "
+                                        "terminal prompts disabled\nerror: could not fetch origin\n",
+                                        &where));
+        QCOMPARE(where, QStringLiteral("localhost:3300"));
+        QVERIFY(!RemoteSync::needsSignIn("fatal: Authentication failed for 'https://example.com/x.git/'\n"));
+        QVERIFY(!RemoteSync::needsSignIn(
+            "fatal: unable to access 'https://example.com/': Could not resolve host: example.com\n"));
+    }
+
+    // A failed pull or push is said once: the line of git's output that names
+    // the error, and all of the output under it only when there is more to it
+    // than that line. A rejected push names its error after the "To <url>".
+    void failedPullsAndPushesSayItOnce()
+    {
+        const QByteArray ssl = "fatal: unable to access 'https://localhost:3443/tester/demo.git/': "
+                               "SSL certificate OpenSSL verify result: self-signed certificate (18)\n";
+        QCOMPARE(RemoteSync::failureText(ssl),
+                 QStringLiteral("unable to access 'https://localhost:3443/tester/demo.git/': "
+                                "SSL certificate OpenSSL verify result: self-signed certificate (18)"));
+        const QByteArray rejected = "To https://example.com/team/repo.git\n"
+                                    " ! [rejected]        main -> main (fetch first)\n"
+                                    "error: failed to push some refs to 'https://example.com/team/repo.git'\n"
+                                    "hint: Updates were rejected because the remote contains work that you do not\n";
+        const QString text = RemoteSync::failureText(rejected);
+        QVERIFY2(text.startsWith(QStringLiteral("failed to push some refs to 'https://example.com/team/repo.git'\n\n"
+                                                "To https://example.com/team/repo.git\n")),
+                 qPrintable(text));
+        QVERIFY(text.contains(QStringLiteral("hint: Updates were rejected")));
+        QVERIFY(RemoteSync::failureText("").isEmpty());
+    }
+
+    // An automatic fetch has no dialog to ask with, so a remote that wants a
+    // password stops it — as a sign-in still to do, not as a failure of the
+    // remote: the message points at Fetch, and the history knows why, which
+    // keeps the error mark off the Fetch button.
+    void automaticFetchStopsAtASignInWithoutAnError()
+    {
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(signInRepo(dir.path(), server->serverPort(), {QStringLiteral("origin")}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome,
+                    [&](const AskPassRequest &request) { sync.askPass()->cancel(request.id); });
+        sync.setActive(true); // the first automatic fetch follows shortly
+        QTRY_VERIFY_WITH_TIMEOUT(outcome.done, 30000);
+
+        QVERIFY(seen.isEmpty());
+        QVERIFY(outcome.automatic);
+        QVERIFY(!outcome.ok);
+        QCOMPARE(outcome.message, QStringLiteral("Sign-in needed for 127.0.0.1:%1 — Fetch (Ctrl+F) to sign in")
+                                      .arg(server->serverPort()));
+        QVERIFY(sync.lastFetchNeedsSignIn());
+        QVERIFY(!sync.lastFetchOk());
+    }
+
+    // A clone is as fresh as a fetch: the window opened on one waits a whole
+    // interval before it fetches by itself, instead of asking straight away a
+    // remote the clone has just signed in to.
+    void aFreshCloneIsNotFetchedAgainAtOnce()
+    {
+        std::unique_ptr<QTcpServer> server = unauthorizedServer();
+        QVERIFY(server);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(signInRepo(dir.path(), server->serverPort(), {QStringLiteral("origin")}));
+
+        GitRepo repo(dir.path());
+        RemoteSync sync(&repo);
+        QList<AskPassRequest> seen;
+        SyncOutcome outcome;
+        watchSignIn(&sync, &seen, &outcome, [](const AskPassRequest &) {});
+        sync.markFetched();
+        QVERIFY(sync.lastFetch().isValid());
+        QVERIFY(sync.lastFetchOk());
+        sync.setActive(true);
+        QTest::qWait(2500); // past the 1.5 s the first automatic fetch waits otherwise
+        QVERIFY(!sync.busy());
+        QVERIFY(!outcome.done);
+    }
 
     // Closing the dialog ends the fetch quietly, and leaves the fetch history
     // as it was: nothing was tried, so the Fetch button carries no error mark.

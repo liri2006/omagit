@@ -46,6 +46,12 @@ int fontPx(int px);
 int windowMargin(const QWidget *widget);
 // What windowMargin() reads for the widgets of `window`, in design px.
 void setWindowMargin(QWidget *window, int px);
+// Fixes `dialog`'s width: `designPx` (design px, scaled here) where the window
+// it opens over is wide enough, else that window's width less its side
+// margins, and never narrower than the dialog's layout can take. The
+// compositor centres a dialog on its window, so a dialog wider than a window
+// tiled at the screen's edge would hang off the screen.
+void fitDialogWidth(QWidget *dialog, int designPx);
 
 // Nerd Font (Material Design) glyphs used by the shell; empty if the font lacks them.
 QString icon(uint cp, const QString &fallback = QString());

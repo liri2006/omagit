@@ -192,14 +192,7 @@ void SettingsDialog::applyNoteColor()
 // narrower than the layout can take.
 void SettingsDialog::fitWidth()
 {
-    const QWidget *host = parentWidget() ? parentWidget()->window() : nullptr;
-    int width = host ? qMin(ui::space(kDialogWidth), host->width() - 2 * ui::windowMargin(host))
-                     : ui::space(kDialogWidth);
-    QLayout *l = layout();
-    l->invalidate();
-    width = qMax(width, l->totalMinimumSize().width());
-    if (width != this->width() || minimumWidth() != width || maximumWidth() != width)
-        setFixedWidth(width);
+    ui::fitDialogWidth(this, kDialogWidth);
 }
 
 // As tall as its content, like the other dialogs: a note that takes a

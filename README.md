@@ -63,13 +63,14 @@ history with a branch graph, and can plug into the Nautilus context menu as
   inside another repository. Everything — changes, history, branch, Pull/Push counts, the
   working-tree watch — follows the switch. Started outside a repository without a path,
   Omagit reopens the last one. With no repository to reopen, it offers cloning or opening an existing repository.
-- **Clone repository**: *Clone…* in the repository dropdown (Ctrl+Shift+O) accepts HTTPS
-  and SSH URLs, including `git@host:owner/repo.git`. Choose a destination folder; the
+- **Clone repository**: *Clone…* in the repository dropdown (Ctrl+Shift+O) accepts HTTPS,
+  HTTP and SSH URLs, including `git@host:owner/repo.git`. Choose a destination folder; the
   repository is created inside it and opened when cloning finishes. The folder defaults
   to the current directory, or the open repository's parent. Existing destinations are
   left alone. The prefilled repository folder name can be edited inline in the destination preview.
   Progress and credential prompts stay in the app; *Stop* cancels the transfer
-  and leaves any partial download in place.
+  and leaves any partial download in place. The clone counts as the new repository's first
+  fetch, so Omagit does not fetch it again the moment it opens.
   The **GitHub** tab uses [GitHub CLI](https://cli.github.com/) (`gh`, optional), offers
   browser sign-in, and lists the current account's personal, organization and shared
   repositories with a filter. GitHub credentials are managed by `gh`; clones from this tab
@@ -96,8 +97,13 @@ history with a branch graph, and can plug into the Nautilus context menu as
   dialog ends the asking for the whole operation, remotes still to come included.
   Whether it is remembered is git's business and the dialog says which: a configured
   credential helper (libsecret and friends) keeps it, without one it is used once and
-  forgotten — nothing is written by Omagit. Only what you start asks: the automatic fetches
-  stay silent and back off as before.
+  forgotten — nothing is written by Omagit. The note names the helper by its program
+  (`store`, `libsecret`, `gh`) and shows its whole command on hover; a clone's sign-in reads
+  git's global configuration, since a clone uses no repository's. For a plain-HTTP remote the
+  dialog warns that the password is sent unencrypted (this machine's loopback excepted). Only
+  what you start asks: an automatic fetch that runs into a sign-in says "Sign-in needed for
+  *host* — Fetch (Ctrl+F) to sign in" in the footer instead of an error, leaves the Fetch
+  button unmarked and backs off as before.
 - **Merge** (the top bar's button after Fetch, Ctrl+Shift+M): a merge view
   with the branch to merge on the left and the branch it goes into on the right — the current
   branch to begin with, the main line (or the branch committed to most recently) on the other
@@ -372,6 +378,7 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/SettingsDialog.*` | Settings: for now whether Nautilus offers Open in Omagit, with a restart of a running Nautilus to show the change |
 | `src/NautilusMenu.*` | Puts the embedded Nautilus extension in the user's extension folder or takes it away, and whether Nautilus, nautilus-python and a running Nautilus are there |
 | `src/LoginDialog.*` | The sign-in: username and password for an https host, an ssh key's passphrase, and whether git will remember it |
+| `src/MessageDialog.*` | Errors, warnings and questions (a failed pull or push, discarding a change) in the dialog kit instead of a QMessageBox, never wider than the window it opens over |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |
 | `src/SyntaxHighlighter.*` | Hand-rolled per-language tokeniser for the diff's syntax colours |

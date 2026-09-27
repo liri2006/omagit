@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QRegularExpression>
+#include <QUrl>
 
 namespace {
 constexpr int kMaxBackoff = 15 * 60; // seconds
@@ -18,17 +20,49 @@ constexpr int kFirstFetchDelayMs = 1500;
 constexpr int kFetchTimeoutMs = 90000;
 constexpr int kTransferTimeoutMs = 300000;
 
+// The line of git's output that says what went wrong: its first "fatal: " or
+// "error: " line — a rejected push starts with "To <url>" and the rejection,
+// and says "error: failed to push some refs" after them — else the first line.
 QString firstLine(const QByteArray &text)
 {
-    const QString s = QString::fromUtf8(text).trimmed();
-    // git prefixes its errors with "fatal: " / "error: "; the dialog says that already.
-    QString line = s.section(QLatin1Char('\n'), 0, 0);
-    for (const char *prefix : {"fatal: ", "error: "})
-        if (line.startsWith(QLatin1String(prefix)))
-            line = line.mid(int(strlen(prefix)));
-    return line;
+    const QStringList lines = QString::fromUtf8(text).trimmed().split(QLatin1Char('\n'));
+    for (const QString &line : lines) {
+        // git prefixes its errors with "fatal: " / "error: "; the dialog says that already.
+        for (const char *prefix : {"fatal: ", "error: "})
+            if (line.startsWith(QLatin1String(prefix)))
+                return line.mid(int(strlen(prefix))).trimmed();
+    }
+    return lines.constFirst().trimmed();
 }
 } // namespace
+
+// git's prompt code, word for word and untranslated: "could not read Username
+// for 'https://example.com': terminal prompts disabled" (or Password, with the
+// user in the URL). The URL is the remote's without its path.
+QString RemoteSync::failureText(const QByteArray &err)
+{
+    const QString output = QString::fromUtf8(err).trimmed();
+    if (output.isEmpty())
+        return QString();
+    // All of it under the headline, where there is more to it than that line.
+    const QString headline = firstLine(err);
+    return output.contains(QLatin1Char('\n')) ? headline + QStringLiteral("\n\n") + output : headline;
+}
+
+bool RemoteSync::needsSignIn(const QByteArray &err, QString *where)
+{
+    const QString text = QString::fromUtf8(err);
+    if (!text.contains(QLatin1String("terminal prompts disabled")))
+        return false;
+    if (where) {
+        static const QRegularExpression prompt(QStringLiteral("could not read \\w+ for '([^']+)'"));
+        const QUrl url(prompt.match(text).captured(1));
+        *where = url.host();
+        if (!where->isEmpty() && url.port() != -1)
+            *where += QLatin1Char(':') + QString::number(url.port());
+    }
+    return true;
+}
 
 RemoteSync::RemoteSync(GitRepo *repo, QObject *parent)
     : QObject(parent), m_repo(repo), m_askPass(new AskPass(this))
@@ -81,6 +115,7 @@ void RemoteSync::reset()
     m_signInCancelled = false;
     m_lastFetch = QDateTime();
     m_lastFetchOk = true;
+    m_lastFetchNeedsSignIn = false;
     m_lastFetchError.clear();
     m_failures = 0;
     if (!m_watcher.directories().isEmpty())
@@ -174,6 +209,17 @@ void RemoteSync::nudge()
         scheduleAutoFetch();
 }
 
+void RemoteSync::markFetched()
+{
+    m_lastFetch = QDateTime::currentDateTime();
+    m_lastFetchOk = true;
+    m_lastFetchNeedsSignIn = false;
+    m_lastFetchError.clear();
+    m_failures = 0;
+    scheduleAutoFetch();
+    emit stateChanged();
+}
+
 void RemoteSync::scheduleAutoFetch()
 {
     m_autoTimer.stop();
@@ -256,7 +302,7 @@ void RemoteSync::start(Op op, const QStringList &args)
         full << QStringLiteral("--quiet");
     // Only what the user asked for may put a dialog on screen. An automatic
     // fetch keeps GIT_TERMINAL_PROMPT=0 and nothing else, so a remote it
-    // cannot sign in to fails quietly and the backoff takes over.
+    // cannot sign in to ends as lastFetchNeedsSignIn() and the backoff takes over.
     QStringList env;
     if (!m_autoOp && m_askPass->listen())
         env = m_askPass->env();
@@ -275,6 +321,10 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     // a message box, and the credentials of this operation are dropped.
     const bool cancelled = !ok && m_askPass->cancelled();
     m_signInCancelled = cancelled;
+    // An automatic fetch has no dialog to ask with, so a remote that wants a
+    // password turns it down; the user's own fetch would have asked.
+    QString signInHost;
+    const bool signInNeeded = !ok && automatic && op == Fetch && needsSignIn(err, &signInHost);
     m_askPass->endOperation();
     m_op = None;
     m_autoOp = false;
@@ -290,15 +340,20 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
         if (!cancelled) {
             m_lastFetch = QDateTime::currentDateTime();
             m_lastFetchOk = ok;
+            m_lastFetchNeedsSignIn = signInNeeded;
             m_lastFetchError = ok ? QString() : firstLine(err);
             m_failures = ok ? 0 : m_failures + 1;
         }
         if (cancelled)
             message = tr("Fetch cancelled — not signed in");
+        else if (signInNeeded)
+            message = signInHost.isEmpty() ? tr("Sign-in needed — Fetch (Ctrl+F) to sign in")
+                                           : tr("Sign-in needed for %1 — Fetch (Ctrl+F) to sign in").arg(signInHost);
         else if (!ok)
             message = (automatic ? tr("Automatic fetch failed: %1") : tr("Fetch failed: %1")).arg(firstLine(err));
         else if (m_state.behind > 0)
-            message = tr("Fetched — %n commit(s) to pull from %1", nullptr, m_state.behind).arg(upstream);
+            message = m_state.behind == 1 ? tr("Fetched — 1 commit to pull from %1").arg(upstream)
+                                          : tr("Fetched — %1 commits to pull from %2").arg(m_state.behind).arg(upstream);
         else if (m_state.hasUpstream())
             message = tr("Fetched — up to date with %1").arg(upstream);
         else
@@ -308,9 +363,10 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
         if (cancelled)
             message = tr("Pull cancelled — not signed in");
         else if (!ok)
-            message = firstLine(err);
+            message = failureText(err);
         else if (m_behindBefore > 0)
-            message = tr("Pulled %n commit(s) from %1", nullptr, m_behindBefore).arg(upstream);
+            message = m_behindBefore == 1 ? tr("Pulled 1 commit from %1").arg(upstream)
+                                          : tr("Pulled %1 commits from %2").arg(m_behindBefore).arg(upstream);
         else
             message = tr("Already up to date with %1").arg(upstream);
         break;
@@ -318,9 +374,10 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
         if (cancelled)
             message = tr("Push cancelled — not signed in");
         else if (!ok)
-            message = firstLine(err);
+            message = failureText(err);
         else if (m_state.hasUpstream() && m_aheadBefore > 0)
-            message = tr("Pushed %n commit(s) to %1", nullptr, m_aheadBefore).arg(upstream);
+            message = m_aheadBefore == 1 ? tr("Pushed 1 commit to %1").arg(upstream)
+                                         : tr("Pushed %1 commits to %2").arg(m_aheadBefore).arg(upstream);
         else if (m_state.hasUpstream())
             message = tr("Everything up to date with %1").arg(upstream);
         else
@@ -331,8 +388,6 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     }
     if (!ok && message.isEmpty())
         message = tr("git exited with status %1").arg(code);
-    if (!ok && !cancelled && !err.trimmed().isEmpty() && op != Fetch)
-        message += QStringLiteral("\n\n") + QString::fromUtf8(err).trimmed();
     emit finished(op, ok, automatic, message);
     scheduleAutoFetch();
 }
