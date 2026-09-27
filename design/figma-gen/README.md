@@ -36,9 +36,8 @@ Generates the design frames for the Omagit Figma file
   lead the More menu on the Changes tab (`overlay: 'more'`: Files view ›, Show
   unversioned files, Agent settings…; `overlay: 'filesView'` opens the
   submenu, placed by Qt's screen-edge rule with the window for the screen), a
-  shallow unstacked bar keeps More at every width, the agent settings hang from
-  More, and on two rows the sync dropdown is a borderless 64 px miniature
-  (`SyncDropdown/mini`). The Options menu carries Amend last commit alone, as the
+  shallow unstacked bar keeps More at every width and the agent settings hang
+  from More. The Options menu carries Amend last commit alone, as the
   app's does, and a menu hint gives way where it would touch its label.
   CHANGES is the top section and MESSAGE the bottom one, over the action bar;
   the agent popover hangs under its cog, or stands over it where the frame
@@ -69,6 +68,18 @@ Generates the design frames for the Omagit Figma file
   Nautilus must restart, Restart Nautilus under the note; Close at the right.
   Frames 84–86: Quarter · Settings, … · restart Nautilus (under Quarter ·
   Changes / History on Screens · Half & Quarter) and Extra narrow · Settings.
+- Top bar names and sync (2026-09-27, after the app): the repo chip wears its
+  name at every width, stacked too (the tab labels give way first), and where
+  a stacked first row cannot hold both names they elide together
+  (`fitNames`, the shorter whole while the longer keeps as much); the stacked
+  sync dropdown is one borderless form on one row and on two,
+  [4][↓ 16][2][8][↑ 16][1][6] = 66, the 6 leaving as much bare room after the
+  count's ink as before the arrow's. The New branch card and the branch menu
+  hang from the branch chip's recorded x (`c.anchors.BranchChip`). On two
+  rows (after the app, the same day) More ends the tabs' row, its menu (and
+  the Files view submenu) 4 under the whole bar, and the names on the first
+  row give way only where the sync dropdown at its right edge would come
+  within a cluster (4) of the branch.
 - `sheets.js` — Cover, Foundations, Components and Layout-rules sheets.
 - `build.js` — the frame list; `out/frames.json` records name, page and x offset.
 
@@ -114,9 +125,12 @@ kind, rect and props, recorded by the builders in `kit.js`) and `out/icons.json`
   `replace-instances.js` on it), re-imported every frame in place keeping the
   layer order (`__omGrid.batch(ids)`) and deleted the old frame once nothing
   used its components (`__omGrid.finish()`).
-- `figma/sync-mini.js` — one-off (2026-09-26): adds the `SyncDropdown/mini`
-  component (the two-row bar's borderless miniature) under `SyncDropdown` on
-  the Components sheet; `replace-instances.js` uses it for `mini` records.
+- `figma/sync-mini.js` — one-off (2026-09-26, superseded): added the
+  `SyncDropdown/mini` component (the two-row bar's borderless miniature).
+- `figma/sync-borderless.js` — one-off (2026-09-27): makes `SyncDropdown`
+  itself the one borderless 66 px form (chrome and chevron gone, the fields
+  at 4 / 20 / 36 / 52) and, with `window.__omSyncFinish = true`, deletes
+  `SyncDropdown/mini` once no instance uses it.
 - `figma/settings-cog.js` — one-off (2026-09-26): gives every screen's footer
   its settings cog, a copy of the keys IconButton 32 px to its left with the
   cog swapped in (Light frames keep their overrides); idempotent.

@@ -213,7 +213,10 @@ protected:
         glyph.setPixelSize(ui::fontPx(kCommitGlyph));
         p.setFont(glyph);
         p.setPen(t->accent());
-        p.drawText(sq, Qt::AlignCenter, ui::icon(ui::kCommit, QStringLiteral("C")).trimmed());
+        // Centred by its ink, as the kit's buttons do: a Nerd Font glyph's
+        // ink need not sit in the middle of the advance the style centres.
+        const QString commit = ui::icon(ui::kCommit, QStringLiteral("C")).trimmed();
+        p.drawText(QRectF(sq).center() - ui::inkRect(glyph, commit).center(), commit);
 
         if (m_count > 0)
             paintCornerBadge(&p, badge(), t->accent(), QString::number(m_count));

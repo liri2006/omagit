@@ -700,7 +700,7 @@ protected:
         const QRect button(m_button->mapToGlobal(QPoint(0, 0)), m_button->size());
         QPoint pos = menu->pos();
         if (m_bar && pos.y() >= button.y() + button.height())
-            pos.setY(popupTop(m_bar));
+            pos.setY(popupTop(m_bar, m_button));
         if (pos.x() + menu->width() > area.x() + area.width())
             pos.setX(qMax(area.x(), area.x() + area.width() - windowMargin(window) - menu->width()));
         // Upwards, 4 over the button (screens.js: the OptionsMenu card).
@@ -776,10 +776,13 @@ void keepSubmenuInWindow(QMenu *submenu, QWidget *inWindow)
     new SubmenuInWindow(submenu, inWindow);
 }
 
-int popupTop(const QWidget *bar)
+int popupTop(const QWidget *bar, const QWidget *anchor)
 {
     const QVariant edge = bar->property(kPopupEdgeProperty);
-    return bar->mapToGlobal(QPoint(0, edge.isValid() ? edge.toInt() : bar->height())).y() + space(gap::cluster);
+    int y = edge.isValid() ? edge.toInt() : bar->height();
+    if (anchor && bar->isAncestorOf(anchor) && anchor->mapTo(bar, QPoint(0, anchor->height())).y() > y)
+        y = bar->height();
+    return bar->mapToGlobal(QPoint(0, y)).y() + space(gap::cluster);
 }
 
 void setPopupEdge(QWidget *bar, int y)

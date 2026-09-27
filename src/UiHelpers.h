@@ -286,8 +286,10 @@ void keepSubmenuInWindow(QMenu *submenu, QWidget *inWindow);
 // under the edge the bar published with setPopupEdge() when it did. The
 // stacked bar publishes its first row's bottom edge while its tabs take a row
 // of their own, so the menus hang over the tabs (menuY = BAR + BOX.control +
-// 4). The edge is a dynamic property of the bar, so this knows no TopBar.
-int popupTop(const QWidget *bar);
+// 4) — all but the menu of an `anchor` standing below that edge (More, at
+// the end of the tabs' row), which hangs under the whole bar. The edge is a
+// dynamic property of the bar, so this knows no TopBar.
+int popupTop(const QWidget *bar, const QWidget *anchor = nullptr);
 // The edge popupTop() hangs `bar`'s popups from, in the bar's coordinates;
 // a negative `y` takes it back, and the bar's bottom edge counts again.
 void setPopupEdge(QWidget *bar, int y);

@@ -143,11 +143,11 @@ history with a branch graph, and can plug into the Nautilus context menu as
   count is what the changes list shows, whichever tab is on), and Pull, Push, Fetch, Merge
   with the two layout toggles on the right. A narrower window folds it in order: the sync
   labels give way to icons, then Fetch and Merge move into a *more* menu (which wears an
-  accent dot while what it holds carries a count), then the repository label gives way to a
-  bare folder icon, then the tab labels to their glyphs, then the last two sync buttons
-  follow into the menu, and only when nothing else is left does the branch name elide. The
-  tabs keep 16 px clear of both groups, and the repository chip and the toggles are never
-  hidden. Refresh is the small icon at the right of the *CHANGES* row (and next to
+  accent dot while what it holds carries a count), then the tab labels give way to their
+  glyphs, then the last two sync buttons follow into the menu, and only when nothing else is
+  left do the repository and branch names elide, sharing the room evenly (a short name stays
+  whole while the longer one gives way). The repository chip always wears its name, the
+  tabs keep 16 px clear of both groups, and the toggles are never hidden. Refresh is the small icon at the right of the *CHANGES* row (and next to
   *All branches* in History), F5 or Ctrl+Shift+R works everywhere.
 - The *CHANGES* title carries the count (*CHANGES · 5/7*: checked / listed) and the button says
   what it will take (*Commit 5 files*). The box in the table's header checks or unchecks every
@@ -195,19 +195,20 @@ history with a branch graph, and can plug into the Nautilus context menu as
   only: the Docked/Mini choice, the hidden diff pane and the left section's width are left
   as they were and come back as the window widens — the selection, the scroll offsets and
   the place in the diff too. The top bar folds on its own three levels there (tab labels,
-  then glyphs, then the branch name elides): the repository is a bare folder, Pull and Push
-  become one **sync dropdown** carrying both counts (`↓2 ↑1`, the walking dots while one
-  runs, Merge's mark in the corner) whose menu lists Pull, Push, Fetch and Merge…, and the
-  layout toggles hide. **More** is there at every stacked width, and on any row it also
+  then glyphs, then two rows where the names elide): the repository keeps its name, Pull
+  and Push become one borderless **sync dropdown** carrying both counts (`↓2 ↑1`, the
+  walking dots while one runs, Merge's mark in the corner) whose menu lists Pull, Push,
+  Fetch and Merge…, and the layout toggles hide. **More** is there at every stacked width, and on any row it also
   carries Refresh, Open repository…, Clone… and Keybindings after whatever sync buttons are
   folded into it. The commit page's action bar folds too: an **options** `…` at the left
   (Amend last commit, opening upwards) and Commit across the rest of the row. While nobody
   has picked a files view, the list is compact when stacked and the table otherwise,
   without saving either. At the narrowest widths (a 340 px tile), where even the tab glyphs
-  would crowd the branch name, the tabs take a full-width row of their own under the
-  controls and the sync dropdown shrinks to a borderless `↓2 ↑1` without its chevron; the
-  page's CHANGES and MESSAGE header rows fold away too, and their controls lead the More
-  menu on the Changes tab: a **Files view** submenu (Compact list, Tree, Table), Show
+  would crowd the two names, the tabs take a row of their own under the controls, with
+  More at its end (its menu opens under it), and the names on the first row give way only
+  where the sync dropdown at its right would come within 4 px of the branch; the page's
+  CHANGES and MESSAGE header rows fold away too, and their controls lead the More menu on
+  the Changes tab: a **Files view** submenu (Compact list, Tree, Table), Show
   unversioned files, and Agent settings…, which hangs the agent card from More. A shallow
   window (under 560 px tall at the design's text size) folds them the same way at any width,
   and the top bar keeps More for them even where no sync button is folded into it.

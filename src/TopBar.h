@@ -21,21 +21,24 @@ class QVBoxLayout;
 // like the footer's.
 //
 // A narrower window folds the row in steps (foldLevel()): the sync labels go
-// first, then the sync buttons themselves into a "more" menu, then the
-// repository label, then the tab labels, and only when nothing else is left
-// does the branch name elide. The bar owns the controls and their
+// first, then the sync buttons themselves into a "more" menu, with the tab
+// labels in between, and only when nothing else is left do the repository
+// and the branch name elide, sharing what the row has left. Both chips wear
+// their names at every width. The bar owns the controls and their
 // presentation; the window keeps the git side of them.
 //
 // Stacked (setStacked(), the window's narrowest widths) is a presentation of
 // its own: a third tab, Diff, between the two; the four sync buttons give way
 // to one sync dropdown carrying both counts; More is always there; the layout
 // toggles go. It folds in three steps of its own: the tab labels go first;
-// then, where even the glyphs would crowd the branch name, the tabs take a
-// row of their own under the controls, as wide as the row, with their labels
-// back wherever every segment has the room for its own. The bar's height
-// follows its width there (heightForWidth()), its popups hang from the
-// first row (ui::popupTop()), and the sync dropdown is a borderless
-// miniature without its chevron.
+// then, where even the glyphs would crowd the names, the tabs take a row of
+// their own under the controls, as wide as the row but for More at its end,
+// with their labels back wherever every segment has the room for its own;
+// the names elide by what the first row lacks, the sync dropdown at its
+// right edge keeping a cluster from the branch. The bar's height follows its width there
+// (heightForWidth()) and its popups hang from the first row
+// (ui::popupTop()). The sync dropdown is borderless until hovered, without a
+// chevron, at every one of those levels.
 class TopBar : public QWidget
 {
     Q_OBJECT
@@ -96,7 +99,7 @@ public:
     void setMoreKept(bool kept);
     bool isMoreKept() const { return m_moreKept; }
 
-    // 0 spells everything out, 6 is the narrowest form (2 while stacked, the
+    // 0 spells everything out, 5 is the narrowest form (2 while stacked, the
     // tabs on a row of their own); what the current width fits (see the
     // tables in TopBar.cpp), from 1 on while the sync labels are not allowed.
     int foldLevel() const { return m_level; }
@@ -144,14 +147,16 @@ private:
         int fullWidth = 0;
         int iconWidth = 0;
     };
+    // A chip wearing its whole name: glyph + name + chevron.
+    struct Chip {
+        int label = 0;    // the name, on its own, in the chip's font
+        int chrome = 0;   // what the button puts around it
+        int ellipsis = 0; // a lone "…" in that font: the stacked row's floor
+    };
     // What the row measures, in the pixels of the moment.
     struct Metrics {
-        int repoFull = 0;    // folder glyph + name + chevron
-        int repoFolded = 0;  // the bare folder glyph: 8 + 16 + 8
-        int branchFull = 0;
-        int branchLabel = 0;    // the name inside it, on its own
-        int branchChrome = 0;   // and what the button puts around it
-        int branchEllipsis = 0; // a lone "…" in the chip's font: the stacked row's floor
+        Chip repo;
+        Chip branch;
         int more = 0;           // the more button: the design's 28 px square
         int tabsLabels = 0;
         int tabsGlyphs = 0;
@@ -168,23 +173,32 @@ private:
     // worked out for a width: whatever moves a level's width starts them over.
     void invalidateHeight();
     void relayout();
-    // What level `level` comes to with `branchLabelWidth` of the branch name:
+    // What level `level` comes to with `names` of the two names together:
     // on a level with two rows, the first row's width.
-    int totalWidth(int level, int branchLabelWidth) const;
+    int totalWidth(int level, int names) const;
     int rightGroupWidth(int level) const;
-    int minBranchLabel() const;
+    // The least of a name the last level keeps; the whole names, together,
+    // and the least of them.
+    int nameFloor(const Chip &chip) const;
+    int wholeNames() const { return m_metrics.repo.label + m_metrics.branch.label; }
+    int leastNames() const { return nameFloor(m_metrics.repo) + nameFloor(m_metrics.branch); }
     // The level a row `width` wide folds to, and how tall the row is then.
     int levelFor(int width) const;
     int rowsHeight(int width) const;
     // How many levels the presentation of the moment has, and whether its
-    // level `level` elides the branch name, shows the tab labels and puts
-    // the tabs on a row of their own.
+    // level `level` elides the names, shows the tab labels and puts the tabs
+    // on a row of their own.
     int levelCount() const;
     bool elides(int level) const;
     bool tabLabels(int level) const;
     bool twoRows(int level) const;
-    void apply(int level, int branchLabelWidth);
-    void place(int level, int branchLabelWidth);
+    // The tabs on a row of their own, `rowWidth` wide: all of it but an item
+    // gap and More at its end.
+    int ownTabsWidth(int rowWidth) const;
+    // With `repoLabel` of the repository's name and `branchLabel` of the
+    // branch's, the whole names or less.
+    void apply(int level, int repoLabel, int branchLabel);
+    void place(int level, int repoLabel, int branchLabel);
     void placeTabs(int leftEnd, int rightStart, int level);
     void updateMoreMark();
     void fillMoreMenu();

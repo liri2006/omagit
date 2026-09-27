@@ -20,6 +20,8 @@
 #include <QtMath>
 
 #include <functional>
+#include <tuple>
+#include <utility>
 
 using namespace ui;
 
@@ -33,53 +35,84 @@ namespace {
 // either group. A button's badge rises 4 over its top edge, which the 8 above
 // the row keeps inside the bar: the badge layer covering the bar paints it
 // unclipped. Sizes the design gives the bar alone:
-// A glyph-only button measured without a width (kit.js measureButton()): the
-// bare folder chip, and a sync button in its icon form — 8 + 16 + 8.
+// A glyph-only button measured without a width (kit.js measureButton()): a
+// sync button in its icon form — 8 + 16 + 8.
 constexpr int kBareButton = pad::control + box::icon + pad::control;
-constexpr int kBranchFloor = 72;  // the least of the branch name the ordinary row's last level keeps
+constexpr int kNameFloor = 72;  // the least of either name the ordinary row's last level keeps
 constexpr int kSyncMenuWidth = 260, kMoreMenuWidth = 240; // screens.js: the SyncMenu and MoreMenu cards
 
 // How the row folds, from everything spelled out to the narrowest form. The
 // first level that fits the width wins; level 0 only in a wide window
-// (setSyncLabels()).
+// (setSyncLabels()). The repository and the branch chip wear their names at
+// every level, whole until the last one elides them (shareRoom()):
 //
-//   0  repo label   tab labels   Pull Push Fetch Merge, labelled
-//   1  repo label   tab labels   the four as icons
-//   2  repo label   tab labels   Pull, Push; Fetch and Merge in the more menu
-//   3  folder       tab labels   as 2
-//   4  folder       tab glyphs   as 2
-//   5  folder       tab glyphs   all four in the more menu
-//   6  folder       tab glyphs   all four in the more menu; the branch elides
+//   0  tab labels   Pull Push Fetch Merge, labelled
+//   1  tab labels   the four as icons
+//   2  tab labels   Pull, Push; Fetch and Merge in the more menu
+//   3  tab glyphs   as 2
+//   4  tab glyphs   all four in the more menu
+//   5  tab glyphs   all four in the more menu; the names elide
 //
 // More stands after the sync buttons from level 2 on, and at every level
 // while the window keeps it there (setMoreKept()).
 struct Fold {
-    bool repoLabel;
     bool tabLabels;
     bool syncLabels;
     int syncShown; // how many sync buttons stay out of the menu, counted from Pull
-    bool branchElides;
+    bool namesElide;
 };
 constexpr Fold kFolds[] = {
-    {true, true, true, 4, false},   {true, true, false, 4, false}, {true, true, false, 2, false},
-    {false, true, false, 2, false}, {false, false, false, 2, false}, {false, false, false, 0, false},
-    {false, false, false, 0, true},
+    {true, true, 4, false},  {true, false, 4, false},  {true, false, 2, false},
+    {false, false, 2, false}, {false, false, 0, false}, {false, false, 0, true},
 };
 constexpr int kFoldCount = int(sizeof(kFolds) / sizeof(kFolds[0]));
 
-// Stacked, the row has three levels of its own. The repository is the bare
-// folder at every one of them and the right group is the sync dropdown and
-// More, so only the tabs and the branch name are left to fold. The branch
-// keeps its whole name on one row; the first level whose row fits wins:
+// Stacked, the row has three levels of its own. The right group is the sync
+// dropdown and More, so only the tabs and the two names are left to fold.
+// The names stay whole on one row; the first level whose row fits wins:
 //
 //   0  tab labels, one row
 //   1  tab glyphs, one row
-//   2  two rows (screens.js topBar(), extra narrow): the controls, then a
-//      space(kBar) gap and the tabs alone, stretched over the row's width,
-//      labelled while the widest labelled segment fits floor(width / n)
-//      and glyphs otherwise; the branch elides by what the first row lacks,
-//      down to a lone ellipsis if it has to
+//   2  two rows (screens.js topBar(), extra narrow): the repository and the
+//      branch a cluster apart, the sync dropdown against the right edge and
+//      at least a cluster after the branch, then a
+//      space(kBar) gap and the tabs stretched over the row's width but for
+//      an item gap and More at its end, labelled while the widest labelled
+//      segment fits floor(tabs' width / n) and glyphs otherwise; the names
+//      elide by what the first row lacks, down to a lone ellipsis each if
+//      they have to
 constexpr int kStackedFoldCount = 3;
+
+// Two names sharing `room` as evenly as their lengths let them: the shorter
+// one stays whole while the longer one keeps at least as much of itself, and
+// neither goes under its floor. Every pixel of the room is handed out, so an
+// eliding row ends exactly where it has to.
+std::pair<int, int> shareRoom(int room, int a, int floorA, int b, int floorB)
+{
+    if (a + b <= room)
+        return {a, b};
+    // What each takes under a common cap; the largest cap that fits.
+    const auto take = [](int cap, int floor, int natural) { return qBound(floor, cap, natural); };
+    const auto sum = [&](int cap) { return take(cap, floorA, a) + take(cap, floorB, b); };
+    int lo = 0, hi = qMax(a, b);
+    while (lo < hi) {
+        const int mid = (lo + hi + 1) / 2;
+        if (sum(mid) <= room)
+            lo = mid;
+        else
+            hi = mid - 1;
+    }
+    int x = take(lo, floorA, a), y = take(lo, floorB, b);
+    // A cap one higher overshoots by a pixel at most: the one pixel left
+    // goes to whichever of the two it would have grown.
+    if (x + y < room) {
+        if (take(lo + 1, floorA, a) > x)
+            ++x;
+        else
+            ++y;
+    }
+    return {x, y};
+}
 
 // What a control takes sideways, its fixed width included: the layout toggles
 // are as wide as ui::iconButton() made them, whatever their glyph measures.
@@ -103,6 +136,12 @@ void setTextOnce(QToolButton *b, const QString &text)
 {
     if (b->text() != text)
         b->setText(text);
+}
+
+// `name` in `width` of the chip's font, or whole when that is its own width.
+QString elided(const QToolButton *chip, const QString &name, int natural, int width)
+{
+    return width < natural ? chip->fontMetrics().elidedText(name, Qt::ElideRight, width) : name;
 }
 
 // The controls' row. The tabs follow the window's centre rather than a
@@ -129,21 +168,20 @@ private:
     std::function<int(int)> m_heightForWidth;
 };
 
-// The dropdown's inline content (screens.js syncDropdown()): [8][↓ 16][4]
-// [count in 8][8][↑ 16][4][count in 8][4][chevron 12][8], 96 wide. A count's
-// 8 is the least it gets: a wider one pushes whatever follows it along.
-// On two rows it is a borderless miniature of itself: [4][↓ 16][count in 8]
-// [8][↑ 16][count in 8][4], 64 wide, the counts against their arrows' boxes
-// and no chevron.
-constexpr int kSyncDropdown = 96, kSyncMini = 64;
-constexpr int kMiniPad = 4;
+// The dropdown's inline content (screens.js syncDropdown()), borderless until
+// hovered: [4][↓ 16][count in 8][8][↑ 16][count], the counts against their
+// arrows' boxes and no chevron. A count's 8 is the least it gets: a wider one
+// pushes whatever follows it along. The room after Push's count is the room
+// before the down arrow's ink, measured by ink on both sides, so the hover
+// frame sits evenly around what it holds.
+constexpr int kSyncPad = 4;
 constexpr int kCountSlot = 8;
 constexpr int kBusyStepMs = 350; // BadgeButton's walking dots, at their cadence
 
-// Pull and Push in one control for the stacked row: ↓2 ↑1 and a chevron,
-// painted over the base button's chrome, and a menu with the four actions.
-// It keeps no state of its own: the counts, the busy state and Merge's mark
-// are read off the buttons it stands for whenever they change.
+// Pull and Push in one control for the stacked row, ↓2 ↑1 painted over the
+// base button's chrome, and a menu with the four actions. It keeps no state
+// of its own: the counts, the busy state and Merge's mark are read off the
+// buttons it stands for whenever they change.
 class SyncDropdown : public BadgeButton
 {
     Q_OBJECT
@@ -151,6 +189,7 @@ public:
     SyncDropdown(BadgeButton *pull, BadgeButton *push, BadgeButton *merge)
         : m_pull(pull), m_push(push), m_merge(merge)
     {
+        setProperty("ghost", true); // the stylesheet's borderless form
         for (BadgeButton *source : {pull, push})
             connect(source, &BadgeButton::badgeChanged, this, [this] { followSources(); });
         connect(merge, &BadgeButton::badgeChanged, this, [this] { followMark(); });
@@ -164,21 +203,8 @@ public:
         update();
     }
 
-    // The miniature (two rows) or the full form, and the width either of
-    // them wants: the design's, or more when a count needs the room. The bar
-    // weighs its levels against both, whichever is on.
-    void setMini(bool on)
-    {
-        if (m_mini == on)
-            return;
-        m_mini = on;
-        setProperty("ghost", on); // the stylesheet's borderless form
-        style()->unpolish(this);
-        style()->polish(this);
-        update();
-    }
-    bool isMini() const { return m_mini; }
-    int preferredWidth(bool mini) const { return mini ? m_miniWidth : m_preferredWidth; }
+    // The width the content wants, which the bar weighs its levels against.
+    int preferredWidth() const { return m_preferredWidth; }
 
 signals:
     void widthChanged();
@@ -193,25 +219,17 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         const int h = height();
-        // A glyph centred by its ink in its box, as KitButton centres one.
-        const auto glyph = [&](int x, int box, const QFont &font, const QString &text, const QColor &colour) {
-            p.setFont(font);
-            p.setPen(colour);
-            p.drawText(QRectF(x, 0, box, h).center() - inkRect(font, text).center(), text);
+        // An arrow centred by its ink in its box, as KitButton centres a glyph.
+        const auto arrow = [&](int x, const QString &text) {
+            p.setFont(t->uiFont());
+            p.setPen(t->text());
+            p.drawText(QRectF(x, 0, space(box::icon), h).center() - inkRect(t->uiFont(), text).center(), text);
         };
-        const Fields f = fields(m_mini);
-        glyph(f.down, space(box::icon), t->uiFont(), downText(), t->text());
+        const Fields f = fields();
+        arrow(f.down, downText());
         paintCount(&p, f.pull, m_pull);
-        glyph(f.up, space(box::icon), t->uiFont(), upText(), t->text());
+        arrow(f.up, upText());
         paintCount(&p, f.push, m_push);
-        if (m_mini)
-            return;
-        // The chevron as KitButton draws its own: at 12/16 of the glyphs' size.
-        QFont small = t->uiFont();
-        small.setPixelSize(qMax(1, qRound(small.pixelSize() * box::chevron / double(box::icon))));
-        QColor dim = t->text();
-        dim.setAlphaF(0.7);
-        glyph(f.chevron, space(box::chevron), small, chevronText(), dim);
     }
 
     void timerEvent(QTimerEvent *event) override
@@ -225,14 +243,13 @@ protected:
     }
 
 private:
-    // Where the fields start, and where the content ends.
+    // Where the fields start.
     struct Fields {
-        int down, pull, up, push, chevron, end;
+        int down, pull, up, push;
     };
 
     static QString downText() { return ui::icon(kArrowDown, QStringLiteral("↓")).trimmed(); }
     static QString upText() { return ui::icon(kArrowUp, QStringLiteral("↑")).trimmed(); }
-    static QString chevronText() { return chevron().trimmed(); }
 
     // Two digits and 99+ past them (the menu spells the number out).
     static QString countText(int n) { return n > 99 ? QStringLiteral("99+") : QString::number(n); }
@@ -244,6 +261,10 @@ private:
         return font;
     }
 
+    // The walking dots: three a quarter of their 16 px box apart.
+    static qreal dotRadius() { return 1.5 * OmarchyTheme::instance()->fontBase() / 12.0; }
+    static qreal dotStep() { return space(box::icon) / 4.0; }
+
     // A side's field: its count in the bold font, whichever font paints it,
     // at least the design's slot, or the walking dots' box while it is busy.
     static int countWidth(const BadgeButton *source)
@@ -253,33 +274,37 @@ private:
         return qMax(space(kCountSlot), QFontMetrics(countFont(true)).horizontalAdvance(countText(source->count())));
     }
 
-    Fields fields(bool mini) const
+    // Where a side's ink ends, from the start of its field: the count's in
+    // the font it is painted in, or the last dot's edge.
+    static qreal countInkEnd(const BadgeButton *source)
+    {
+        if (source->isBusy())
+            return 3 * dotStep() + dotRadius();
+        const int n = source->count();
+        return inkRect(countFont(n > 0), countText(n)).right();
+    }
+
+    Fields fields() const
     {
         Fields f;
-        f.down = space(mini ? kMiniPad : pad::control);
-        f.pull = f.down + space(box::icon) + (mini ? 0 : space(gap::icon));
+        f.down = space(kSyncPad);
+        f.pull = f.down + space(box::icon);
         f.up = f.pull + countWidth(m_pull) + space(gap::item);
-        f.push = f.up + space(box::icon) + (mini ? 0 : space(gap::icon));
-        if (mini) {
-            f.chevron = f.end = f.push + countWidth(m_push);
-            return f;
-        }
-        f.chevron = f.push + countWidth(m_push) + space(gap::icon);
-        f.end = f.chevron + space(box::chevron);
+        f.push = f.up + space(box::icon);
         return f;
     }
 
     // Recomputed whenever a count, a busy state, the mark or the theme
-    // changes; the bar relays itself out when an answer does. Merge's mark
-    // hangs over the corner like a badge, clear of the chevron's box.
+    // changes; the bar relays itself out when the answer does. The room
+    // before the down arrow's ink, again after Push's.
     void updateWidth()
     {
-        const int full = qMax(space(kSyncDropdown), fields(false).end + space(pad::control));
-        const int mini = qMax(space(kSyncMini), fields(true).end + space(kMiniPad));
-        if (full == m_preferredWidth && mini == m_miniWidth)
+        const QFont font = OmarchyTheme::instance()->uiFont();
+        const qreal lead = space(kSyncPad) + (space(box::icon) - inkRect(font, downText()).width()) / 2;
+        const int width = qRound(fields().push + countInkEnd(m_push) + lead);
+        if (width == m_preferredWidth)
             return;
-        m_preferredWidth = full;
-        m_miniWidth = mini;
+        m_preferredWidth = width;
         emit widthChanged();
     }
 
@@ -304,14 +329,13 @@ private:
         updateWidth();
     }
 
-    // A side's count, or the walking dots while it is busy (three 3 px dots
-    // a quarter of their 16 px box apart), each in a box of its own advance so
-    // nothing it paints reaches the next field.
+    // A side's count, or the walking dots while it is busy, each in a box of
+    // its own advance so nothing it paints reaches the next field.
     void paintCount(QPainter *p, int x, const BadgeButton *source) const
     {
         const OmarchyTheme *t = OmarchyTheme::instance();
         if (source->isBusy()) {
-            const qreal r = 1.5 * t->fontBase() / 12.0, step = space(box::icon) / 4.0;
+            const qreal r = dotRadius(), step = dotStep();
             const qreal y = height() / 2.0;
             p->setPen(Qt::NoPen);
             for (int i = 0; i < 3; ++i) {
@@ -335,20 +359,13 @@ private:
     int m_busyTimer = 0;
     int m_busyPhase = 0;
     int m_preferredWidth = 0;
-    int m_miniWidth = 0;
-    bool m_mini = false;
 };
 
-// The bar keeps the dropdown as its base class; these are the places that
-// ask it for more.
-int dropdownWidth(const BadgeButton *dropdown, bool mini)
+// The bar keeps the dropdown as its base class; this is the place that asks
+// it for more.
+int dropdownWidth(const BadgeButton *dropdown)
 {
-    return static_cast<const SyncDropdown *>(dropdown)->preferredWidth(mini);
-}
-
-void setDropdownMini(BadgeButton *dropdown, bool mini)
-{
-    static_cast<SyncDropdown *>(dropdown)->setMini(mini);
+    return static_cast<const SyncDropdown *>(dropdown)->preferredWidth();
 }
 
 } // namespace
@@ -641,21 +658,23 @@ void TopBar::measure()
 {
     m_metrics = Metrics();
 
-    m_probeRepo->ensurePolished();
-    setTextOnce(m_probeRepo, icon(kFolderOpen) + m_repositoryName + chevron());
-    m_metrics.repoFull = m_probeRepo->sizeHint().width();
-    m_metrics.repoFolded = space(kBareButton);
-
-    m_probeBranch->ensurePolished();
-    setTextOnce(m_probeBranch, icon(kBranch) + m_branchLabel + chevron());
-    m_metrics.branchFull = m_probeBranch->sizeHint().width();
-    // The name alone, in the font the stylesheet gives the chip: what is left
-    // of the button is the glyph, the chevron and the padding around them.
-    m_metrics.branchLabel = qCeil(QFontMetricsF(m_probeBranch->font()).horizontalAdvance(m_branchLabel));
-    m_metrics.branchChrome = m_metrics.branchFull - m_metrics.branchLabel;
-    // A lone ellipsis, rounded up: elidedText() gives nothing at all in a
-    // width a fraction short of it.
-    m_metrics.branchEllipsis = qCeil(QFontMetricsF(m_probeBranch->font()).horizontalAdvance(QChar(0x2026)));
+    const auto chip = [](QToolButton *probe, uint glyph, const QString &name) {
+        probe->ensurePolished();
+        setTextOnce(probe, icon(glyph) + name + chevron());
+        // The name alone, in the font the stylesheet gives the chip (the
+        // branch's is bold): what is left of the button is the glyph, the
+        // chevron and the padding around them.
+        const QFontMetricsF metrics(probe->font());
+        Chip c;
+        c.label = qCeil(metrics.horizontalAdvance(name));
+        c.chrome = probe->sizeHint().width() - c.label;
+        // A lone ellipsis, rounded up: elidedText() gives nothing at all in a
+        // width a fraction short of it.
+        c.ellipsis = qCeil(metrics.horizontalAdvance(QChar(0x2026)));
+        return c;
+    };
+    m_metrics.repo = chip(m_probeRepo, kFolderOpen, m_repositoryName);
+    m_metrics.branch = chip(m_probeBranch, kBranch, m_branchLabel);
 
     // A probe wears no iconForm property, so it measures the labelled form.
     for (SyncControl &c : m_syncControls) {
@@ -703,7 +722,7 @@ int TopBar::levelCount() const
 
 bool TopBar::elides(int level) const
 {
-    return m_stacked ? level == kStackedFoldCount - 1 : kFolds[level].branchElides;
+    return m_stacked ? level == kStackedFoldCount - 1 : kFolds[level].namesElide;
 }
 
 // Two rows: each segment gets floor(width / n) of the second, and the labels
@@ -712,8 +731,13 @@ bool TopBar::elides(int level) const
 bool TopBar::tabLabels(int level) const
 {
     if (twoRows(level))
-        return m_metrics.tabLabelled <= m_row->width() / qMax(1, m_metrics.tabSegments);
+        return m_metrics.tabLabelled <= ownTabsWidth(m_row->width()) / qMax(1, m_metrics.tabSegments);
     return m_stacked ? level == 0 : kFolds[level].tabLabels;
+}
+
+int TopBar::ownTabsWidth(int rowWidth) const
+{
+    return rowWidth - space(gap::item) - m_metrics.more;
 }
 
 bool TopBar::twoRows(int level) const
@@ -723,10 +747,11 @@ bool TopBar::twoRows(int level) const
 
 int TopBar::rightGroupWidth(int level) const
 {
-    // Stacked: the dropdown and More, whatever the level; More is the bare
-    // square there, as nothing folds into it that could hang a badge on it.
+    // Stacked: the dropdown and More, More the bare square, as nothing folds
+    // into it that could hang a badge on it; on two rows More ends the
+    // tabs' row, and the first row's right group is the dropdown alone.
     if (m_stacked)
-        return dropdownWidth(m_syncDropdown, twoRows(level)) + space(gap::item) + m_metrics.more;
+        return dropdownWidth(m_syncDropdown) + (twoRows(level) ? 0 : space(gap::item) + m_metrics.more);
     const Fold &fold = kFolds[level];
     int w = 0;
     for (int i = 0; i < m_syncControls.size(); ++i) {
@@ -740,23 +765,23 @@ int TopBar::rightGroupWidth(int level) const
     return w - space(gap::item) + m_metrics.divider + m_metrics.toggles;
 }
 
-int TopBar::totalWidth(int level, int branchLabelWidth) const
+int TopBar::totalWidth(int level, int names) const
 {
-    const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
-    const int left = (repoLabel ? m_metrics.repoFull : m_metrics.repoFolded) + space(gap::cluster)
-        + m_metrics.branchChrome + branchLabelWidth;
+    const int left = m_metrics.repo.chrome + space(gap::cluster) + m_metrics.branch.chrome + names;
+    // On two rows the dropdown keeps no more than a cluster from the branch,
+    // as the branch does from the repository, before the names give way.
     if (twoRows(level))
-        return left + space(gap::group) + rightGroupWidth(level);
+        return left + space(gap::cluster) + rightGroupWidth(level);
     const int tabs = tabLabels(level) ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
     return left + space(gap::group) + tabs + space(gap::group) + rightGroupWidth(level);
 }
 
-// The last level keeps this much of the branch name, and no less. Stacked,
-// that is a lone ellipsis, so the bar never forces a width on a narrow tile;
-// an elided text narrower than the ellipsis would be no text at all.
-int TopBar::minBranchLabel() const
+// The last level keeps this much of a name, and no less. Stacked, that is a
+// lone ellipsis, so the bar never forces a width on a narrow tile; an elided
+// text narrower than the ellipsis would be no text at all.
+int TopBar::nameFloor(const Chip &chip) const
 {
-    return qMin(m_metrics.branchLabel, m_stacked ? m_metrics.branchEllipsis : space(kBranchFloor));
+    return qMin(chip.label, m_stacked ? chip.ellipsis : space(kNameFloor));
 }
 
 // The height: the room above the row, which the badges rise into, the row,
@@ -765,19 +790,19 @@ int TopBar::minBranchLabel() const
 // row's and the window's side margins.
 QSize TopBar::sizeHint() const
 {
-    return QSize(totalWidth(0, m_metrics.branchLabel) + 2 * space(m_density.margin),
+    return QSize(totalWidth(0, wholeNames()) + 2 * space(m_density.margin),
                  space(kBar) + m_metrics.height + space(kBar));
 }
 
-// Never wider than the last level at its shortest branch name, nor, on two
-// rows, than the tabs as glyphs: the bar folds instead of forcing a width on
-// the window.
+// Never wider than the last level at its shortest names, nor, on two rows,
+// than the tabs as glyphs and More: the bar folds instead of forcing a width
+// on the window.
 QSize TopBar::minimumSizeHint() const
 {
     const int last = levelCount() - 1;
-    int width = totalWidth(last, minBranchLabel());
+    int width = totalWidth(last, leastNames());
     if (twoRows(last))
-        width = qMax(width, m_metrics.tabsGlyphs);
+        width = qMax(width, m_metrics.tabsGlyphs + space(gap::item) + m_metrics.more);
     return QSize(width + 2 * space(m_density.margin), space(kBar) + m_metrics.height + space(kBar));
 }
 
@@ -788,14 +813,14 @@ void TopBar::resizeEvent(QResizeEvent *event)
     relayout();
 }
 
-// The first level that fits, with the whole branch name; the last otherwise.
+// The first level that fits, with the whole names; the last otherwise.
 int TopBar::levelFor(int width) const
 {
     const int count = levelCount();
     // Level 0 is the only one wearing the sync labels; stacked, there are none.
     const int first = !m_stacked && !m_syncLabels ? 1 : 0;
     for (int i = first; i < count - 1; ++i) {
-        if (totalWidth(i, m_metrics.branchLabel) <= width)
+        if (totalWidth(i, wholeNames()) <= width)
             return i;
     }
     return count - 1;
@@ -813,11 +838,13 @@ void TopBar::relayout()
     const int width = m_row->width();
     m_level = levelFor(width);
     // Only the last level elides, and only by as much as it has to.
-    int label = m_metrics.branchLabel;
+    const Chip &repo = m_metrics.repo, &branch = m_metrics.branch;
+    int repoLabel = repo.label, branchLabel = branch.label;
     if (elides(m_level))
-        label = qBound(minBranchLabel(), width - totalWidth(m_level, 0), m_metrics.branchLabel);
-    apply(m_level, label);
-    place(m_level, label);
+        std::tie(repoLabel, branchLabel) = shareRoom(width - totalWidth(m_level, 0), repo.label, nameFloor(repo),
+                                                     branch.label, nameFloor(branch));
+    apply(m_level, repoLabel, branchLabel);
+    place(m_level, repoLabel, branchLabel);
     // On two rows the popups hang from the first, over the tabs.
     setPopupEdge(this, twoRows(m_level) ? m_row->y() + m_metrics.height : -1);
     m_badges->update(); // the buttons may have moved without a badge changing
@@ -829,15 +856,12 @@ void TopBar::relayout()
 
 // The presentation of every control at `level`, the displayed text included:
 // measuring and applying stay apart, so no candidate text reaches the screen.
-void TopBar::apply(int level, int branchLabelWidth)
+void TopBar::apply(int level, int repoLabel, int branchLabel)
 {
-    const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
-    setTextOnce(m_repoButton, repoLabel ? icon(kFolderOpen) + m_repositoryName + chevron()
-                                        : icon(kFolderOpen, tr("…")).trimmed());
-    const QString label = branchLabelWidth < m_metrics.branchLabel
-        ? m_branchButton->fontMetrics().elidedText(m_branchLabel, Qt::ElideRight, branchLabelWidth)
-        : m_branchLabel;
-    setTextOnce(m_branchButton, icon(kBranch) + label + chevron());
+    setTextOnce(m_repoButton,
+                icon(kFolderOpen) + elided(m_repoButton, m_repositoryName, m_metrics.repo.label, repoLabel) + chevron());
+    setTextOnce(m_branchButton,
+                icon(kBranch) + elided(m_branchButton, m_branchLabel, m_metrics.branch.label, branchLabel) + chevron());
 
     // Stacked, all four belong to the dropdown: none of them is folded into
     // More, which is there anyway for its own entries. More is the design's
@@ -850,7 +874,6 @@ void TopBar::apply(int level, int branchLabelWidth)
         for (const SyncControl &c : std::as_const(m_syncControls))
             c.button->setVisible(false);
         m_more->setVisible(true);
-        setDropdownMini(m_syncDropdown, twoRows(level));
         m_syncDropdown->setVisible(true);
         m_divider->setVisible(false);
         m_layoutButton->setVisible(false);
@@ -875,21 +898,21 @@ void TopBar::apply(int level, int branchLabelWidth)
         tab->setLabelled(tabLabels(level));
 }
 
-void TopBar::place(int level, int branchLabelWidth)
+void TopBar::place(int level, int repoLabel, int branchLabel)
 {
-    // The controls are centred in the first row, however many the row holds.
+    // The controls are centred in their row: the first, or on two rows More
+    // in the second.
     const int height = m_metrics.height, width = m_row->width();
-    const auto put = [height](QWidget *w, int x, int width) {
+    const auto put = [height](QWidget *w, int x, int width, int top = 0) {
         const int h = qMin(height, w->sizeHint().height());
-        w->setGeometry(x, (height - h) / 2, width, h);
+        w->setGeometry(x, top + (height - h) / 2, width, h);
         w->show();
     };
 
-    const bool repoLabel = !m_stacked && kFolds[level].repoLabel;
-    int x = 0;
-    put(m_repoButton, x, repoLabel ? m_metrics.repoFull : m_metrics.repoFolded);
-    x += (repoLabel ? m_metrics.repoFull : m_metrics.repoFolded) + space(gap::cluster);
-    const int branch = m_metrics.branchChrome + branchLabelWidth;
+    const int repo = m_metrics.repo.chrome + repoLabel;
+    put(m_repoButton, 0, repo);
+    int x = repo + space(gap::cluster);
+    const int branch = m_metrics.branch.chrome + branchLabel;
     put(m_branchButton, x, branch);
     const int leftEnd = x + branch;
 
@@ -899,16 +922,20 @@ void TopBar::place(int level, int branchLabelWidth)
     // right edge by space(4), into the gap after it, which always lands inside
     // the row: the ordinary row ends with the toggles, which carry none, and
     // the stacked one with More, which carries none there either (nothing is
-    // folded into it, so updateMoreMark() leaves it bare).
+    // folded into it, so updateMoreMark() leaves it bare). On two rows More
+    // ends the tabs' row instead, and the dropdown alone ends the first.
     x = width - rightGroupWidth(level);
     const int rightStart = x;
     if (m_stacked) {
         // As tall as the first row: the design's dropdown is its height.
-        const int dropdown = dropdownWidth(m_syncDropdown, twoRows(level));
+        const int dropdown = dropdownWidth(m_syncDropdown);
+        const bool own = twoRows(level);
         m_syncDropdown->setGeometry(x, 0, dropdown, height);
         m_syncDropdown->show();
-        x += dropdown + space(gap::item);
-        put(m_more, x, m_metrics.more);
+        if (own)
+            put(m_more, width - m_metrics.more, m_metrics.more, height + space(kBar));
+        else
+            put(m_more, x + dropdown + space(gap::item), m_metrics.more);
         placeTabs(leftEnd, rightStart, level);
         return;
     }
@@ -941,7 +968,7 @@ void TopBar::place(int level, int branchLabelWidth)
 
 // The tabs sit in the middle of the whole bar, nudged aside as far as they
 // have to be to keep clear of either group; on two rows they are the second
-// one, its segments sharing the row's whole width.
+// one, their segments sharing the row's width but for More at its end.
 void TopBar::placeTabs(int leftEnd, int rightStart, int level)
 {
     const int height = m_metrics.height, width = m_row->width();
@@ -949,7 +976,7 @@ void TopBar::placeTabs(int leftEnd, int rightStart, int level)
     if (m_tabs->isStretch() != own)
         m_tabs->setStretch(own);
     if (own) {
-        m_tabs->setGeometry(0, height + space(kBar), width, height);
+        m_tabs->setGeometry(0, height + space(kBar), ownTabsWidth(width), height);
     } else {
         const int tabs = tabLabels(level) ? m_metrics.tabsLabels : m_metrics.tabsGlyphs;
         const int low = leftEnd + space(gap::group), high = rightStart - space(gap::group) - tabs;

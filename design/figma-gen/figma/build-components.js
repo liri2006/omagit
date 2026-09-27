@@ -195,27 +195,16 @@
   const pillSet = figma.combineAsVariants(Object.keys(PILL).map(s => { const f = hbox('status=' + s, { h: 16, px: 0, gap: 0 }); f.primaryAxisSizingMode = 'FIXED'; f.resize(16, 16); om.chrome(f, { fillRole: PILL[s], fo: .18, so: 0 }); f.appendChild(om.textNode(s, 'Caption 10/Bold', PILL[s])); return done(f); }), cframe);
   pillSet.name = 'StatusPill'; setLayout(pillSet);
 
-  // ---- SyncDropdown: [8][↓ 16][4][2][8][↑ 16][4][1][4][chevron 12][8] (screens.js syncDropdown)
-  const sd = mkFrame('SyncDropdown', 96, 28); sd.layoutMode = 'HORIZONTAL'; sd.primaryAxisSizingMode = 'FIXED'; sd.counterAxisSizingMode = 'FIXED'; sd.resize(96, 28); om.chrome(sd, { fo: .04, so: .4 });
-  const put = (n, x, y) => { sd.appendChild(n); absolute(n, 'MIN', 'MIN'); n.x = x; n.y = y; };
-  put(icon('down', 16, 'Icon down'), 8, 6);
-  const behind = om.textNode('2', 'Body 12/Bold', 'Accent', 1, 'Behind'); put(behind, 28, 14 - behind.height / 2);
-  put(icon('up', 16, 'Icon up'), 44, 6);
-  const ahead = om.textNode('1', 'Body 12/Bold', 'Accent', 1, 'Ahead'); put(ahead, 64, 14 - ahead.height / 2);
-  const sdc = icon('chevron', 12, 'Chevron'); put(sdc, 76, 8); sdc.opacity = 0.7;
-  const syncComp = done(sd); cframe.appendChild(syncComp);
+  // ---- SyncDropdown: borderless, no chevron, [4][↓ 16][2][8][↑ 16][1][6], 66 wide (screens.js syncDropdown)
+  const sd = mkFrame('SyncDropdown', 66, 28);
+  const put = (n, x, y) => { sd.appendChild(n); n.x = x; n.y = y; };
+  put(icon('down', 16, 'Icon down'), 4, 6);
+  const behind = om.textNode('2', 'Body 12/Bold', 'Accent', 1, 'Behind'); put(behind, 20, 14 - behind.height / 2);
+  put(icon('up', 16, 'Icon up'), 36, 6);
+  const ahead = om.textNode('1', 'Body 12/Bold', 'Accent', 1, 'Ahead'); put(ahead, 52, 14 - ahead.height / 2);
+  const syncComp = figma.createComponentFromNode(sd); cframe.appendChild(syncComp);
   om.child(syncComp, 'Behind').componentPropertyReferences = { characters: syncComp.addComponentProperty('Behind', 'TEXT', '2') };
   om.child(syncComp, 'Ahead').componentPropertyReferences = { characters: syncComp.addComponentProperty('Ahead', 'TEXT', '1') };
-  // its two-row miniature: no chrome, no chevron, [4][↓ 16][2][8][↑ 16][1][4] (screens.js syncDropdown(…, mini))
-  const sm = mkFrame('SyncDropdown/mini', 64, 28);
-  const putMini = (n, x, y) => { sm.appendChild(n); n.x = x; n.y = y; };
-  putMini(icon('down', 16, 'Icon down'), 4, 6);
-  const mBehind = om.textNode('2', 'Body 12/Bold', 'Accent', 1, 'Behind'); putMini(mBehind, 20, 14 - mBehind.height / 2);
-  putMini(icon('up', 16, 'Icon up'), 36, 6);
-  const mAhead = om.textNode('1', 'Body 12/Bold', 'Accent', 1, 'Ahead'); putMini(mAhead, 52, 14 - mAhead.height / 2);
-  const syncMini = figma.createComponentFromNode(sm); cframe.appendChild(syncMini);
-  om.child(syncMini, 'Behind').componentPropertyReferences = { characters: syncMini.addComponentProperty('Behind', 'TEXT', '2') };
-  om.child(syncMini, 'Ahead').componentPropertyReferences = { characters: syncMini.addComponentProperty('Ahead', 'TEXT', '1') };
 
   // ---- SectionLabel
   const sl = hbox('SectionLabel', { h: 16, px: 0, gap: 0 }); // a 16 px text line, the caption centred
@@ -229,7 +218,7 @@
   const oldCaptions = captions.children.filter(n => !isPatternCaption(n));
   const dimText = cframe.findOne(n => n.name === 'DimText' && n.type === 'COMPONENT');
   const rows = [
-    ['Button · variant × state · props: Label, Icon, Show icon / label / chevron / badge / mark · Chip/branch · Chip/repo · Badge · SyncDropdown (+ /mini) · IconButton (variant ghost / default, state, size 24 / 28, Icon)', [buttonSet, chipBranch, chipRepo, badgeComp, syncComp, syncMini, iconButtonSet]],
+    ['Button · variant × state · props: Label, Icon, Show icon / label / chevron / badge / mark · Chip/branch · Chip/repo · Badge · SyncDropdown · IconButton (variant ghost / default, state, size 24 / 28, Icon)', [buttonSet, chipBranch, chipRepo, badgeComp, syncComp, iconButtonSet]],
     ['Icon · Material Design Icons, 16 px box with the glyph at 14 (7/8), glyph scales with the instance', [iconSet]],
     ['Segment (state) · Segmented (mode hug / stretch, Show segment 3) · Field (state, Value, Placeholder, Icon, Caret, Trailing icon)', [segmentSet, segmentedSet, fieldSet]],
     ['Checkbox (state, Label) · RefChip (kind, Label) · StatusPill (status) · SectionLabel (Label) · DimText', [checkboxSet, refSet, pillSet, sectionComp, dimText].filter(Boolean)],

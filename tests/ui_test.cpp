@@ -884,6 +884,25 @@ bool paints(QWidget *w, const QColor &colour)
     return imagePaints(w->grab().toImage(), colour);
 }
 
+// The columns `image` leaves bare before and after what it paints: every
+// pixel of a bare column is the ground's, the top-left pixel's.
+QPair<int, int> bareColumns(const QImage &image)
+{
+    const QRgb ground = image.pixel(0, 0);
+    int first = -1, last = -1;
+    for (int x = 0; x < image.width(); ++x) {
+        for (int y = 0; y < image.height(); ++y) {
+            if (image.pixel(x, y) != ground) {
+                if (first < 0)
+                    first = x;
+                last = x;
+                break;
+            }
+        }
+    }
+    return {first, image.width() - 1 - last};
+}
+
 // The window's own splitter: the left section beside the diff pane.
 QSplitter *bodySplitter(const WindowFixture &f)
 {
@@ -2625,10 +2644,10 @@ esac
 
     // --- TopBar -------------------------------------------------------------
 
-    // The row folds in seven steps as the window narrows, in the order the
-    // design names: the sync labels, then the sync buttons, then the
-    // repository label, then the tab labels, and the branch name last.
-    void theTopBarFoldsInSevenStepsAsItNarrows()
+    // The row folds in six steps as the window narrows: the sync labels,
+    // then the sync buttons, the tab labels between them, and the two names
+    // last. The repository chip wears its name at every level.
+    void theTopBarFoldsInSixStepsAsItNarrows()
     {
         BarFixture f = topBar();
         TopBar *bar = f.bar;
@@ -2651,19 +2670,19 @@ esac
                 widest[level] = width;
             }
         }
-        QCOMPARE(seen, QList<int>({0, 1, 2, 3, 4, 5, 6}));
+        QCOMPARE(seen, QList<int>({0, 1, 2, 3, 4, 5}));
         // ...and one pixel wider than a level starts is the level before it.
-        for (int level = 1; level <= 6; ++level)
+        for (int level = 1; level <= 5; ++level)
             QCOMPARE(f.levelAt(widest.value(level) + 1), level - 1);
 
         // What each level shows. The repository chip and the two toggles are
         // there at every one of them.
         const QHash<int, QList<bool>> syncShown{
-            {0, {true, true, true, true}},    {1, {true, true, true, true}},  {2, {true, true, false, false}},
-            {3, {true, true, false, false}},  {4, {true, true, false, false}}, {5, {false, false, false, false}},
-            {6, {false, false, false, false}}};
+            {0, {true, true, true, true}},   {1, {true, true, true, true}},   {2, {true, true, false, false}},
+            {3, {true, true, false, false}}, {4, {false, false, false, false}}, {5, {false, false, false, false}}};
+        const QString fullRepo = ui::icon(ui::kFolderOpen) + QStringLiteral("omagit-workspace") + ui::chevron();
         QList<int> repoWidths, tabWidths, branchWidths;
-        for (int level = 0; level <= 6; ++level) {
+        for (int level = 0; level <= 5; ++level) {
             QCOMPARE(f.levelAt(widest.value(level, wide)), level);
             QCOMPARE(visible(f.sync()), syncShown.value(level));
             QCOMPARE(bar->moreButton()->isVisible(), level >= 2);
@@ -2672,31 +2691,89 @@ esac
             QVERIFY(bar->diffToggle()->isVisible());
             // Only the widest level spells the sync buttons out.
             QCOMPARE(bar->pullButton()->text().contains(QLatin1String("Pull")), level == 0);
+            // The repository's name whole, but where the last level elides it.
+            if (level < 5)
+                QCOMPARE(bar->repoButton()->text(), fullRepo);
             repoWidths << f.rectOf(bar->repoButton()).width();
             tabWidths << f.rectOf(f.tabs()).width();
             branchWidths << f.rectOf(bar->branchButton()).width();
         }
-        QVERIFY(repoWidths.at(2) > repoWidths.at(3)); // the repository label goes at level 3
-        for (int level = 3; level <= 6; ++level)
-            QCOMPARE(repoWidths.at(level), iconFormWidth()); // and the bare folder is 8 + 16 + 8 px wide
-        QVERIFY(tabWidths.at(3) > tabWidths.at(4));   // the tab labels go at level 4
-        QCOMPARE(tabWidths.at(5), tabWidths.at(4));
-        QCOMPARE(tabWidths.at(6), tabWidths.at(4));
-        QVERIFY(branchWidths.at(6) <= branchWidths.at(5)); // the last level is never the wider one
+        for (int level = 1; level <= 4; ++level)
+            QCOMPARE(repoWidths.at(level), repoWidths.at(0));
+        QVERIFY(tabWidths.at(2) > tabWidths.at(3)); // the tab labels go at level 3
+        QCOMPARE(tabWidths.at(4), tabWidths.at(3));
+        QCOMPARE(tabWidths.at(5), tabWidths.at(3));
+        QVERIFY(branchWidths.at(5) <= branchWidths.at(4)); // the last level is never the wider one
+        QVERIFY(repoWidths.at(5) <= repoWidths.at(4));
 
-        // At its narrowest the branch name is elided — and only it: the glyph
-        // and the chevron stay where they were.
-        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        // At its narrowest both names are elided — and only they: the glyphs
+        // and the chevrons stay where they were. Both names are longer than
+        // the 72 px the level keeps of either, so each keeps exactly that.
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 5);
         const QString elided = bar->branchButton()->text();
         QVERIFY2(elided.contains(QChar(0x2026)), qPrintable(elided));
         QVERIFY(elided.startsWith(ui::icon(ui::kBranch, QStringLiteral("b"))));
         QVERIFY(elided.endsWith(ui::chevron()));
+        const QString repo = bar->repoButton()->text();
+        QVERIFY2(repo.contains(QChar(0x2026)), qPrintable(repo));
+        QVERIFY(repo.startsWith(ui::icon(ui::kFolderOpen) + QStringLiteral("omagit")));
+        QVERIFY(repo.endsWith(ui::chevron()));
+        QCOMPARE(repoWidths.at(0) - f.rectOf(bar->repoButton()).width(),
+                 qCeil(QFontMetricsF(bar->repoButton()->font()).horizontalAdvance(QStringLiteral("omagit-workspace")))
+                     - ui::space(72));
 
         // And the room coming back spells everything out again.
         QCOMPARE(f.levelAt(wide), 0);
-        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("omagit-workspace") + ui::chevron());
+        QCOMPARE(bar->repoButton()->text(), fullRepo);
         QCOMPARE(bar->branchButton()->text(),
                  ui::icon(ui::kBranch) + QStringLiteral("feature/askpass-login-dialog") + ui::chevron());
+    }
+
+    // Where the last level has to elide, the two names share what the row
+    // has left as evenly as their lengths let them: a short repository name
+    // stays whole while the branch gives way, and two long names give way
+    // together, the row ending exactly a group gap before the tabs.
+    void theTopBarElidesBothNamesAsEvenlyAsTheyAllow()
+    {
+        const auto labelOf = [](const QToolButton *chip, uint glyph) {
+            QString text = chip->text();
+            return text.mid(ui::icon(glyph).size(), text.size() - ui::icon(glyph).size() - ui::chevron().size());
+        };
+        const auto advance = [](const QToolButton *chip, const QString &text) {
+            return qCeil(QFontMetricsF(chip->font()).horizontalAdvance(text));
+        };
+
+        // A short repository name, a long branch: only the branch elides.
+        BarFixture f = topBar(QStringLiteral("omagit"), QStringLiteral("feature/askpass-login-dialog"));
+        TopBar *bar = f.bar;
+        QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
+        settle();
+        const int eliding = f.widthForLevel(5);
+        QVERIFY(eliding > 0);
+        QCOMPARE(f.levelAt(eliding - 20), 5);
+        QCOMPARE(labelOf(bar->repoButton(), ui::kFolderOpen), QStringLiteral("omagit"));
+        QVERIFY(labelOf(bar->branchButton(), ui::kBranch).endsWith(QChar(0x2026)));
+        QCOMPARE(f.rectOf(bar->branchButton()).right() + 1 + ui::space(ui::gap::group), f.rectOf(f.tabs()).x());
+
+        // Two long names: each keeps as much of itself as the other, to a
+        // pixel, and more than the 72 px floor.
+        const QString repoName = QStringLiteral("omagit-workspace-with-a-long-name");
+        const QString branchName = QStringLiteral("feature/askpass-login-dialog");
+        BarFixture both = topBar(repoName, branchName);
+        bar = both.bar;
+        settle();
+        // What each chip puts around its name, read off the whole chips.
+        QCOMPARE(both.levelAt(bar->sizeHint().width()), 0);
+        const int repoChrome = both.rectOf(bar->repoButton()).width() - advance(bar->repoButton(), repoName);
+        const int branchChrome = both.rectOf(bar->branchButton()).width() - advance(bar->branchButton(), branchName);
+        QCOMPARE(both.levelAt(bar->minimumSizeHint().width() + ui::space(40)), 5);
+        const int repoRoom = both.rectOf(bar->repoButton()).width() - repoChrome;
+        const int branchRoom = both.rectOf(bar->branchButton()).width() - branchChrome;
+        QVERIFY2(qAbs(repoRoom - branchRoom) <= 1, qPrintable(QStringLiteral("%1 vs %2").arg(repoRoom).arg(branchRoom)));
+        QVERIFY(repoRoom > ui::space(72));
+        QVERIFY(labelOf(bar->repoButton(), ui::kFolderOpen).endsWith(QChar(0x2026)));
+        QVERIFY(labelOf(bar->branchButton(), ui::kBranch).endsWith(QChar(0x2026)));
+        QCOMPARE(both.rectOf(bar->branchButton()).right() + 1 + ui::space(ui::gap::group), both.rectOf(both.tabs()).x());
     }
 
     // The tabs follow the middle of the whole bar and stop a group gap (16)
@@ -2740,15 +2817,15 @@ esac
 
         // At the narrowest width the middle is taken, so the clamp decides:
         // the tabs sit a group gap off both groups at once.
-        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 5);
         const QRect tight = f.rectOf(f.tabs());
         QCOMPARE(tight.x(), f.rectOf(bar->branchButton()).x() + bar->branchButton()->width() + ui::space(ui::gap::group));
         QCOMPARE(tight.x() + tight.width() + ui::space(ui::gap::group), f.rectOf(bar->moreButton()).x());
     }
 
-    // A short branch name is never elided, and the widths of the two chips do
-    // not become a minimum the window has to honour.
-    void theTopBarKeepsAShortBranchWholeAtEveryWidth()
+    // Short names are never elided, and the widths of the two chips do not
+    // become a minimum the window has to honour.
+    void theTopBarKeepsShortNamesWholeAtEveryWidth()
     {
         BarFixture f = topBar(QStringLiteral("omagit"), QStringLiteral("main"), 3);
         TopBar *bar = f.bar;
@@ -2756,9 +2833,9 @@ esac
         settle();
         const QString canonical = ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron();
 
-        // A name this short is under the allowance the last level keeps, so
+        // Names this short are under the allowance the last level keeps, so
         // eliding would buy nothing and the level before it already fits.
-        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 5);
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 4);
         QCOMPARE(bar->branchButton()->text(), canonical);
         QVERIFY(bar->minimumSizeHint().width() < bar->sizeHint().width());
 
@@ -2771,10 +2848,12 @@ esac
         QCOMPARE(bar->branchButton()->text(), canonical);
         QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("omagit") + ui::chevron());
 
-        // However long the branch name, the last level keeps 72 px of it at
-        // most, so the minimum hardly moves.
+        // However long either name, the last level keeps 72 px of it at most,
+        // so the minimum hardly moves.
         BarFixture longName = topBar(QStringLiteral("omagit"), QString(120, QLatin1Char('x')), 3);
         QVERIFY(longName.bar->minimumSizeHint().width() - bar->minimumSizeHint().width() <= ui::space(72));
+        BarFixture longRepo = topBar(QString(120, QLatin1Char('x')), QStringLiteral("main"), 3);
+        QVERIFY(longRepo.bar->minimumSizeHint().width() - bar->minimumSizeHint().width() <= ui::space(72));
     }
 
     // The two tabs are one exclusive switch: they ask the window for a mode
@@ -2890,7 +2969,7 @@ esac
         QCOMPARE(fetched.count(), 1);
 
         // All four fold at the narrowest levels, in the same order.
-        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 5);
         actions = entries();
         QCOMPARE(actions.size(), 4 + kOwnEntries);
         QStringList labels;
@@ -2952,7 +3031,7 @@ esac
         QCOMPARE(bar->changesTab()->sizeHint().height(), ui::space(ui::box::control));
 
         // Folded: the labels go, the box stays exactly as wide.
-        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 6);
+        QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 5);
         QCOMPARE(bar->changesTab()->sizeHint().width(), pad + changesBox + gap + pill);
         QCOMPARE(bar->historyTab()->sizeHint().width(), pad + historyBox);
         // And the box is the design's width, not what the glyph happens to
@@ -3128,7 +3207,7 @@ esac
         QVERIFY(QTest::qWaitForWindowExposed(f.host.get()));
         settle();
 
-        for (int level = 0; level <= 6; ++level) {
+        for (int level = 0; level <= 5; ++level) {
             QCOMPARE(f.levelAt(f.widthForLevel(level)), level);
             QCOMPARE(barNames(bar), kBarNames);
         }
@@ -3188,9 +3267,9 @@ esac
     // --- The stacked top bar --------------------------------------------------
 
     // Stacked, the row has three levels of its own: the tab labels go, then
-    // the tabs take a row of their own, and only there does the branch name
-    // elide, by what the first row lacks. The repository is the bare folder,
-    // the right group the sync dropdown and More, and the toggles are gone.
+    // the tabs take a row of their own, and only there do the names elide,
+    // by what the first row lacks. The repository chip wears its name, the
+    // right group is the sync dropdown and More, and the toggles are gone.
     void theStackedTopBarFoldsInThreeSteps()
     {
         BarFixture f = topBar();
@@ -3232,6 +3311,8 @@ esac
 
         // What every level shows.
         const QString fullBranch = ui::icon(ui::kBranch) + bar->branchLabel() + ui::chevron();
+        const QString fullRepo = ui::icon(ui::kFolderOpen) + bar->repositoryName() + ui::chevron();
+        QList<int> dropdownWidths;
         for (int level = 0; level <= 2; ++level) {
             QCOMPARE(f.levelAt(widest.value(level, wide)), level);
             // One row, 8 + 28 + 8, or two: the tabs a space(kBar) under it.
@@ -3246,33 +3327,41 @@ esac
             QVERIFY(bar->syncDropdown()->isVisible());
             QVERIFY(bar->moreButton()->isVisible());
             QCOMPARE(bar->diffTab()->isVisible(), true);
-            // The dropdown is the design's 96 px whatever its hint (on two
-            // rows its borderless 64 px miniature), the first row's height, 8
-            // under the bar's top; More is the design's bare 28 px square, in
-            // the icon form.
+            // The dropdown is borderless and as wide as its content at every
+            // level, the first row's height, 8 under the bar's top; More is
+            // the design's bare 28 px square, in the icon form.
             QCOMPARE(bar->isTwoRows(), level == 2);
-            QCOMPARE(f.rectOf(bar->syncDropdown()).width(), ui::space(level == 2 ? 64 : 96));
-            QCOMPARE(bar->syncDropdown()->property("ghost").toBool(), level == 2);
+            dropdownWidths << f.rectOf(bar->syncDropdown()).width();
+            QCOMPARE(dropdownWidths.last(), dropdownWidths.first());
+            QVERIFY(bar->syncDropdown()->property("ghost").toBool());
             QCOMPARE(f.rectOf(bar->syncDropdown()).height(), ui::space(ui::box::control));
             QCOMPARE(f.rectOf(bar->syncDropdown()).y(), ui::space(ui::kBar));
             QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(ui::box::control));
             QVERIFY(bar->moreButton()->property("iconForm").toBool());
-            // The gaps: the bare folder, a cluster to the branch, an item
-            // between the two controls on the right, More against the right
-            // edge.
+            // The gaps: the repository against the left edge, a cluster to the
+            // branch; on one row an item between the two controls on the
+            // right, on two the dropdown against the right edge, at least a
+            // cluster after the branch, and More on the tabs' row; More
+            // against the right edge.
             const QRect repo = f.rectOf(bar->repoButton()), branch = f.rectOf(bar->branchButton());
             const QRect sync = f.rectOf(bar->syncDropdown()), more = f.rectOf(bar->moreButton());
             QCOMPARE(repo.x(), ui::space(12));
-            QCOMPARE(repo.width(), iconFormWidth());
-            QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen, QStringLiteral("…")).trimmed());
             QCOMPARE(branch.x() - (repo.x() + repo.width()), ui::space(ui::gap::cluster));
-            QCOMPARE(more.x() - (sync.x() + sync.width()), ui::space(ui::gap::item));
+            if (level == 2) {
+                QVERIFY(sync.x() - (branch.x() + branch.width()) >= ui::space(ui::gap::cluster));
+                QCOMPARE(sync.right() + 1, bar->width() - ui::space(12));
+                QCOMPARE(more.y(), 2 * ui::space(ui::kBar) + ui::space(ui::box::control));
+            } else {
+                QCOMPARE(more.x() - (sync.x() + sync.width()), ui::space(ui::gap::item));
+                QCOMPARE(more.y(), ui::space(ui::kBar));
+            }
             QCOMPARE(more.x() + more.width(), bar->width() - ui::space(12));
             // Two rows this wide give every segment the room for its label.
             QCOMPARE(static_cast<SegmentButton *>(bar->changesTab())->isLabelled(), level != 1);
             QCOMPARE(static_cast<SegmentButton *>(bar->diffTab())->isLabelled(), level != 1);
             QVERIFY(bar->changesCount() > 0); // the pill stays at every level
-            // The name is whole on one row, and on two while the first holds it.
+            // The names are whole on one row, and on two while the first holds them.
+            QCOMPARE(bar->repoButton()->text(), fullRepo);
             QCOMPARE(bar->branchButton()->text(), fullBranch);
         }
 
@@ -3286,36 +3375,57 @@ esac
         const QRect branch = f.rectOf(bar->branchButton());
         QCOMPARE(tight.x(), branch.x() + branch.width() + ui::space(ui::gap::group));
         QCOMPARE(tight.x() + tight.width() + ui::space(ui::gap::group), f.rectOf(bar->syncDropdown()).x());
-        // A pixel less, the tabs are the second row: the row's whole width,
-        // stretched, a space(kBar) under the first.
+        // A pixel less, the tabs are the second row, a space(kBar) under the
+        // first, stretched over its width but for an item gap and More.
         QCOMPARE(f.levelAt(widest.value(2)), 2);
         const QRect own = f.rectOf(f.tabs());
-        QCOMPARE(own, QRect(ui::space(12), 2 * ui::space(ui::kBar) + ui::space(ui::box::control),
-                            bar->width() - 2 * ui::space(12), ui::space(ui::box::control)));
+        const int ownWidth = bar->width() - 2 * ui::space(12) - ui::space(ui::gap::item) - ui::space(ui::box::control);
+        QCOMPARE(own, QRect(ui::space(12), 2 * ui::space(ui::kBar) + ui::space(ui::box::control), ownWidth,
+                            ui::space(ui::box::control)));
+        QCOMPARE(f.rectOf(bar->moreButton()), QRect(own.right() + 1 + ui::space(ui::gap::item), own.y(),
+                                                     ui::space(ui::box::control), ui::space(ui::box::control)));
         QVERIFY(static_cast<SegmentStrip *>(f.tabs())->isStretch());
-        // Down to the narrowest, the name elides by exactly what the first
-        // row lacks: when it does, the chip ends a group gap from the dropdown.
+        // Down to the narrowest, the dropdown against the row's right edge and
+        // the names eliding by exactly what the first row lacks: when they
+        // do, the branch ends a cluster before the dropdown. The shorter
+        // repository name gives way only once the branch has come down to as
+        // little of itself.
+        bool repoElided = false;
         for (int width = widest.value(2); width >= bar->minimumSizeHint().width(); --width) {
             QCOMPARE(f.levelAt(width), 2);
-            const int end = f.rectOf(bar->branchButton()).right() + 1 + ui::space(ui::gap::group);
-            if (bar->branchButton()->text() == fullBranch)
-                QVERIFY(end <= f.rectOf(bar->syncDropdown()).x());
+            const QRect sync = f.rectOf(bar->syncDropdown());
+            QCOMPARE(sync.right() + 1, width - ui::space(12));
+            const int end = f.rectOf(bar->branchButton()).right() + 1 + ui::space(ui::gap::cluster);
+            const bool whole = bar->branchButton()->text() == fullBranch && bar->repoButton()->text() == fullRepo;
+            if (whole)
+                QVERIFY(end <= sync.x());
             else
-                QCOMPARE(end, f.rectOf(bar->syncDropdown()).x());
+                QCOMPARE(end, sync.x());
+            if (bar->repoButton()->text() != fullRepo && !repoElided) {
+                repoElided = true;
+                QVERIFY2(bar->branchButton()->text() != fullBranch, "the shorter name gave way first");
+            }
         }
-        // The branch floor: a lone ellipsis between the glyph and the
-        // chevron, in the chip's font, and the chip no wider than that.
-        // The name's advance rounded up, as the bar and the chip measure it.
-        const int name = qCeil(QFontMetricsF(bar->branchButton()->font()).horizontalAdvance(bar->branchLabel()));
-        // Rounded up: elidedText() gives nothing at all a fraction short of it.
-        const int ellipsis = qCeil(QFontMetricsF(bar->branchButton()->font()).horizontalAdvance(QChar(0x2026)));
+        QVERIFY(repoElided);
+        // The floors: a lone ellipsis between each glyph and its chevron, in
+        // the chip's font, and each chip no wider than that. A name's
+        // advance rounded up, as the bar and the chip measure it; the
+        // ellipsis rounded up as well: elidedText() gives nothing at all a
+        // fraction short of it.
+        const auto advance = [](const QToolButton *chip, const QString &text) {
+            return qCeil(QFontMetricsF(chip->font()).horizontalAdvance(text));
+        };
+        const int name = advance(bar->branchButton(), bar->branchLabel());
         QVERIFY(name > ui::space(72));
         QCOMPARE(f.levelAt(widest.value(1)), 1);
-        const int unelided = f.rectOf(bar->branchButton()).width();
-        const int branchChrome = unelided - name;
+        const int branchChrome = f.rectOf(bar->branchButton()).width() - name;
+        const int repoChrome = f.rectOf(bar->repoButton()).width() - advance(bar->repoButton(), bar->repositoryName());
         QCOMPARE(f.levelAt(bar->minimumSizeHint().width()), 2);
-        QCOMPARE(bar->branchButton()->text(), ui::icon(ui::kBranch) + QString(QChar(0x2026)) + ui::chevron());
-        QCOMPARE(f.rectOf(bar->branchButton()).width(), branchChrome + ellipsis);
+        const QString ellipsis(QChar(0x2026));
+        QCOMPARE(bar->branchButton()->text(), ui::icon(ui::kBranch) + ellipsis + ui::chevron());
+        QCOMPARE(f.rectOf(bar->branchButton()).width(), branchChrome + advance(bar->branchButton(), ellipsis));
+        QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + ellipsis + ui::chevron());
+        QCOMPARE(f.rectOf(bar->repoButton()).width(), repoChrome + advance(bar->repoButton(), ellipsis));
         // No share of a row this narrow holds "Changes 7": the tabs go to glyphs.
         QVERIFY(!static_cast<SegmentButton *>(bar->changesTab())->isLabelled());
         QVERIFY(bar->minimumSizeHint().width() < bar->sizeHint().width());
@@ -3343,7 +3453,7 @@ esac
         QVERIFY(!bar->diffTab()->isVisible());
         QCOMPARE(barNames(bar), kBarNames);
         // More is the same 28 px square on the ordinary row, wherever it shows.
-        QCOMPARE(f.levelAt(ordinaryMin), 6);
+        QCOMPARE(f.levelAt(ordinaryMin), 5);
         QVERIFY(bar->moreButton()->isVisible());
         QCOMPARE(f.rectOf(bar->moreButton()).width(), ui::space(ui::box::control));
         QVERIFY(bar->moreButton()->property("iconForm").toBool());
@@ -3529,10 +3639,10 @@ esac
             const QImage all = shot();
             return all.copy(ui::space(from), 0, ui::space(to) - ui::space(from), all.height());
         };
-        // screens.js syncDropdown(): Pull's count 28 in, Push's 64 in, each
+        // screens.js syncDropdown(): Pull's count 20 in, Push's 52 in, each
         // field its 8 px slot or the dots' 16 px box.
-        const auto pullField = [&field] { return field(28, 44); };
-        const auto pushField = [&field] { return field(64, 80); };
+        const auto pullField = [&field] { return field(20, 36); };
+        const auto pushField = [&field] { return field(52, 68); };
         const QImage pullCounted = pullField(), pushCounted = pushField();
 
         bar->pullButton()->setBusy(true);
@@ -3579,9 +3689,10 @@ esac
     }
 
     // The design's positions are the least each field gets: a count wider
-    // than two digits pushes the rest along and widens the dropdown, so it
-    // never lands on the chevron; Merge's corner mark hangs over the corner
-    // clear of the chevron's box. At the design's text size and a larger one.
+    // than two digits pushes the rest along and widens the dropdown, which
+    // keeps as much room after its content as before it; Merge's mark hangs
+    // over the corner without widening it. At the design's text size and a
+    // larger one.
     void theSyncDropdownMakesRoomForItsContent()
     {
         for (const int base : {12, 16}) {
@@ -3605,39 +3716,46 @@ esac
                 BadgeButton *sync = bar->syncDropdown();
                 const QColor accent = theme.accent();
                 const QColor red = theme.color(QStringLiteral("red"));
-                // The chevron's 12 px box, the dropdown's last field, 8 from
-                // its right edge once the content decides the width; the glyph
-                // is centred in it.
-                const int chevronBox = ui::space(ui::box::chevron), pad = ui::space(ui::pad::control);
                 const auto width = [&f, sync] { return f.rectOf(sync).width(); };
+                // As much bare room after the content as before it, to a pixel.
+                const auto even = [sync](const char *what) {
+                    const QPair<int, int> bare = bareColumns(sync->grab().toImage());
+                    QVERIFY2(bare.first > 0 && qAbs(bare.first - bare.second) <= 1,
+                             qPrintable(QStringLiteral("%1: %2 before, %3 after")
+                                            .arg(QLatin1String(what)).arg(bare.first).arg(bare.second)));
+                };
 
                 bar->pullButton()->setCount(2);
                 bar->pushButton()->setCount(1);
-                QCOMPARE(width(), ui::space(96));
+                const int narrow = width();
+                even("2 and 1");
+                bar->pushButton()->setCount(67);
+                even("2 and 67");
 
-                // 99+ in accent, the chevron (foreground) clear of it.
+                // 99+ in accent: wider, and as even.
                 bar->pullButton()->setCount(120);
                 const int wide = width();
-                QVERIFY2(wide > ui::space(96), qPrintable(QString::number(wide)));
-                QImage grab = sync->grab().toImage();
-                QVERIFY(imagePaints(grab, accent));
-                QVERIFY(!imagePaints(grab, accent, wide - pad - chevronBox, wide - pad));
+                QVERIFY2(wide > narrow, qPrintable(QString::number(wide)));
+                QVERIFY(imagePaints(sync->grab().toImage(), accent));
+                even("99+ and 67");
+                bar->pushButton()->setCount(1);
+                even("99+ and 1");
+                const int wideOne = width();
 
-                // The mark hangs over the corner like a badge and stays off
-                // the chevron's box. The bar's badge layer paints it over the
-                // dropdown's corner, so it is read off the bar: the dropdown's
-                // columns and the badge's overhang past them.
+                // The mark hangs over the corner like a badge, and the width
+                // stays the content's. The bar's badge layer paints it over
+                // the dropdown's corner, so it is read off the bar: the
+                // dropdown's columns and the badge's overhang past them.
                 bar->mergeButton()->setMark(QStringLiteral("!"), red);
-                QCOMPARE(width(), wide);
+                QCOMPARE(width(), wideOne);
                 const QRect dropdown = f.rectOf(sync);
-                grab = bar->grab().toImage().copy(dropdown.x(), 0, dropdown.width() + ui::space(4), bar->height());
+                const QImage grab = bar->grab().toImage().copy(dropdown.x(), 0, dropdown.width() + ui::space(4), bar->height());
                 QVERIFY(imagePaints(grab, red));
-                QVERIFY(!imagePaints(grab, red, wide - pad - chevronBox, wide - pad));
 
-                // Back to the design's width.
+                // Back to where it started.
                 bar->mergeButton()->setMark(QString(), red);
                 bar->pullButton()->setCount(2);
-                QCOMPARE(width(), ui::space(96));
+                QCOMPARE(width(), narrow);
 
                 f.host.reset();
             }
@@ -3647,13 +3765,13 @@ esac
         }
     }
 
-    // On two rows the dropdown is its borderless miniature, at the design's
-    // text size: Pull's count against its arrow's box (4 + 16 in), Push's at
-    // 4 + 16 + 8 + 8 + 16, each in the accent while it counts anything; the
-    // busy dots walking in those fields, a busy Pull moving Push's along;
-    // nothing past Push's count, where the full form has its chevron; and no
-    // border at rest, where the full form has one.
-    void theSyncDropdownsMiniatureFollowsTheDesign()
+    // The dropdown at the design's text size, on one row and on two alike:
+    // Pull's count against its arrow's box (4 + 16 in), Push's at 4 + 16 + 8
+    // + 8 + 16, each in the accent while it counts anything; the busy dots
+    // walking in those fields, a busy Pull moving Push's along; nothing past
+    // Push's count but the bare room that mirrors the room before the down
+    // arrow; no border at rest, and the hover frame at both edges.
+    void theSyncDropdownFollowsTheDesign()
     {
         // The desktop's theme back for whatever runs next, however this ends.
         const auto restoreTheme = qScopeGuard([] {
@@ -3680,7 +3798,6 @@ esac
         BadgeButton *sync = bar->syncDropdown();
         QVERIFY(bar->isTwoRows());
         QVERIFY(sync->property("ghost").toBool());
-        QCOMPARE(sync->width(), ui::space(64));
         const QColor accent = theme.accent(), border = theme.normalBorder();
         const auto shot = [sync] { return sync->grab().toImage(); };
         // A field's columns, in the design's pixels.
@@ -3694,29 +3811,41 @@ esac
 
         // Pull's count alone in the accent, then Push's too, each in its field.
         bar->pullButton()->setCount(3);
-        QImage mini = shot();
-        QVERIFY(paintsIn(mini, accent, 20, 28));
-        QVERIFY(!imagePaints(mini, accent, 0, ui::space(20)));
-        QVERIFY(!imagePaints(mini, accent, ui::space(28)));
+        QImage counted = shot();
+        QVERIFY(paintsIn(counted, accent, 20, 28));
+        QVERIFY(!imagePaints(counted, accent, 0, ui::space(20)));
+        QVERIFY(!imagePaints(counted, accent, ui::space(28)));
         bar->pushButton()->setCount(1);
-        mini = shot();
-        QCOMPARE(mini.width(), ui::space(64));
-        QVERIFY(paintsIn(mini, accent, 20, 28));
-        QVERIFY(!paintsIn(mini, accent, 28, 52));
-        QVERIFY(paintsIn(mini, accent, 52, 60));
+        counted = shot();
+        const int rest = counted.width();
+        QVERIFY(paintsIn(counted, accent, 20, 28));
+        QVERIFY(!paintsIn(counted, accent, 28, 52));
+        QVERIFY(paintsIn(counted, accent, 52, 60));
         // Past Push's count, the bare ground: no chevron, and no border at
-        // either edge.
-        const QRgb ground = mini.pixel(0, 0);
-        for (int x = ui::space(60); x < mini.width(); ++x)
-            for (int y = 0; y < mini.height(); ++y)
-                QVERIFY2(mini.pixel(x, y) == ground, qPrintable(QStringLiteral("%1,%2").arg(x).arg(y)));
-        QVERIFY(!imagePaints(mini, border, 0, 1));
-        QVERIFY(!imagePaints(mini, border, mini.width() - 1, mini.width()));
+        // either edge; as much of it after the count as before the arrow.
+        const QRgb ground = counted.pixel(0, 0);
+        for (int x = ui::space(60); x < counted.width(); ++x)
+            for (int y = 0; y < counted.height(); ++y)
+                QVERIFY2(counted.pixel(x, y) == ground, qPrintable(QStringLiteral("%1,%2").arg(x).arg(y)));
+        QVERIFY(!imagePaints(counted, border, 0, 1));
+        QVERIFY(!imagePaints(counted, border, counted.width() - 1, counted.width()));
+        const QPair<int, int> bare = bareColumns(counted);
+        QVERIFY2(qAbs(bare.first - bare.second) <= 1, qPrintable(QStringLiteral("%1 vs %2").arg(bare.first).arg(bare.second)));
+
+        // Hovered: the frame (the stylesheet's hover border) at both edges,
+        // around that same content.
+        sync->setAttribute(Qt::WA_UnderMouse, true);
+        const QImage hovered = shot();
+        sync->setAttribute(Qt::WA_UnderMouse, false);
+        const int middle = hovered.height() / 2;
+        QVERIFY(hovered.pixel(0, middle) != counted.pixel(0, middle));
+        QCOMPARE(hovered.pixel(hovered.width() - 1, middle), hovered.pixel(0, middle));
+        QCOMPARE(shot(), counted);
 
         // A busy Pull: its dots walk in its 16 px box, and Push's count,
         // moved along by the 8 more they take, holds still in the accent.
         bar->pullButton()->setBusy(true);
-        QCOMPARE(sync->width(), ui::space(72));
+        QCOMPARE(sync->width(), rest + ui::space(8));
         const auto pullDots = [&field] { return field(20, 36); };
         QImage pullBusy = pullDots();
         const QImage pushMoved = field(60, 68);
@@ -3725,11 +3854,12 @@ esac
         QTRY_VERIFY_WITH_TIMEOUT(pullDots() != pullBusy, 2000);
         QCOMPARE(field(60, 68), pushMoved);
         bar->pullButton()->setBusy(false);
-        QCOMPARE(shot(), mini);
+        QCOMPARE(shot(), counted);
 
         // A busy Push: its dots in its own box, 52 in; Pull's count still.
         bar->pushButton()->setBusy(true);
-        QCOMPARE(sync->width(), ui::space(72));
+        const int pushBusyWidth = sync->width();
+        QVERIFY(pushBusyWidth > rest);
         const auto pushDots = [&field] { return field(52, 68); };
         const QImage pushBusy = pushDots(), pullStill = field(20, 28);
         QVERIFY(imagePaints(pullStill, accent));
@@ -3738,26 +3868,20 @@ esac
 
         // Both: Push's dots walk in their box moved along, 60 in.
         bar->pullButton()->setBusy(true);
-        QCOMPARE(sync->width(), ui::space(80));
+        QCOMPARE(sync->width(), pushBusyWidth + ui::space(8));
         const auto movedDots = [&field] { return field(60, 76); };
         pullBusy = pullDots();
         const QImage movedBusy = movedDots();
         QTRY_VERIFY_WITH_TIMEOUT(pullDots() != pullBusy && movedDots() != movedBusy, 2000);
         bar->pullButton()->setBusy(false);
         bar->pushButton()->setBusy(false);
-        QCOMPARE(shot(), mini);
+        QCOMPARE(shot(), counted);
 
-        // One row: the full form, its border at both edges.
+        // One row: the very same control.
         QCOMPARE(f.levelAt(bar->sizeHint().width()), 0);
         QVERIFY(!bar->isTwoRows());
-        QVERIFY(!sync->property("ghost").toBool());
-        const QImage full = shot();
-        QCOMPARE(full.width(), ui::space(96));
-        QVERIFY(imagePaints(full, border, 0, 1));
-        QVERIFY(imagePaints(full, border, full.width() - 1, full.width()));
-        // Two rows again, and the border goes with them.
-        QCOMPARE(f.levelAt(twoRows), 2);
-        QCOMPARE(shot(), mini);
+        QVERIFY(sync->property("ghost").toBool());
+        QCOMPARE(shot(), counted);
     }
 
     // The dropdown's menu: the four sync buttons, spelled out, doing what the
@@ -4875,8 +4999,8 @@ esac
     // The stacked bar never forces a width on a 470 tile: with the Changes
     // pill and a branch name longer than the ordinary row's 72 px, the window
     // stays 470 wide on every tab. So long a name leaves the tabs no room on
-    // one row: they take a second, and the name elides only by what the first
-    // row lacks. "main" keeps a 470 tile to one row.
+    // one row: they take a second, and the names elide only by what the first
+    // row lacks. "main" in a short-named repository keeps a 470 tile to one row.
     void theStackedWindowKeepsA470Tile()
     {
         WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); },
@@ -4900,13 +5024,17 @@ esac
             QVERIFY2(w->minimumSizeHint().width() <= 470,
                      qPrintable(QStringLiteral("%1: a minimum of %2").arg(QLatin1String(name)).arg(w->minimumSizeHint().width())));
             QVERIFY2(bar->foldLevel() == 2, name);
+            // The dropdown against the row's right edge; where the names give
+            // way, the branch ends a cluster before it.
             const QRect branch(bar->branchButton()->mapTo(bar, QPoint(0, 0)), bar->branchButton()->size());
-            const int end = branch.x() + branch.width() + ui::space(ui::gap::group);
-            const int sync = bar->syncDropdown()->mapTo(bar, QPoint(0, 0)).x();
-            if (bar->branchButton()->text() == ui::icon(ui::kBranch) + bar->branchLabel() + ui::chevron())
-                QVERIFY2(end <= sync, name);
+            const QRect sync(bar->syncDropdown()->mapTo(bar, QPoint(0, 0)), bar->syncDropdown()->size());
+            QVERIFY2(sync.right() + 1 == bar->width() - ui::windowMargin(w), name);
+            const int end = branch.x() + branch.width() + ui::space(ui::gap::cluster);
+            if (bar->branchButton()->text() == ui::icon(ui::kBranch) + bar->branchLabel() + ui::chevron()
+                && bar->repoButton()->text() == ui::icon(ui::kFolderOpen) + bar->repositoryName() + ui::chevron())
+                QVERIFY2(end <= sync.x(), name);
             else
-                QVERIFY2(end == sync, qPrintable(bar->branchButton()->text()));
+                QVERIFY2(end == sync.x(), qPrintable(bar->branchButton()->text()));
         };
         holds(bar->changesTab(), "Changes");
         if (QTest::currentTestFailed())
@@ -4921,7 +5049,7 @@ esac
         QCOMPARE(w->mode(), MainWindow::HistoryMode);
         f.window.reset(); // the window goes before the theme changes under it
 
-        // "main" at the design's text size, where 470 holds its one row.
+        // "main" in "repo" at the design's text size, where 470 holds its one row.
         QTemporaryDir dir, home;
         QVERIFY(dir.isValid() && home.isValid());
         QVERIFY(writeFixture(QDir(dir.path()).filePath(QStringLiteral("shell.toml")), "[font]\nbase-size = 12\n"));
@@ -4932,7 +5060,8 @@ esac
             QCOMPARE(theme.fontBase(), 12);
             theme.apply(*qApp);
             {
-                WindowFixture main = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); });
+                WindowFixture main = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); }, {},
+                                                QStringLiteral("repo"));
                 QVERIFY(main.window);
                 QVERIFY(QTest::qWaitForWindowExposed(main.window.get()));
                 settle();
@@ -4941,6 +5070,7 @@ esac
                 QCOMPARE(main.bar()->foldLevel(), 1);
                 QCOMPARE(main.bar()->height(), 2 * ui::space(ui::kBar) + ui::space(ui::box::control));
                 QCOMPARE(main.bar()->branchButton()->text(), ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron());
+                QCOMPARE(main.bar()->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("repo") + ui::chevron());
             }
         }
         g_theme.reset(new OmarchyTheme);
@@ -4948,11 +5078,13 @@ esac
         QVERIFY(OmarchyTheme::instance() == g_theme.get());
     }
 
-    // At 340 (a tile the user hit) not even the tab glyphs fit beside "main",
-    // so the tabs take a row of their own under the controls (screens.js
-    // topBar(), extra narrow): the row's whole width, labelled again, the
-    // branch whole, the bar 8 + 28 + 8 + 28 + 8 and the body under it from
-    // the first frame; the popups hang from the first row, over the tabs.
+    // At 340 (a tile the user hit) not even the tab glyphs fit beside "repo"
+    // and "main", so the tabs take a row of their own under the controls
+    // (screens.js topBar(), extra narrow): the row's width but for More at
+    // its end; the first row the repository and the branch a cluster apart,
+    // the names whole, the dropdown at its right edge; the bar 8 + 28 + 8 +
+    // 28 + 8 and the body under it from the first frame; the popups hang
+    // from the first row, over the tabs, but More's from the bar, under More.
     void theExtraNarrowBarGivesTheTabsARowOfTheirOwn()
     {
         // At the design's text size, where its pixels are the bar's.
@@ -4967,7 +5099,8 @@ esac
             QCOMPARE(theme.fontBase(), 12);
             theme.apply(*qApp);
             {
-                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(340, 612); });
+                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(340, 612); }, {},
+                                             QStringLiteral("repo"));
                 QVERIFY(f.window);
                 QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
                 MainWindow *w = f.window.get();
@@ -4984,48 +5117,78 @@ esac
                 QCOMPARE(bar->height(), 3 * gap + 2 * row);
                 const auto rectOf = [bar](const QWidget *c) { return QRect(c->mapTo(bar, QPoint(0, 0)), c->size()); };
 
-                // Row 1: the controls, centred in the first 28 px, 8 under the top;
-                // the branch spelled out.
-                for (QWidget *c : QList<QWidget *>{bar->repoButton(), bar->branchButton(), bar->syncDropdown(), bar->moreButton()}) {
+                // Row 1: the controls, centred in the first 28 px, 8 under the top,
+                // the chips a cluster apart, the dropdown at the right edge; the
+                // names spelled out.
+                for (QWidget *c : QList<QWidget *>{bar->repoButton(), bar->branchButton(), bar->syncDropdown()}) {
                     const QRect r = rectOf(c);
                     QVERIFY2(c->isVisible(), qPrintable(c->accessibleName()));
                     QVERIFY2(r.top() >= gap && r.bottom() < gap + row, qPrintable(c->accessibleName()));
                     QVERIFY2(qAbs(r.top() + r.bottom() + 1 - (2 * gap + row)) <= 1, qPrintable(c->accessibleName()));
                 }
                 QCOMPARE(rectOf(bar->syncDropdown()).height(), row);
+                QCOMPARE(rectOf(bar->syncDropdown()).right() + 1, bar->width() - ui::space(8));
+                QCOMPARE(rectOf(bar->branchButton()).x(), rectOf(bar->repoButton()).right() + 1 + ui::space(ui::gap::cluster));
                 QCOMPARE(bar->branchButton()->text(), ui::icon(ui::kBranch) + QStringLiteral("main") + ui::chevron());
+                QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("repo") + ui::chevron());
 
-                // Row 2: the tabs alone, stretched over the row's width (the window's
-                // less its stacked 8 px margins), a space(kBar) under row 1, clear of
-                // every other control on the bar.
+                // Row 2: the tabs, stretched over the row's width (the window's
+                // less its stacked 8 px margins) but for an item gap and More at
+                // its end, a space(kBar) under row 1, clear of every other
+                // control on the bar.
                 auto *tabs = static_cast<SegmentStrip *>(bar->changesTab()->parentWidget());
                 const QRect strip = rectOf(tabs);
-                const int margin = ui::space(8);
-                QCOMPARE(strip, QRect(margin, 2 * gap + row, bar->width() - 2 * margin, row));
+                const int margin = ui::space(8), more = ui::space(ui::box::control);
+                QCOMPARE(strip, QRect(margin, 2 * gap + row, bar->width() - 2 * margin - ui::space(ui::gap::item) - more, row));
+                QCOMPARE(rectOf(bar->moreButton()), QRect(strip.right() + 1 + ui::space(ui::gap::item), strip.y(), more, row));
                 QVERIFY(tabs->isStretch());
                 for (QToolButton *b : bar->findChildren<QToolButton *>()) {
                     if (b->isVisible() && !tabs->isAncestorOf(b))
                         QVERIFY2(!rectOf(b).intersects(strip), qPrintable(b->accessibleName()));
                 }
-                // The labels are back: a third of the row holds each labelled segment.
+                // Labelled only where a third of the strip holds every labelled
+                // segment: at 340, beside More, "Changes n" does not fit, so the
+                // tabs are glyphs; at 400 the labels are back.
+                const auto labelsFit = [tabs](int share) {
+                    bool fit = true;
+                    for (SegmentButton *segment : tabs->segments()) {
+                        const bool labelled = segment->isLabelled();
+                        segment->setLabelled(true);
+                        fit = fit && segment->sizeHint().width() <= share;
+                        segment->setLabelled(labelled);
+                    }
+                    return fit;
+                };
+                QVERIFY(!labelsFit(strip.width() / 3));
                 for (const SegmentButton *segment : tabs->segments()) {
                     QVERIFY(segment->isVisible());
-                    QVERIFY2(segment->isLabelled(), qPrintable(segment->accessibleName()));
-                    QVERIFY(segment->sizeHint().width() <= strip.width() / 3);
+                    QVERIFY2(!segment->isLabelled(), qPrintable(segment->accessibleName()));
                 }
                 QVERIFY(bar->changesCount() > 0);
+                w->resize(400, 612);
+                settle();
+                QCOMPARE(bar->foldLevel(), 2);
+                QVERIFY(labelsFit(rectOf(tabs).width() / 3));
+                for (const SegmentButton *segment : tabs->segments())
+                    QVERIFY2(segment->isLabelled(), qPrintable(segment->accessibleName()));
+                w->resize(340, 612);
+                settle();
                 // The body under the bar's hairline.
                 QVERIFY(f.page()->mapTo(w, QPoint(0, 0)).y() >= bar->mapTo(w, QPoint(0, bar->height())).y());
 
-                // The popups hang 4 under row 1, over the tabs.
+                // The popups hang 4 under row 1, over the tabs; More's, from the
+                // tabs' row, 4 under the bar.
                 const int top = bar->mapToGlobal(QPoint(0, gap + row)).y() + ui::space(ui::gap::cluster);
                 QCOMPARE(ui::popupTop(bar), top);
+                const int under = bar->mapToGlobal(QPoint(0, bar->height())).y() + ui::space(ui::gap::cluster);
+                QCOMPARE(ui::popupTop(bar, bar->moreButton()), under);
+                QCOMPARE(ui::popupTop(bar, bar->syncDropdown()), top);
                 for (QToolButton *anchor : QList<QToolButton *>{bar->syncDropdown(), bar->moreButton()}) {
                     QMenu *menu = anchor->menu();
                     QVERIFY(menu);
                     QTimer::singleShot(0, menu, [menu] { menu->close(); });
                     anchor->showMenu();
-                    QCOMPARE(menu->y(), top);
+                    QCOMPARE(menu->y(), anchor == bar->moreButton() ? under : top);
                 }
 
                 // The row count follows the width both ways, and the popup edge with it.
@@ -5040,8 +5203,9 @@ esac
                 QCOMPARE(bar->height(), 3 * gap + 2 * row);
                 QCOMPARE(ui::popupTop(bar), top);
 
-                // A long name elides by exactly what row 1 lacks; the bar stays two
-                // rows and the window its width.
+                // A long name elides by exactly what row 1 lacks, the short
+                // repository name staying whole, the dropdown against the row's
+                // right edge; the bar stays two rows and the window its width.
                 bar->setBranchLabel(QStringLiteral("feature/askpass-login-dialog"));
                 settle();
                 QCOMPARE(w->width(), 340);
@@ -5049,8 +5213,10 @@ esac
                 QCOMPARE(bar->height(), 3 * gap + 2 * row);
                 QVERIFY2(bar->branchButton()->text().contains(QChar(0x2026)), qPrintable(bar->branchButton()->text()));
                 QVERIFY(bar->branchButton()->text().startsWith(ui::icon(ui::kBranch) + QStringLiteral("feature/")));
+                QCOMPARE(bar->repoButton()->text(), ui::icon(ui::kFolderOpen) + QStringLiteral("repo") + ui::chevron());
                 const QRect branch = rectOf(bar->branchButton());
-                QCOMPARE(branch.x() + branch.width() + ui::space(ui::gap::group), rectOf(bar->syncDropdown()).x());
+                QCOMPARE(branch.x() + branch.width() + ui::space(ui::gap::cluster), rectOf(bar->syncDropdown()).x());
+                QCOMPARE(rectOf(bar->syncDropdown()).right() + 1, bar->width() - margin);
                 QCOMPARE(rectOf(tabs), strip);
             }
         }
@@ -5085,7 +5251,9 @@ esac
                 auto *tabs = static_cast<SegmentStrip *>(bar->changesTab()->parentWidget());
                 const QRect strip = rectOf(tabs);
                 const int margin = ui::windowMargin(w);
-                QCOMPARE(strip, QRect(margin, firstRow + ui::space(ui::kBar), bar->width() - 2 * margin, sync.height()));
+                QCOMPARE(strip, QRect(margin, firstRow + ui::space(ui::kBar),
+                                      bar->width() - 2 * margin - ui::space(ui::gap::item) - ui::space(ui::box::control),
+                                      sync.height()));
                 QVERIFY(tabs->isStretch());
                 for (QToolButton *b : bar->findChildren<QToolButton *>()) {
                     if (b->isVisible() && !tabs->isAncestorOf(b))
@@ -5229,7 +5397,8 @@ esac
         QCOMPARE(theme.fontBase(), 12);
         theme.apply(*qApp);
 
-        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(1400, 400); });
+        // A short repository name, which keeps a stacked 470 to one row.
+        WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(1400, 400); }, {}, QStringLiteral("repo"));
         QVERIFY(f.window);
         QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
         MainWindow *w = f.window.get();
@@ -5420,10 +5589,10 @@ esac
     }
 
     // The row count follows what the first row has to hold, not only the
-    // width: a longer branch name, or a dropdown widened by a three-digit
-    // count, takes the tabs to a row of their own in a window that keeps its
-    // size, and the bar's height, the body and the popups' edge move with it
-    // and back.
+    // width: a longer branch or repository name, or a dropdown widened by a
+    // three-digit count, takes the tabs to a row of their own in a window
+    // that keeps its size, and the bar's height, the body and the popups'
+    // edge move with it and back.
     void theStackedBarsRowsFollowItsContent()
     {
         QTemporaryDir dir, home;
@@ -5436,7 +5605,8 @@ esac
             QCOMPARE(theme.fontBase(), 12);
             theme.apply(*qApp);
             {
-                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); });
+                WindowFixture f = mainWindow(0, false, [](MainWindow *w) { w->resize(470, 612); }, {},
+                                             QStringLiteral("repo"));
                 QVERIFY(f.window);
                 QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
                 settle();
@@ -5469,6 +5639,13 @@ esac
                 bar->setBranchLabel(QStringLiteral("main"));
                 rows(1);
                 QCOMPARE(w->width(), 470);
+                // The repository's name, the same way.
+                bar->setRepositoryName(QStringLiteral("omagit-workspace"));
+                rows(2);
+                QCOMPARE(w->width(), 470);
+                bar->setRepositoryName(QStringLiteral("repo"));
+                rows(1);
+                QCOMPARE(w->width(), 470);
 
                 // The narrowest width "main" keeps one row at: a pixel short
                 // of it, the tabs take the second.
@@ -5488,13 +5665,11 @@ esac
                 // There, Pull's 99+ widens the dropdown past what the row has
                 // left; a single digit gives it back. The window has no remote
                 // to count against, so the count goes on Pull, which the
-                // dropdown follows. On two rows it is its miniature, which the
-                // count widens too.
+                // dropdown follows.
                 const int dropdown = bar->syncDropdown()->width();
                 bar->pullButton()->setCount(100);
                 rows(2);
-                QVERIFY(bar->syncDropdown()->width() > ui::space(64));
-                QVERIFY(bar->syncDropdown()->width() < dropdown);
+                QVERIFY(bar->syncDropdown()->width() > dropdown);
                 bar->pullButton()->setCount(3);
                 rows(1);
                 QCOMPARE(bar->syncDropdown()->width(), dropdown);
@@ -7924,8 +8099,7 @@ esac
                                         fresh.bar->minimumSizeHint().width()}) {
                     QCOMPARE(live.levelAt(width), fresh.levelAt(width));
                     QCOMPARE(stackedRow(live), stackedRow(fresh));
-                    // The design's 96, or on two rows its 64 px miniature.
-                    QCOMPARE(live.rectOf(live.bar->syncDropdown()).width(), ui::space(live.bar->isTwoRows() ? 64 : 96));
+                    QVERIFY(live.bar->syncDropdown()->property("ghost").toBool());
                 }
                 live.levelAt(live.bar->sizeHint().width());
             };
@@ -10893,14 +11067,20 @@ esac
         const QRect cardRect = shown->geometry();
         // 4 under the bar, whatever its rows. The frame at 340 has the
         // extra-narrow two-row bar, under whose first row the card hangs;
-        // under a one-row bar it is the bar's 8 lower.
+        // under a one-row bar it is the bar's 8 lower. The frames' bar folds
+        // the repository to a bare folder, so where the app's bar, wearing
+        // the name, has two rows and the frame one, the card is 8 higher.
         QCOMPARE(cardRect.y(), host->mapFromGlobal(QPoint(0, ui::popupTop(f.bar()))).y());
         const int rows = f.bar()->height() > ui::space(44) ? 2 : 1;
         const int dy = cardRect.y() - card.y();
-        QCOMPARE(dy, rows == designRows ? 0 : ui::space(ui::kBar));
-        // At the chip, or a margin inside the window's edge.
+        QCOMPARE(dy, (designRows - rows) * ui::space(ui::kBar));
+        // At the chip, or a margin inside the window's edge. The chip
+        // stands where the repository's name puts it, which the frames'
+        // stacked bar folds to a bare folder: the card's content is laid
+        // out from wherever the card is.
         QCOMPARE(cardRect.x(), qMin(rectIn(f.bar()->branchButton(), host).x(),
                                     width - ui::windowMargin(f.window.get()) - cardRect.width()));
+        const int dx = cardRect.x() - card.x();
         QCheckBox *box = shown->switchBox();
         QStyleOptionButton option;
         option.initFrom(box);
@@ -10913,7 +11093,7 @@ esac
             {QRect(box->mapTo(host, indicator.topLeft()), indicator.size()), QRect(check, QSize(16, 16))},
         };
         for (const auto &pair : pairs) {
-            const QRect want = pair.second.translated(0, dy);
+            const QRect want = pair.second.translated(dx, dy);
             QVERIFY2(withinAPixel(pair.first, want),
                      qPrintable(QStringLiteral("%1, the design %2").arg(rectText(pair.first), rectText(want))));
         }
@@ -13830,6 +14010,9 @@ esac
                 BarFixture fresh = topBar();
                 QVERIFY(QTest::qWaitForWindowExposed(fresh.host.get()));
                 settle();
+                // Both at their size hint: a segment's hint is the form it
+                // wears, and the live bar kept the width of the old size.
+                live.levelAt(live.bar->sizeHint().width());
                 QCOMPARE(barMetrics(live.bar), barMetrics(fresh.bar));
                 // ...and both fold at the same width, wherever that is.
                 for (const int width : {760, 430})

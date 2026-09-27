@@ -93,9 +93,11 @@ void SegmentButton::paintEvent(QPaintEvent *)
     {
         p.setFont(plain);
         const int w = glyphBox();
-        // TextDontClip: the box is the room the glyph takes in the row, not
-        // a crop of it.
-        p.drawText(QRect(x, 0, w, height()), Qt::AlignCenter | Qt::TextDontClip, m_glyphText);
+        // Centred by its ink, as the kit's buttons do: the History clock's
+        // ink sits right of its advance, so centring the advance showed it
+        // 2.5 px off. Nothing clips it: the box is the room the glyph takes
+        // in the row, not a crop of it.
+        p.drawText(QRectF(x, 0, w, height()).center() - inkRect(plain, m_glyphText).center(), m_glyphText);
         x += w;
     }
     if (m_labelled && !text().isEmpty()) {
@@ -124,9 +126,8 @@ QString SegmentButton::countText() const
 }
 
 // The room the glyph gets. A Nerd Font glyph's ink hangs over the advance
-// its font metrics report — the History clock is half a pixel column wider
-// on either side — so the box is the design's 16 px icon box at the least,
-// and the paint is never clipped to it.
+// its font metrics report, so the box is the design's 16 px icon box at the
+// least, and the paint is never clipped to it.
 int SegmentButton::glyphBox() const
 {
     return qMax(QFontMetrics(OmarchyTheme::instance()->uiFont()).horizontalAdvance(m_glyphText), space(box::icon));

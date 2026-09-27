@@ -150,11 +150,13 @@ function topBar(c, W, lv, o = {}) {
     return { items, w, own: w > hi - lo && stacked(lv) };
   };
   c.group('TopBar', () => {
-    // repo chip: label + chevron when there is room, a bare folder icon when stacked (never hidden)
-    const w = button(c, { x, y, variant: 'ghost', icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv), id: 'RepoChip' });
+    // The repo and branch chips wear their names at every width (the repo chip never shrinks to a bare
+    // folder); where the stacked row cannot hold them whole they give way together (fitNames()).
+    const [repo, branch] = fitNames(W, lv, d, 'omagit', o.merging ? 'main · merging feature/askpass' : o.branch || 'main');
+    const w = button(c, { x, y, variant: 'ghost', icon: 'folderOpen', label: repo, chevron: true, id: 'RepoChip' });
     x += w + GAP.cluster;
-    // branch chip (accent, bold)
-    const branch = o.merging ? 'main · merging feature/askpass' : o.branch || 'main';
+    // branch chip (accent, bold); the menus and the New branch card hang from it
+    (c.anchors = c.anchors || {}).BranchChip = { x, y };
     const bw = button(c, { x, y, variant: 'ghost', icon: 'branch', label: branch, chevron: true, weight: 700, iconFill: t.accent, id: 'BranchChip' });
     // paint label accent: overlay
     c.add(`<g id="BranchChip/label-accent">`); text(c, x + PAD.control + BOX.icon + GAP.icon, y + BOX.control / 2, branch, { weight: 700, fill: t.accent }); c.add('</g>');
@@ -178,28 +180,35 @@ function topBar(c, W, lv, o = {}) {
         const w = measureButton({ icon: ic, label: labels ? lb : '' });
         rx -= w; button(c, { x: rx, y, icon: ic, label: labels ? lb : '', badge: o.noUpstream ? undefined : b, mark: ic === 'merge' && o.merging, id: 'Sync/' + lb });
       });
+    } else if (navForm(x + GAP.group, rx - BOX.control - GAP.item - SYNC_W - GAP.group).own) {
+      // Two rows: the borderless sync dropdown alone ends the first row, the names giving way only where
+      // it would come within a cluster of the branch; More ends the tabs' row below (drawn with them).
+      const sx = W - d.margin - SYNC_W;
+      c.record({ k: 'SyncDropdown', id: 'SyncDropdown', x: sx, y, w: SYNC_W, h: BOX.control, down: 2, up: 1 });
+      syncDropdown(c, sx, y, 2, 1);
     } else {
       rx -= BOX.control; button(c, { x: rx, y, w: BOX.control, icon: 'dots', id: 'More' }); rx -= GAP.item;
-      // one sync dropdown carrying both counts; the one-row forms are weighed with the full one, and on
-      // two rows it is a borderless 64 px miniature without its chevron
-      const mini = navForm(x + GAP.group, rx - SYNC_W - GAP.group).own, sw = mini ? SYNC_MINI_W : SYNC_W;
-      c.record({ k: 'SyncDropdown', id: 'SyncDropdown', x: rx - sw, y, w: sw, h: BOX.control, down: 2, up: 1, mini });
-      syncDropdown(c, rx - sw, y, 2, 1, mini);
+      // one borderless sync dropdown carrying both counts
+      c.record({ k: 'SyncDropdown', id: 'SyncDropdown', x: rx - SYNC_W, y, w: SYNC_W, h: BOX.control, down: 2, up: 1 });
+      syncDropdown(c, rx - SYNC_W, y, 2, 1);
       rx -= SYNC_W;
     }
     // page tabs: a view toggle centred in the window, like a toolbar mode switch.
     // It keeps a group gap clear of the repo/branch group and the sync group: nudged aside first, labels → icons second.
     // Extra narrow (stacked, and even the icons would touch a group, ≈ < 420): it takes a row of its own under
-    // the controls, the bar's width, its segments stretched and labelled again (icons if a label does not fit a
-    // segment), so the branch keeps its name and nothing overlaps.
+    // the controls, the bar's width but for an item gap and More at its end, its segments stretched and
+    // labelled again (icons if a label does not fit a segment), so the branch keeps its name and nothing
+    // overlaps.
     {
+      const own = stacked(lv) && navForm(x + GAP.group, W - d.margin - BOX.control - GAP.item - SYNC_W - GAP.group).own;
       const lo = x + GAP.group, hi = rx - GAP.group;
-      let { items, w, own } = navForm(lo, hi);
+      let { items, w } = navForm(lo, hi);
       if (own) {
-        const rw = W - 2 * d.margin, each = Math.floor(rw / 3);
+        const ry = y + BOX.control + BAR, rw = W - 2 * d.margin - GAP.item - BOX.control, each = Math.floor(rw / 3);
         items = navItems(lv, page, true);
         if (items.some(it => measureSegmented([it]) > each)) items = navItems(lv, page, false);
-        segmented(c, { x: d.margin, y: y + BOX.control + BAR, w: rw, stretch: true, id: 'NavTabs', items });
+        segmented(c, { x: d.margin, y: ry, w: rw, stretch: true, id: 'NavTabs', items });
+        button(c, { x: W - d.margin - BOX.control, y: ry, w: BOX.control, icon: 'dots', id: 'More' });
         h = TOP_BAR + BOX.control + BAR; // 8 + 28 + 8 + 28 + 8 = 80
       } else {
         const sx = Math.max(lo, Math.min(Math.round(W / 2 - w / 2), hi - w));
@@ -211,22 +220,35 @@ function topBar(c, W, lv, o = {}) {
   return h;
 }
 
-// The stacked top bar's sync dropdown: [8][↓ 16][4][2][8][↑ 16][4][1][4][chevron 12][8], a digit in an 8 slot.
-// On two rows (extra narrow) its miniature: no fill, no border, no chevron, the counts against their
-// arrows' boxes — [4][↓ 16][2][8][↑ 16][1][4], 64 wide.
-const SYNC_W = 96, SYNC_MINI_W = 64;
-function syncDropdown(c, x, y, down, up, mini) {
+// The stacked top bar's names: whole wherever the first row holds them next to the sync group. Where it
+// cannot (two rows, long names) they give way together, as the app's TopBar::shareRoom() shares the room:
+// the shorter one stays whole while the longer keeps at least as much of itself, and each keeps one
+// character before its "…". The font is monospaced, so characters stand for pixels.
+function fitNames(W, lv, d, repo, branch) {
+  if (!stacked(lv)) return [repo, branch];
+  const cw = tw('x'.repeat(10)) / 10, chrome = measureButton({ icon: 'folderOpen', label: '', chevron: true }) + GAP.icon;
+  // the two-row first row: repo and branch a cluster apart, the sync dropdown at least a cluster after
+  const room = W - 2 * d.margin - 2 * chrome - 2 * GAP.cluster - SYNC_W;
+  const chars = Math.floor(room / cw), a = repo.length, b = branch.length;
+  if (a + b <= chars) return [repo, branch];
+  let cap = 1;
+  while (Math.min(a, cap + 1) + Math.min(b, cap + 1) <= chars) cap++;
+  let ra = Math.min(a, cap), rb = Math.min(b, cap);
+  if (ra + rb < chars) { if (ra < a) ra++; else if (rb < b) rb++; }
+  const cut = (s, n) => n >= s.length ? s : s.slice(0, Math.max(0, n - 1)) + '…';
+  return [cut(repo, ra), cut(branch, rb)];
+}
+
+// The stacked top bar's sync dropdown, borderless until hovered and without a chevron, on one row and on
+// two: [4][↓ 16][2][8][↑ 16][1][6], a digit in an 8 slot, 66 wide. The 6 after the last slot leaves as much
+// bare room after the count's ink as before the down arrow's (≈ 7.4 either side at 12 px), so the hover
+// frame sits evenly around what it holds (the app measures both sides by ink).
+const SYNC_W = 66;
+function syncDropdown(c, x, y, down, up) {
   const t = T(), mid = y + BOX.control / 2, iy = y + (BOX.control - BOX.icon) / 2;
-  c.group('SyncDropdown', () => { // one name for both forms: replace-instances.js finds the placement by it
-    if (mini) {
-      icon(c, 'down', x + 4, iy); text(c, x + 20, mid, String(down), { weight: 700, fill: t.accent });
-      icon(c, 'up', x + 36, iy); text(c, x + 52, mid, String(up), { weight: 700, fill: t.accent });
-      return;
-    }
-    fillBox(c, x, y, SYNC_W, BOX.control, 0.04); border(c, x, y, SYNC_W, BOX.control, { stroke: t.fg, so: 0.4 });
-    icon(c, 'down', x + 8, iy); text(c, x + 28, mid, String(down), { weight: 700, fill: t.accent });
-    icon(c, 'up', x + 44, iy); text(c, x + 64, mid, String(up), { weight: 700, fill: t.accent });
-    icon(c, 'chevron', x + 76, y + (BOX.control - BOX.chevron) / 2, BOX.chevron, { opacity: 0.7 });
+  c.group('SyncDropdown', () => { // replace-instances.js finds the placement by this name
+    icon(c, 'down', x + 4, iy); text(c, x + 20, mid, String(down), { weight: 700, fill: t.accent });
+    icon(c, 'up', x + 36, iy); text(c, x + 52, mid, String(up), { weight: 700, fill: t.accent });
   });
 }
 
@@ -1093,7 +1115,7 @@ function screen(o) {
   // bar (extra narrow) they hang 4 under their button's row, over the tabs, not a row away from it
   const menuY = (top > TOP_BAR ? BAR + BOX.control : TOP_BAR) + GAP.cluster, clampW = dw => Math.min(dw, W - 2 * m);
   // the branch chip's x: the menus and the New branch card hang from it
-  const bx = m + measureButton({ icon: 'folderOpen', label: stacked(lv) ? '' : 'omagit', chevron: !stacked(lv) }) + GAP.cluster;
+  const bx = c.anchors.BranchChip.x;
   if (o.overlay === 'branch') {
     // The last row starts a new branch (Ctrl+N). Typing a name no branch has
     // leaves it as the only row, carrying the name: Return opens the card with it.
@@ -1144,8 +1166,9 @@ function screen(o) {
       { label: 'Files view', icon: view[1], submenu: true, hover: o.overlay === 'filesView' }, { label: 'Show unversioned files', icon: 'eye', checked: true },
       { label: 'Agent settings…', icon: 'cog' }, { type: 'sep' }] : [];
     const syncItems = stacked(lv) || lv !== 'm' ? [] : [{ label: 'Fetch', icon: 'fetch', hint: 'Ctrl+F' }, { label: 'Merge…', icon: 'merge', hint: 'Ctrl+Shift+M' }, { type: 'sep' }];
-    const mw = clampW(240), mx = W - m - mw;
-    menuCard(c, { x: mx, y: menuY, w: mw, id: 'MoreMenu', items: [...pageItems, ...syncItems,
+    // More ends the tabs' row on a two-row bar: its menu hangs 4 under the whole bar, under More
+    const mw = clampW(240), mx = W - m - mw, moreY = top + GAP.cluster;
+    menuCard(c, { x: mx, y: moreY, w: mw, id: 'MoreMenu', items: [...pageItems, ...syncItems,
       { label: 'Refresh', icon: 'refresh', hint: 'F5' }, { label: 'Open repository…', icon: 'folderOpen', hint: 'Ctrl+O' }, { label: 'Clone…', icon: 'fetch' }, { type: 'sep' },
       { label: 'Keybindings', icon: 'keyboard', hint: 'Ctrl+K' }, { label: 'Settings…', icon: 'cog', hint: 'Ctrl+,' }] });
     if (o.overlay === 'filesView') {
@@ -1155,7 +1178,7 @@ function screen(o) {
       const items = FILE_VIEWS.map(([id, ic]) => ({ label: FILE_VIEW_NAMES[id], icon: ic, checked: id === view[0] }));
       const sw = 2 * PAD.menu + 2 * PAD.control + BOX.icon + GAP.icon + Math.max(...items.map(it => tw(it.label))) + GAP.icon + BOX.icon;
       const sx = mx + mw + sw <= W - m ? mx + mw : mx - sw >= m ? mx - sw : m;
-      menuCard(c, { x: sx, y: menuY, w: sw, id: 'FilesViewMenu', items });
+      menuCard(c, { x: sx, y: moreY, w: sw, id: 'FilesViewMenu', items });
     }
   }
   if (o.overlay === 'options') { // opens upwards from the Options button, 4 over it
