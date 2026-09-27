@@ -25,7 +25,9 @@ Generates the design frames for the Omagit Figma file
   the title: view switcher, divider, unversioned toggle; check-all lives in the
   table header cell and Amend in the action bar next to Commit.
   The changes list has three views (`filesView`: table, compact, lazygit-style
-  tree via `fileTree`), switched by three icon buttons on the CHANGES row.
+  tree via `fileTree`), switched by three icon buttons on the CHANGES row in
+  the order tree, compact, table; the tree is the default at every width (the
+  History page's list of a commit's files stays a table).
   Extra narrow (stacked, and the toggle's icons would touch the branch or the
   sync group, ≈ < 420): the toggle takes a full-width row of its own under the
   controls (an 80 px bar), labelled again, and the menus hang under the

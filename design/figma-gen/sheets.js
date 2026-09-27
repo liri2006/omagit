@@ -153,7 +153,7 @@ function components() {
   x += 20; ['M', 'A', 'D', 'R', 'C', '?'].forEach(s => { x += statusPill(c, x, y + 6, s) + 8; });
   x += 20; badge(c, x + 20, y + 8, 2); x += 40; badge(c, x + 30, y + 8, 128);
   y += 50; cap(40, y - 14, 'Tables · changes header + rows (normal, selected, untracked, conflict) · commit rows with graph');
-  S.changesTable(c, 40, y, 560, BOX.row * 6, 'xl', { rows: [S.FILES[0], { ...S.FILES[2] }, { ...S.FILES[3], selected: false }, { ...S.FILES[2], st: 'C', name: 'DiffPane.cpp', selected: false }, S.FILES[5]] });
+  S.changesTable(c, 40, y, 560, BOX.row * 6, 'xl', { filesView: 'table', rows: [S.FILES[0], { ...S.FILES[2] }, { ...S.FILES[3], selected: false }, { ...S.FILES[2], st: 'C', name: 'DiffPane.cpp', selected: false }, S.FILES[5]] });
   S.commitsTable(c, 620, y, 840, BOX.row * 5, 'xl', {});
   y += 200; // the Diff row stays 200 under the Tables row (figma/build-components.js lays the pattern rows out by these offsets) cap(40, y - 14, 'Diff · split & unified rows: context, removed, added, filler, header, inline change');
   S.diffPane(c, 40, y, 1420, 260, 'xl', { split: true });

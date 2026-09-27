@@ -188,11 +188,12 @@ history with a branch graph, and can plug into the Nautilus context menu as
   never checked, so they are never committed — and *Amend last commit* sits at the left of the
   bottom bar, next to the button it renames.
 - **Three ways to list the pending files**, the three small buttons at the right of the *CHANGES*
-  row (the choice is remembered): *Table* is the full list with its columns, sorting and
-  right-click actions; *Compact* is the same table down to the checkbox, the file name and a
-  narrow status pill, with the file's folder after it in dim, smaller type; *Tree* puts the files
-  under their directories — directories first and alphabetically, 14 px per level, a chevron and
-  a folder icon, and `3 files` after a folded one. A directory's checkbox stands for every file
+  row, Tree first (the choice is remembered; until one is made, it is the tree at every
+  width): *Tree* puts the files under their directories — directories first and
+  alphabetically, 14 px per level, a chevron and a folder icon, and `3 files` after a folded
+  one; *Compact* is the table down to the checkbox, the file name and a narrow status pill,
+  with the file's folder after it in dim, smaller type; *Table* is the full list with its
+  columns, sorting and right-click actions. In the tree, a directory's checkbox stands for every file
   under it, folded away or not (partial when only some are checked), Space checks the row the
   keyboard is on, ←/→ close and open a branch, and a click on the chevron opens it without
   touching a check mark. Whichever list is on show, it is the same files with the same check
@@ -234,14 +235,12 @@ history with a branch graph, and can plug into the Nautilus context menu as
   Fetch and Merge…, and the layout toggles hide. **More** is there at every stacked width, and on any row it also
   carries Refresh, Open repository…, Clone… and Keybindings after whatever sync buttons are
   folded into it. The commit page's action bar folds too: an **options** `…` at the left
-  (Amend last commit, opening upwards) and Commit across the rest of the row. While nobody
-  has picked a files view, the list is compact when stacked and the table otherwise,
-  without saving either. At the narrowest widths (a 340 px tile), where even the tab glyphs
-  would crowd the two names, the tabs take a row of their own under the controls, with
-  More at its end (its menu opens under it), and the names on the first row give way only
+  (Amend last commit, opening upwards) and Commit across the rest of the row. At the
+  narrowest widths (a 340 px tile), where even the tab glyphs would crowd the two names,
+  the tabs take a row of their own under the controls, with More at its end (its menu opens under it), and the names on the first row give way only
   where the sync dropdown at its right would come within 4 px of the branch; the page's
   CHANGES and MESSAGE header rows fold away too, and their controls lead the More menu on
-  the Changes tab: a **Files view** submenu (Compact list, Tree, Table), Show
+  the Changes tab: a **Files view** submenu (Tree, Compact list, Table), Show
   unversioned files, and Agent settings…, which hangs the agent card from More. A shallow
   window (under 560 px tall at the design's text size) folds them the same way at any width,
   and the top bar keeps More for them even where no sync button is folded into it.
@@ -320,7 +319,7 @@ that button, `newbranch` the New branch card from the current branch), `--screen
 m,a,Down,Return` then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
 and `@changesTree` in that list focus the list on show, so the keys reach it),
-`--files-view compact|tree|table` lists the pending files that way for one run (exactly those
+`--files-view tree|compact|table` lists the pending files that way for one run (exactly those
 three lowercase names; anything else is a usage error and exits 2), whatever is remembered and
 without remembering it — it works on its own as well as with `--screenshot`, and with
 `--history` or `--mini` it only sets up the commit page,
@@ -381,9 +380,9 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
   restored narrow Mini geometry, tabs and keys and double-clicks moving between the
   presentations without reloading, the commit and agent cards on the Diff tab, the
   screenshot slots and their guards, the folded action bar and its options menu, the
-  width-driven files-view default, the unified stacked diff (the same top line, and the
-  same selected text or none) and the remembered view it leaves alone, selection, scroll
-  and diff position kept across every transition and a refresh, a window asked for at a
+  tree as the files view at every width until one is picked, the unified stacked diff (the
+  same top line, and the same selected text or none) and the remembered view it leaves
+  alone, selection, scroll and diff position kept across every transition and a refresh, a window asked for at a
   stacked width shown at that width, and all of it after a live 12 → 16 → 12 change.
 
 ## Layout

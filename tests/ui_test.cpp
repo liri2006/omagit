@@ -483,7 +483,7 @@ QStringList pageMetrics(CommitPage *page)
     // The gaps the switcher keeps: between the three buttons, and around the
     // dividers. Measured off the laid-out row, not off the spacers.
     QStringList gaps;
-    const QList<QToolButton *> row{page->compactButton(), page->treeButton(), page->tableButton(),
+    const QList<QToolButton *> row{page->treeButton(), page->compactButton(), page->tableButton(),
                                    page->unversionedButton()};
     for (int i = 1; i < row.size(); ++i)
         gaps << QString::number(row.at(i)->mapTo(page, QPoint(0, 0)).x()
@@ -4350,6 +4350,7 @@ esac
         // events QtTest sends never reach an item view's own double-click
         // handling.)
         stack(f);
+        f.page()->setFilesView(CommitPage::FilesView::Table, false);
         QTableView *table = f.page()->table();
         QVERIFY(table->isVisible());
         QMetaObject::invokeMethod(table, "doubleClicked", Q_ARG(QModelIndex, table->model()->index(0, ChangesModel::Name)));
@@ -5888,7 +5889,7 @@ esac
             const bool folded = heightClass == HeightClass::Shallow;
             QVERIFY2(messageLabel->isVisible() == !folded, where.constData());
             const int messageRow = rectIn(folded ? static_cast<QWidget *>(message) : messageLabel, host).y();
-            const int listBottom = rectIn(page->table(), host).bottom() + 1;
+            const int listBottom = rectIn(page->activeListView(), host).bottom() + 1;
             QVERIFY2(messageRow - listBottom == block, where.constData());
             QVERIFY2(rectIn(commit, host).y() - (rectIn(message, host).bottom() + 1) == block, where.constData());
             if (!folded)
@@ -7854,14 +7855,15 @@ esac
         QVERIFY(views);
         QVERIFY(qobject_cast<TickMenu *>(views));
         QCOMPARE(menuTexts(views->actions()),
-                 QStringList({ui::icon(ui::kFormatListBulleted) + QStringLiteral("Compact list"),
-                              ui::icon(ui::kFileTree) + QStringLiteral("Tree"), ui::icon(ui::kTable) + QStringLiteral("Table")}));
+                 QStringList({ui::icon(ui::kFileTree) + QStringLiteral("Tree"),
+                              ui::icon(ui::kFormatListBulleted) + QStringLiteral("Compact list"),
+                              ui::icon(ui::kTable) + QStringLiteral("Table")}));
         QCOMPARE(checkedStates(views->actions()), QList<bool>({false, false, true}));
         QVERIFY(actions.at(1)->isCheckable() && actions.at(1)->isChecked());
         QCOMPARE(actions.at(1)->toolTip(), f.eye()->toolTip());
 
         // Tree, through its button: the choice is saved as a click saves it.
-        views->actions().at(1)->trigger();
+        views->actions().at(0)->trigger();
         QCOMPARE(page->filesView(), CommitPage::FilesView::Tree);
         QVERIFY(page->treeButton()->isChecked());
         QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("tree"));
@@ -7874,45 +7876,47 @@ esac
         QMenu again;
         page->addHeaderOptions(&again);
         QCOMPARE(again.actions().at(0)->text(), ui::icon(ui::kFileTree) + QStringLiteral("Files view"));
-        QCOMPARE(checkedStates(again.actions().at(0)->menu()->actions()), QList<bool>({false, true, false}));
+        QCOMPARE(checkedStates(again.actions().at(0)->menu()->actions()), QList<bool>({true, false, false}));
         QVERIFY(!again.actions().at(1)->isChecked());
         QSettings().remove(settings::kWindowFilesView);
     }
 
-    // Nobody has picked a files view: the stacked width lists the files
-    // compact, the ordinary one as the table, and none of it is saved. A
-    // choice — saved, unreadable or on the command line — stays.
-    void theFilesViewFollowsTheWidthUntilChosen()
+    // Nobody has picked a files view: the tree, the first of the three
+    // buttons, at every width, and nothing of it saved. A choice — saved,
+    // unreadable or on the command line — stays whatever the width.
+    void theFilesViewIsTheTreeUntilChosen()
     {
         QSettings().remove(settings::kWindowFilesView);
         {
             CommitFixture f = commitFixture();
             QVERIFY(f.page);
             CommitPage *page = f.page.get();
+            QCOMPARE(page->filesView(), CommitPage::FilesView::Tree);
+            QVERIFY(page->treeButton()->isChecked());
+            QCOMPARE(page->activeListView(), static_cast<QAbstractItemView *>(page->tree()));
             page->table()->selectRow(1);
             const QString current = page->table()->currentIndex().data(ChangesModel::PathRole).toString();
             QSignalSpy rows(page, &CommitPage::currentRowChanged);
             QSignalSpy resets(page->proxy(), &QAbstractItemModel::modelReset);
             page->setStacked(true);
-            QCOMPARE(page->filesView(), CommitPage::FilesView::Compact);
-            QVERIFY(page->compactButton()->isChecked());
+            QCOMPARE(page->filesView(), CommitPage::FilesView::Tree);
+            QVERIFY(page->treeButton()->isChecked());
             page->setStacked(false);
-            QCOMPARE(page->filesView(), CommitPage::FilesView::Table);
+            QCOMPARE(page->filesView(), CommitPage::FilesView::Tree);
             QVERIFY(!QSettings().contains(settings::kWindowFilesView));
             QCOMPARE(rows.count(), 0);
             QCOMPARE(resets.count(), 0);
             QCOMPARE(page->table()->currentIndex().data(ChangesModel::PathRole).toString(), current);
 
             // The one already on is no choice at all; another one is, and
-            // from then on the width leaves it alone.
-            page->setStacked(true);
-            page->compactButton()->click();
+            // the width leaves it alone.
+            page->treeButton()->click();
             QVERIFY(!QSettings().contains(settings::kWindowFilesView));
-            page->tableButton()->click();
-            QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("table"));
-            page->setStacked(false);
+            page->compactButton()->click();
+            QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("compact"));
             page->setStacked(true);
-            QCOMPARE(page->filesView(), CommitPage::FilesView::Table);
+            page->setStacked(false);
+            QCOMPARE(page->filesView(), CommitPage::FilesView::Compact);
         }
         // Saved, even unreadably: left alone and never rewritten.
         QSettings().setValue(settings::kWindowFilesView, QStringLiteral("sideways"));
@@ -7920,7 +7924,7 @@ esac
             CommitFixture f = commitFixture();
             QVERIFY(f.page);
             f.page->setStacked(true);
-            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Table);
+            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Tree);
             QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("sideways"));
         }
         QSettings().remove(settings::kWindowFilesView);
@@ -7928,11 +7932,11 @@ esac
         {
             CommitFixture f = commitFixture();
             QVERIFY(f.page);
-            f.page->setFilesViewOverride(CommitPage::FilesView::Tree);
+            f.page->setFilesViewOverride(CommitPage::FilesView::Table);
             f.page->setStacked(true);
-            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Tree);
+            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Table);
             f.page->setStacked(false);
-            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Tree);
+            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Table);
             f.page->compactButton()->click();
             QCOMPARE(f.page->filesView(), CommitPage::FilesView::Compact);
             QVERIFY(!QSettings().contains(settings::kWindowFilesView));
@@ -8005,7 +8009,7 @@ esac
             }
         } else {
             QVERIFY(f.page()->selectPath(QStringLiteral("long.txt")));
-            list = f.page()->table();
+            list = f.page()->activeListView();
         }
         settle();
         const auto currentPath = [&] {
@@ -13081,7 +13085,7 @@ esac
             QVERIFY(f.page);
             QVERIFY(QTest::qWaitForWindowExposed(f.page.get()));
             settle();
-            const QList<QToolButton *> buttons{f.page->compactButton(), f.page->treeButton(), f.page->tableButton()};
+            const QList<QToolButton *> buttons{f.page->treeButton(), f.page->compactButton(), f.page->tableButton()};
             QStringList names;
             for (QToolButton *b : buttons) {
                 names << b->accessibleName();
@@ -13090,24 +13094,24 @@ esac
                 QCOMPARE(b->objectName(), QStringLiteral("iconButton"));
                 QCOMPARE(b->size(), QSize(ui::space(24), ui::space(24)));
             }
-            QCOMPARE(names, QStringList({"Compact list", "Tree", "Table"}));
-            // Nothing saved is the table, and reading a choice never writes one.
-            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Table);
-            QVERIFY(f.page->tableButton()->isChecked());
+            QCOMPARE(names, QStringList({"Tree", "Compact list", "Table"}));
+            // Nothing saved is the tree, and reading a choice never writes one.
+            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Tree);
+            QVERIFY(f.page->treeButton()->isChecked());
             QVERIFY(!QSettings().contains(settings::kWindowFilesView));
 
             // Exactly one at a time, and the saved choice follows the clicks.
-            f.page->treeButton()->click();
-            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Tree);
-            QVERIFY(!f.page->tableButton()->isChecked() && !f.page->compactButton()->isChecked());
-            QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("tree"));
+            f.page->tableButton()->click();
+            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Table);
+            QVERIFY(!f.page->treeButton()->isChecked() && !f.page->compactButton()->isChecked());
+            QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("table"));
             f.page->compactButton()->click();
             QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("compact"));
             // Clicking the one already on changes nothing.
             f.page->compactButton()->click();
             QCOMPARE(f.page->filesView(), CommitPage::FilesView::Compact);
         }
-        // A saved choice comes back; something unreadable is the table.
+        // A saved choice comes back; something unreadable is the tree.
         {
             CommitFixture f = commitFixture();
             QVERIFY(f.page);
@@ -13118,7 +13122,7 @@ esac
         {
             CommitFixture f = commitFixture();
             QVERIFY(f.page);
-            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Table);
+            QCOMPARE(f.page->filesView(), CommitPage::FilesView::Tree);
             QCOMPARE(QSettings().value(settings::kWindowFilesView).toString(), QStringLiteral("sideways"));
         }
         // The command line's spellings, and nothing else.

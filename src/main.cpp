@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
     parser.addOption(screenshotSizeOpt);
     QCommandLineOption screenshotKeysOpt(QStringLiteral("screenshot-keys"), QStringLiteral("Comma-separated keys (m,a,Down,Return) sent to the focused widget once the --screenshot-menu dropdown is open, or to the window; @objectName[:vbar] or @ClassName[:vbar] focuses that (first visible) widget or its vertical scrollbar first (for testing)."), QStringLiteral("keys"));
     parser.addOption(screenshotKeysOpt);
-    QCommandLineOption filesViewOpt(QStringLiteral("files-view"), QStringLiteral("How the commit dialog lists its files for this run: compact, tree or table (for testing; the choice is not remembered)."), QStringLiteral("compact|tree|table"));
+    QCommandLineOption filesViewOpt(QStringLiteral("files-view"), QStringLiteral("How the commit dialog lists its files for this run: tree, compact or table (for testing; the choice is not remembered)."), QStringLiteral("tree|compact|table"));
     parser.addOption(filesViewOpt);
     parser.process(app);
 
@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
         bool known = false;
         CommitPage::viewFromKey(filesView, &known);
         if (!known)
-            return usageError(QStringLiteral("--files-view takes compact, tree or table — not \"%1\".").arg(filesView));
+            return usageError(QStringLiteral("--files-view takes tree, compact or table — not \"%1\".").arg(filesView));
     }
 
     OmarchyTheme theme;

@@ -551,7 +551,7 @@ CommitPage::CommitPage(GitRepo *repo, QWidget *parent)
     applyBlockGap();
 
     // How the last run left the files listed; anything unreadable, or nothing
-    // at all, is the table. Reading a choice back never writes it again.
+    // at all, is the tree. Reading a choice back never writes it again.
     setFilesView(viewFromKey(QSettings().value(settings::kWindowFilesView).toString(), nullptr), false);
 }
 
@@ -754,7 +754,7 @@ QWidget *CommitPage::buildChangesSection()
     return changes;
 }
 
-// title, stretch, compact, tree, table, divider, eye, divider, Refresh — in a
+// title, stretch, tree, compact, table, divider, eye, divider, Refresh — in a
 // layout of its own, with the design's gaps as spacers (screens.js
 // changesPage()): the three files-view buttons a cluster apart, and a group
 // gap with a divider at its middle (8 | 8) either side of the eye.
@@ -787,7 +787,7 @@ QHBoxLayout *CommitPage::buildChangesTools()
     m_viewButtons->setExclusive(true);
     const auto switcher = [this, add, gap](FilesView view, uint glyph, const QString &fallback,
                                            const QString &name) {
-        if (view != FilesView::Compact)
+        if (view != FilesView::Tree)
             gap(ui::gap::cluster); // the first of the three needs nothing before it
         QToolButton *button = iconButton(glyph, fallback, name);
         button->setCheckable(true);
@@ -796,8 +796,8 @@ QHBoxLayout *CommitPage::buildChangesTools()
         add(button);
         return button;
     };
-    m_compactButton = switcher(FilesView::Compact, kFormatListBulleted, tr("C"), tr("Compact list"));
     m_treeButton = switcher(FilesView::Tree, kFileTree, tr("T"), tr("Tree"));
+    m_compactButton = switcher(FilesView::Compact, kFormatListBulleted, tr("C"), tr("Compact list"));
     m_tableButton = switcher(FilesView::Table, kTable, tr("L"), tr("Table"));
     connect(m_viewButtons, &QButtonGroup::idToggled, this, [this](int id, bool on) {
         if (on && int(m_filesView) != id)
@@ -952,11 +952,11 @@ QAbstractItemView *CommitPage::activeListView() const
 QString CommitPage::viewKey(FilesView view)
 {
     switch (view) {
+    case FilesView::Tree: break;
     case FilesView::Compact: return QStringLiteral("compact");
-    case FilesView::Tree: return QStringLiteral("tree");
-    case FilesView::Table: break;
+    case FilesView::Table: return QStringLiteral("table");
     }
-    return QStringLiteral("table");
+    return QStringLiteral("tree");
 }
 
 CommitPage::FilesView CommitPage::viewFromKey(const QString &key, bool *ok)
@@ -971,7 +971,7 @@ CommitPage::FilesView CommitPage::viewFromKey(const QString &key, bool *ok)
         return FilesView::Table;
     if (ok)
         *ok = false;
-    return FilesView::Table; // a saved value nobody recognises is the table
+    return FilesView::Tree; // a saved value nobody recognises is the tree
 }
 
 // Switching is a change of presentation and nothing besides: the same proxy,
@@ -1251,15 +1251,6 @@ void CommitPage::setStacked(bool on)
     m_stacked = on;
     applyActionBarForm();
     updateCommitButton(); // the key comes off or back on
-    // The width's own files view, while nobody has picked one: a saved choice
-    // (readable or not) and a --files-view run are the user's, and stay.
-    if (!m_filesViewLocked && !QSettings().contains(settings::kWindowFilesView)) {
-        // Compact and Table are the same table, so the scroll offset carries
-        // over; setFilesView() would scroll to the current row instead.
-        const QPoint offset = scrollOffset();
-        setFilesView(on ? FilesView::Compact : FilesView::Table, false);
-        setScrollOffset(offset);
-    }
 }
 
 void CommitPage::setWindowClass(WidthClass width, HeightClass height)
@@ -1392,8 +1383,8 @@ void CommitPage::setHeaderRowsHidden(bool hidden)
 // settings hang from).
 void CommitPage::addHeaderOptions(QMenu *menu)
 {
-    const QList<QToolButton *> views{m_compactButton, m_treeButton, m_tableButton};
-    const uint glyphs[] = {kFormatListBulleted, kFileTree, kTable};
+    const QList<QToolButton *> views{m_treeButton, m_compactButton, m_tableButton};
+    const uint glyphs[] = {kFileTree, kFormatListBulleted, kTable};
     const int current = int(m_filesView);
     auto *submenu = new TickMenu(menu);
     submenu->setTitle(icon(glyphs[current]) + tr("Files view"));

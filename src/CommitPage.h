@@ -39,11 +39,12 @@ class CommitPage : public QWidget
 {
     Q_OBJECT
 public:
-    // How the pending files are listed. Table is the one that has always
-    // been there, columns and all; Compact is that same table with only the
-    // checkbox, the name and a status pill; Tree lists them under their
-    // directories. Whichever is on, the flat list below is the same.
-    enum class FilesView { Compact, Tree, Table };
+    // How the pending files are listed, in the switcher's order. Tree lists
+    // them under their directories and is the default at every width;
+    // Compact is the table with only the checkbox, the name and a status
+    // pill; Table is the one that has always been there, columns and all.
+    // Whichever is on, the flat list below is the same.
+    enum class FilesView { Tree, Compact, Table };
 
     // What the commit controls say at this moment, for a second face of them
     // (the Mini layout's commit popover): read whole whenever
@@ -125,8 +126,7 @@ public:
     // Whether the diff pane shows, for what a double-click on a file does.
     void setDiffPaneVisible(bool on) { m_diffPaneVisible = on; }
     // The window's narrow presentation: the action bar folds Amend into the
-    // options menu and Commit takes the rest of the row, and, while nobody has
-    // chosen a files view, the list turns compact. Nothing of it is saved.
+    // options menu and Commit takes the rest of the row. Nothing of it is saved.
     void setStacked(bool on);
     bool isStacked() const { return m_stacked; }
     // The window's classes, which only ever size things: the table's
@@ -272,7 +272,7 @@ private:
     QStackedWidget *m_listStack;   // the table and the tree in the list's slot
     QTreeView *m_tree;
     ChangesTreeModel *m_treeModel;
-    FilesView m_filesView = FilesView::Table;
+    FilesView m_filesView = FilesView::Table; // what the widgets show until the constructor picks
     bool m_filesViewLocked = false;  // --files-view: this run saves no choice
     QSet<QString> m_collapsed;       // directories folded away, by exact path
     bool m_restoringTree = false;    // a rebuild is putting that state back

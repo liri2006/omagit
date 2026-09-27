@@ -63,8 +63,8 @@
   "h": 1234
  },
  {
-  "file": "10-Wide-Changes-tree-view.svg",
-  "id": "Wide · Changes · tree view",
+  "file": "10-Wide-Changes-table-view.svg",
+  "id": "Wide · Changes · table view",
   "page": "Screens · Wide",
   "w": 1900,
   "h": 1234
@@ -105,8 +105,8 @@
   "h": 1234
  },
  {
-  "file": "16-Half-Changes-tree-view.svg",
-  "id": "Half · Changes · tree view",
+  "file": "16-Half-Changes-table-view.svg",
+  "id": "Half · Changes · table view",
   "page": "Screens · Half & Quarter",
   "w": 945,
   "h": 1234
@@ -224,8 +224,8 @@
   "h": 612
  },
  {
-  "file": "33-Eighth-Changes-tab-tree-view.svg",
-  "id": "Eighth · Changes tab · tree view",
+  "file": "33-Eighth-Changes-tab-table-view.svg",
+  "id": "Eighth · Changes tab · table view",
   "page": "Screens · Narrow",
   "w": 470,
   "h": 612

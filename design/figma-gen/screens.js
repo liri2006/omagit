@@ -294,7 +294,7 @@ function changesPage(c, x, y, w, h, lv, o = {}) {
     const files = o.rows || FILES, checked = files.filter(f => f.checked).length;
     sectionLabel(c, x, cy + HR / 2, 'Changes · ' + checked + '/' + files.length, { id: 'Section/Changes' });
     // right to left: Refresh (it reloads this list) | the unversioned-files filter | how the files are
-    // listed (table: wide default, compact: narrow default, tree); dividers stand in 16 px group gaps
+    // listed (tree, the default at every width, then compact, table); dividers stand in 16 px group gaps
     let ex = headerButtonX(x, w);
     button(c, { x: ex, y: cy, w: HR, h: HR, variant: 'ghost', icon: 'refresh', id: 'Refresh' });
     ex -= GAP.group / 2; vline(c, ex, cy + (HR - BOX.divider) / 2, BOX.divider, { fo: 0.25 }); ex -= GAP.group / 2 + HR;
@@ -334,9 +334,9 @@ function messageBox(c, x, y, w, h, o, oneLine) {
   });
 }
 
-const FILE_VIEWS = [['compact', 'list'], ['tree', 'tree'], ['table', 'table']];
+const FILE_VIEWS = [['tree', 'tree'], ['compact', 'list'], ['table', 'table']];
 const FILE_VIEW_NAMES = { compact: 'Compact list', tree: 'Tree', table: 'Table' };
-const filesView = (lv, o) => o.filesView || (stacked(lv) ? 'compact' : 'table');
+const filesView = (lv, o) => o.filesView || 'tree';
 // lazygit-style tree: directories first (each level nested), then the files of
 // that level; o.collapsed lists directory paths shown folded.
 function fileTree(rows, collapsed = []) {
@@ -480,7 +480,7 @@ function historyPage(c, x, y, w, h, lv, o = {}) {
     commitsTable(c, x, cy, w, tableH, lv, o);
     cy += tableH;
     if (detailsH) { cy += d.block; commitDetails(c, x, cy, w, detailsH, lv, o); cy += detailsH; }
-    if (filesH) { cy += d.block; changesTable(c, x, cy, w, filesH, lv, { rows: [{ name: 'Toolbar.cpp', path: 'src/ui', ext: '.cpp', size: '6.2 KiB', st: 'M', add: 4, del: 2, checked: true, selected: true }, { name: 'Toolbar.h', path: 'src/ui', ext: '.h', size: '1.9 KiB', st: 'M', add: 3, del: 0, checked: true }].map(r => ({ ...r, checked: undefined })) }); cy += filesH; }
+    if (filesH) { cy += d.block; changesTable(c, x, cy, w, filesH, lv, { filesView: 'table', rows: [{ name: 'Toolbar.cpp', path: 'src/ui', ext: '.cpp', size: '6.2 KiB', st: 'M', add: 4, del: 2, checked: true, selected: true }, { name: 'Toolbar.h', path: 'src/ui', ext: '.h', size: '1.9 KiB', st: 'M', add: 3, del: 0, checked: true }].map(r => ({ ...r, checked: undefined })) }); cy += filesH; }
     if (s) searchCountRow(c, x, cy, w, s);
     else dimText(c, x, cy + BOX.row / 2, '12 commits', { size: SIZE.small });
   });

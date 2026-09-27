@@ -14,14 +14,14 @@ emit(S.screen({ id: 'Wide · Keybindings', W: 1900, H: 1234, page: 'changes', ov
 emit(S.screen({ id: 'Wide · Agent settings', W: 1900, H: 1234, page: 'changes', overlay: 'agent', agent: { agent: 'claude', model: 'opus', effort: 'high', hover: 1 } }), 'Screens · Wide');
 emit(S.screen({ id: 'Wide · Merge in progress', W: 1900, H: 1234, page: 'changes', merging: true, message: "Merge branch 'feature/askpass'", rows: S.FILES.map((f, i) => i === 2 ? { ...f, st: 'C', name: 'Toolbar.cpp' } : f) }), 'Screens · Wide');
 emit(S.screen({ id: 'Wide · Diff hidden', W: 1900, H: 1234, page: 'changes', diffHidden: true }), 'Screens · Wide');
-emit(S.screen({ id: 'Wide · Changes · tree view', W: 1900, H: 1234, page: 'changes', filesView: 'tree' }), 'Screens · Wide');
+emit(S.screen({ id: 'Wide · Changes · table view', W: 1900, H: 1234, page: 'changes', filesView: 'table' }), 'Screens · Wide');
 emit(S.screen({ id: 'Wide · Changes · compact view', W: 1900, H: 1234, page: 'changes', filesView: 'compact' }), 'Screens · Wide');
 // Half 945x1234 & quarter 945x612
 emit(S.screen({ id: 'Half · Changes', W: 945, H: 1234, page: 'changes' }), 'Screens · Half & Quarter');
 emit(S.screen({ id: 'Half · History', W: 945, H: 1234, page: 'history' }), 'Screens · Half & Quarter');
 emit(S.screen({ id: 'Half · Mini rail', W: 945, H: 1234, page: 'changes', mini: true }), 'Screens · Half & Quarter');
 emit(S.screen({ id: 'Half · Mini rail · commit popover', W: 945, H: 1234, page: 'changes', mini: true, overlay: 'commit', message: 'Make the toolbar tiling aware', messageBody: ['', '- Fold labels, then icons, then buttons'] }), 'Screens · Half & Quarter');
-emit(S.screen({ id: 'Half · Changes · tree view', W: 945, H: 1234, page: 'changes', filesView: 'tree' }), 'Screens · Half & Quarter');
+emit(S.screen({ id: 'Half · Changes · table view', W: 945, H: 1234, page: 'changes', filesView: 'table' }), 'Screens · Half & Quarter');
 emit(S.screen({ id: 'Half · Repo menu', W: 945, H: 1234, page: 'changes', overlay: 'repo' }), 'Screens · Half & Quarter');
 emit(S.screen({ id: 'Half · Agent settings · Codex', W: 945, H: 1234, page: 'changes', overlay: 'agent', agent: { agent: 'codex', model: 'gpt-6-astra', effort: '', otherOpen: true, otherValue: 'gpt-5.5-codex' } }), 'Screens · Half & Quarter');
 emit(S.screen({ id: 'Quarter · Changes', W: 945, H: 612, page: 'changes' }), 'Screens · Half & Quarter');
@@ -39,7 +39,7 @@ emit(S.screen({ id: 'Third · Agent settings · none installed', W: 627, H: 612,
 emit(S.screen({ id: 'Third tall · Changes 627x1234', W: 627, H: 1234, page: 'changes' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Eighth · Changes tab', W: 470, H: 612, page: 'changes' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Eighth · Diff tab', W: 470, H: 612, page: 'diff' }), 'Screens · Narrow');
-emit(S.screen({ id: 'Eighth · Changes tab · tree view', W: 470, H: 612, page: 'changes', filesView: 'tree' }), 'Screens · Narrow');
+emit(S.screen({ id: 'Eighth · Changes tab · table view', W: 470, H: 612, page: 'changes', filesView: 'table' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Eighth · History tab', W: 470, H: 612, page: 'history' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Eighth · Branch menu', W: 470, H: 612, page: 'changes', overlay: 'branch' }), 'Screens · Narrow');
 emit(S.screen({ id: 'Eighth shallow · 470x400', W: 470, H: 400, page: 'changes' }), 'Screens · Narrow');

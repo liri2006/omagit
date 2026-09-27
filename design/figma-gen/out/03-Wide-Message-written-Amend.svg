@@ -91,18 +91,18 @@
 <g id="icon/eye" transform="translate(513,57) scale(0.5833)"><path d="M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z" fill="#4ecdc4"/></g>
 </g>
 <rect x="500" y="56" width="1" height="16" fill="#e0e6ed" fill-opacity="0.25"/>
-<g id="FilesView/compact">
-<g id="icon/list" transform="translate(417,57) scale(0.5833)"><path d="M7,5H21V7H7V5M7,13V11H21V13H7M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M7,19V17H21V19H7M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5Z" fill="#e0e6ed"/></g>
-</g>
 <g id="FilesView/tree">
-<g id="icon/tree" transform="translate(445,57) scale(0.5833)"><path d="M3,3H9V7H3V3M15,10H21V14H15V10M15,17H21V21H15V17M13,13H7V18H13V20H7L5,20V9H7V11H13V13Z" fill="#e0e6ed"/></g>
+<rect x="412" y="52" width="24" height="24" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="412.5" y="52.5" width="23" height="23" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
+<g id="icon/tree" transform="translate(417,57) scale(0.5833)"><path d="M3,3H9V7H3V3M15,10H21V14H15V10M15,17H21V21H15V17M13,13H7V18H13V20H7L5,20V9H7V11H13V13Z" fill="#4ecdc4"/></g>
+</g>
+<g id="FilesView/compact">
+<g id="icon/list" transform="translate(445,57) scale(0.5833)"><path d="M7,5H21V7H7V5M7,13V11H21V13H7M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M7,19V17H21V19H7M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5Z" fill="#e0e6ed"/></g>
 </g>
 <g id="FilesView/table">
-<rect x="468" y="52" width="24" height="24" id="fill" fill="#e0e6ed" fill-opacity="0.18"/>
-<rect x="468.5" y="52.5" width="23" height="23" id="border" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.18"/>
-<g id="icon/table" transform="translate(473,57) scale(0.5833)"><path d="M5,4H19A2,2 0 0,1 21,6V18A2,2 0 0,1 19,20H5A2,2 0 0,1 3,18V6A2,2 0 0,1 5,4M5,8V12H11V8H5M13,8V12H19V8H13M5,14V18H11V14H5M13,14V18H19V14H13Z" fill="#4ecdc4"/></g>
+<g id="icon/table" transform="translate(473,57) scale(0.5833)"><path d="M5,4H19A2,2 0 0,1 21,6V18A2,2 0 0,1 19,20H5A2,2 0 0,1 3,18V6A2,2 0 0,1 5,4M5,8V12H11V8H5M13,8V12H19V8H13M5,14V18H11V14H5M13,14V18H19V14H13Z" fill="#e0e6ed"/></g>
 </g>
-<g id="ChangesTable">
+<g id="ChangesTree">
 <rect x="16.5" y="84.5" width="559" height="933" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 <rect x="16" y="107" width="560" height="1" fill="#e0e6ed" fill-opacity="0.2"/>
 <g id="CheckAll">
@@ -112,94 +112,132 @@
 </g>
 <rect x="48" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
 <text x="56" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Name</text>
-<rect x="232" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="240" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="start" xml:space="preserve">Path</text>
-<rect x="360" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="396" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">Status</text>
-<rect x="432" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="468" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">+ −</text>
-<rect x="504" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
-<text x="540" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">Size</text>
-<g id="Row/normal GitRepo.cpp">
-<g id="Checkbox/checked">
-<rect x="24" y="112" width="16" height="16" fill="#4ecdc4"/>
-<g id="icon/check" transform="translate(25,113) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+<rect x="472" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="508" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">+ −</text>
+<rect x="544" y="85" width="1" height="22" fill="#e0e6ed" fill-opacity="0.1"/>
+<text x="560" y="99.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">St</text>
+<g id="DirRow/open src">
+<g id="Checkbox/partial">
+<rect x="24" y="112" width="16" height="16" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="24.5" y="112.5" width="15" height="15" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<g id="icon/minus" transform="translate(25,113) scale(0.5833)"><path d="M19,13H5V11H19V13Z" fill="#4ecdc4"/></g>
 </g>
-<text x="56" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">GitRepo.cpp</text>
-<text x="240" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/core</text>
-<text x="396" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#6a85ff" text-anchor="middle" xml:space="preserve">Modified</text>
-<text x="466" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+1</text>
-<text x="470" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−1</text>
-<text x="568" y="124.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">7.1 KiB</text>
+<g id="icon/chevron" transform="translate(56.75,114.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#8791a6"/></g>
+<g id="icon/folderOutline" transform="translate(73,113) scale(0.5833)"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6Z" fill="#8791a6"/></g>
+<text x="92" y="124.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">src</text>
 </g>
-<g id="Row/normal RemoteSync.cpp">
+<g id="DirRow/open core">
 <g id="Checkbox/checked">
 <rect x="24" y="136" width="16" height="16" fill="#4ecdc4"/>
 <g id="icon/check" transform="translate(25,137) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="56" y="148.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">RemoteSync.cpp</text>
-<text x="240" y="148.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/core</text>
-<text x="396" y="148.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#6a85ff" text-anchor="middle" xml:space="preserve">Modified</text>
-<text x="466" y="148.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+1</text>
-<text x="470" y="148.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−0</text>
-<text x="568" y="148.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">4.8 KiB</text>
+<g id="icon/chevron" transform="translate(72.75,138.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#8791a6"/></g>
+<g id="icon/folderOutline" transform="translate(89,137) scale(0.5833)"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6Z" fill="#8791a6"/></g>
+<text x="108" y="148.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">core</text>
 </g>
-<g id="Row/selected Toolbar.cpp">
-<rect x="17" y="156" width="558" height="24" fill="#e0e6ed" fill-opacity="0.08"/>
+<g id="Row/normal GitRepo.cpp">
 <g id="Checkbox/checked">
 <rect x="24" y="160" width="16" height="16" fill="#4ecdc4"/>
 <g id="icon/check" transform="translate(25,161) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="56" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Toolbar.cpp</text>
-<text x="240" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui</text>
-<text x="396" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#6a85ff" text-anchor="middle" xml:space="preserve">Modified</text>
-<text x="466" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+4</text>
-<text x="470" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−2</text>
-<text x="568" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">6.2 KiB</text>
+<text x="88" y="172.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">GitRepo.cpp</text>
+<text x="506" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+1</text>
+<text x="510" y="172.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−1</text>
+<g id="StatusPill/M">
+<rect x="552" y="160" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="560" y="171.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
-<g id="Row/normal README.md">
+</g>
+<g id="Row/normal RemoteSync.cpp">
 <g id="Checkbox/checked">
 <rect x="24" y="184" width="16" height="16" fill="#4ecdc4"/>
 <g id="icon/check" transform="translate(25,185) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="56" y="196.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#ff7b92" xml:space="preserve">README.md</text>
-<text x="240" y="196.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">docs</text>
-<text x="396" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" text-anchor="middle" xml:space="preserve">Deleted</text>
-<text x="466" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+0</text>
-<text x="470" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−60</text>
-<text x="568" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">2.0 KiB</text>
+<text x="88" y="196.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#6a85ff" xml:space="preserve">RemoteSync.cpp</text>
+<text x="506" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+1</text>
+<text x="510" y="196.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−0</text>
+<g id="StatusPill/M">
+<rect x="552" y="184" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="560" y="195.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
-<g id="Row/normal ui_tests.cpp">
+</g>
+<g id="DirRow/open ui">
+<g id="Checkbox/partial">
+<rect x="24" y="208" width="16" height="16" fill="#e0e6ed" fill-opacity="0.18"/>
+<rect x="24.5" y="208.5" width="15" height="15" fill="none" stroke="#4ecdc4" stroke-width="1" stroke-opacity="1"/>
+<g id="icon/minus" transform="translate(25,209) scale(0.5833)"><path d="M19,13H5V11H19V13Z" fill="#4ecdc4"/></g>
+</g>
+<g id="icon/chevron" transform="translate(72.75,210.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#8791a6"/></g>
+<g id="icon/folderOutline" transform="translate(89,209) scale(0.5833)"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6Z" fill="#8791a6"/></g>
+<text x="108" y="220.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">ui</text>
+</g>
+<g id="Row/selected Toolbar.cpp">
+<rect x="17" y="228" width="558" height="24" fill="#e0e6ed" fill-opacity="0.08"/>
 <g id="Checkbox/checked">
-<rect x="24" y="208" width="16" height="16" fill="#4ecdc4"/>
-<g id="icon/check" transform="translate(25,209) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+<rect x="24" y="232" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(25,233) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
 </g>
-<text x="56" y="220.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#b388eb" xml:space="preserve">ui_tests.cpp</text>
-<text x="240" y="220.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">tests</text>
-<text x="396" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#b388eb" text-anchor="middle" xml:space="preserve">Renamed</text>
-<text x="466" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+1</text>
-<text x="470" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−0</text>
-<text x="568" y="220.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">9.4 KiB</text>
+<text x="88" y="244.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#4ecdc4" xml:space="preserve">Toolbar.cpp</text>
+<text x="506" y="244.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+4</text>
+<text x="510" y="244.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−2</text>
+<g id="StatusPill/M">
+<rect x="552" y="232" width="16" height="16" fill="#6a85ff" fill-opacity="0.18"/>
+<text x="560" y="243.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#6a85ff" text-anchor="middle" xml:space="preserve">M</text>
 </g>
-<g id="Row/normal notes.txt">
-<g id="Checkbox/off">
-<rect x="24" y="232" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
-<rect x="24.5" y="232.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
-</g>
-<text x="56" y="244.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">notes.txt</text>
-<text x="240" y="244.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve"></text>
-<text x="396" y="244.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="middle" xml:space="preserve">Untracked</text>
-<text x="568" y="244.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">6 B</text>
 </g>
 <g id="Row/normal NewWidget.cpp">
 <g id="Checkbox/off">
 <rect x="24" y="256" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
 <rect x="24.5" y="256.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
 </g>
-<text x="56" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">NewWidget.cpp</text>
-<text x="240" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">src/ui</text>
-<text x="396" y="268.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="middle" xml:space="preserve">Untracked</text>
-<text x="568" y="268.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" text-anchor="end" xml:space="preserve">9 B</text>
+<text x="88" y="268.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">NewWidget.cpp</text>
+<g id="StatusPill/?">
+<rect x="552" y="256" width="16" height="16" fill="#8791a6" fill-opacity="0.18"/>
+<text x="560" y="267.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">?</text>
+</g>
+</g>
+<g id="DirRow/open docs">
+<g id="Checkbox/checked">
+<rect x="24" y="280" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(25,281) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+</g>
+<g id="icon/chevron" transform="translate(56.75,282.75) scale(0.4375)"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" fill="#8791a6"/></g>
+<g id="icon/folderOutline" transform="translate(73,281) scale(0.5833)"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6Z" fill="#8791a6"/></g>
+<text x="92" y="292.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">docs</text>
+</g>
+<g id="Row/normal README.md">
+<g id="Checkbox/checked">
+<rect x="24" y="304" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(25,305) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+</g>
+<text x="72" y="316.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#ff7b92" xml:space="preserve">README.md</text>
+<text x="506" y="316.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#4ecdc4" text-anchor="end" xml:space="preserve">+0</text>
+<text x="510" y="316.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#ff7b92" xml:space="preserve">−60</text>
+<g id="StatusPill/D">
+<rect x="552" y="304" width="16" height="16" fill="#ff7b92" fill-opacity="0.18"/>
+<text x="560" y="315.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#ff7b92" text-anchor="middle" xml:space="preserve">D</text>
+</g>
+</g>
+<g id="DirRow/collapsed tests">
+<g id="Checkbox/checked">
+<rect x="24" y="328" width="16" height="16" fill="#4ecdc4"/>
+<g id="icon/check" transform="translate(25,329) scale(0.5833)"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" fill="#181c22"/></g>
+</g>
+<g id="icon/chevronR" transform="translate(56.75,330.75) scale(0.4375)"><path d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" fill="#8791a6"/></g>
+<g id="icon/folderOutline" transform="translate(73,329) scale(0.5833)"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6Z" fill="#8791a6"/></g>
+<text x="92" y="340.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#e0e6ed" xml:space="preserve">tests</text>
+<text x="136" y="340.0" font-family="JetBrains Mono" font-size="11" font-weight="400" fill="#8791a6" xml:space="preserve">1 file</text>
+</g>
+<g id="Row/normal notes.txt">
+<g id="Checkbox/off">
+<rect x="24" y="352" width="16" height="16" fill="#e0e6ed" fill-opacity="0.04"/>
+<rect x="24.5" y="352.5" width="15" height="15" fill="none" stroke="#e0e6ed" stroke-width="1" stroke-opacity="0.4"/>
+</g>
+<text x="56" y="364.3" font-family="JetBrains Mono" font-size="12" font-weight="400" fill="#8791a6" xml:space="preserve">notes.txt</text>
+<g id="StatusPill/?">
+<rect x="552" y="352" width="16" height="16" fill="#8791a6" fill-opacity="0.18"/>
+<text x="560" y="363.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" text-anchor="middle" xml:space="preserve">?</text>
+</g>
 </g>
 </g>
 <text x="16" y="1045.6" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#8791a6" id="Section/Message" letter-spacing="0.8" xml:space="preserve">MESSAGE</text>
