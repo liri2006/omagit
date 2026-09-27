@@ -96,8 +96,14 @@ history with a branch graph, and can plug into the Nautilus context menu as
   that names another user asks for that user); the passphrase alone for a key. Closing the
   dialog ends the asking for the whole operation, remotes still to come included.
   Whether it is remembered is git's business and the dialog says which: a configured
-  credential helper (libsecret and friends) keeps it, without one it is used once and
-  forgotten — nothing is written by Omagit. The note names the helper by its program
+  credential helper (libsecret and friends) keeps it. Without one the dialog offers
+  **Remember this sign-in**, ticked: once the fetch, pull, push or clone worked, Omagit adds
+  `credential.<scheme>://<host>.helper = libsecret` for that one server to your global git
+  configuration and hands the login to `git credential approve`, so git's libsecret helper
+  keeps it in your keyring and the server stops asking — Omagit itself writes no password
+  anywhere. (Every Omarchy machine has the helper and the keyring; Omarchy's keyring has no
+  password of its own, so a personal access token is the better thing to keep there, as the
+  dialog says.) Untick it and the login is used once and forgotten. The note names the helper by its program
   (`store`, `libsecret`, `gh`) and shows its whole command on hover; a clone's sign-in reads
   git's global configuration, since a clone uses no repository's. For a plain-HTTP remote the
   dialog warns that the password is sent unencrypted (this machine's loopback excepted). Only
@@ -378,6 +384,7 @@ Every suite gets a throw-away `XDG_CONFIG_HOME`, so a run never touches the real
 | `src/SettingsDialog.*` | Settings: for now whether Nautilus offers Open in Omagit, with a restart of a running Nautilus to show the change |
 | `src/NautilusMenu.*` | Puts the embedded Nautilus extension in the user's extension folder or takes it away, and whether Nautilus, nautilus-python and a running Nautilus are there |
 | `src/LoginDialog.*` | The sign-in: username and password for an https host, an ssh key's passphrase, and whether git will remember it |
+| `src/CredentialKeeper.*` | Remembers a sign-in the user asked to keep: names git's libsecret helper for that server and hands the login to `git credential approve` |
 | `src/MessageDialog.*` | Errors, warnings and questions (a failed pull or push, discarding a change) in the dialog kit instead of a QMessageBox, never wider than the window it opens over |
 | `src/DiffModel.*` | Unified-diff parser and inline (token LCS) diff |
 | `src/DiffView.*` | Custom-painted side-by-side viewer |

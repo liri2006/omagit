@@ -17,6 +17,7 @@
 #include "../src/DiffPane.h"
 #include "../src/DiffView.h"
 #include "../src/CloneDialog.h"
+#include "../src/CredentialKeeper.h"
 #include "../src/HistoryModel.h"
 #include "../src/HistoryView.h"
 #include "../src/AgentPopover.h"
@@ -13557,6 +13558,54 @@ esac
         QCOMPARE(again.result(), int(QDialog::Accepted));
     }
 
+    // Nothing would keep the login, so the dialog offers to have git keep it
+    // — ticked from the start, saying where it goes and that a token is the
+    // better thing to keep there. A remote a helper keeps already, a key's
+    // passphrase and a git without the helper get no such box.
+    void loginDialogOffersToRememberTheSignIn()
+    {
+        QTemporaryDir dir, bin;
+        QVERIFY(dir.isValid() && bin.isValid());
+        QVERIFY(git(dir.path(), {"init", "-q", "-b", "main"}));
+        QVERIFY(git(dir.path(), {"config", "credential.helper", ""}));
+        QVERIFY(writeFixture(bin.filePath("git-credential-omagittest"), "#!/bin/sh\nexit 0\n"));
+        QVERIFY(QFile::setPermissions(bin.filePath("git-credential-omagittest"),
+                                      QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        ScopedEnv path("PATH", bin.path().toUtf8() + ':' + qgetenv("PATH"));
+        const QString before = CredentialKeeper::helper();
+        CredentialKeeper::setHelper(QStringLiteral("omagittest"));
+        const auto restore = qScopeGuard([before] { CredentialKeeper::setHelper(before); });
+        GitRepo repo(dir.path());
+        const QString userPrompt = QStringLiteral("Username for 'https://example.com': ");
+
+        std::unique_ptr<LoginDialog> offered(login(userPrompt, false, &repo));
+        auto *box = offered->findChild<QCheckBox *>(QStringLiteral("rememberSignIn"));
+        QVERIFY(box && box->isVisible());
+        QVERIFY(box->isChecked());
+        QVERIFY(offered->remember());
+        QVERIFY(says(offered.get(), QStringLiteral("Kept in your keyring by git's omagittest helper")));
+        QVERIFY(says(offered.get(), QStringLiteral("personal access token")));
+        QVERIFY(box->toolTip().contains(QStringLiteral("credential.https://example.com.helper")));
+        box->setChecked(false);
+        QVERIFY(!offered->remember());
+        QVERIFY(says(offered.get(), QStringLiteral("Not remembered")));
+
+        std::unique_ptr<LoginDialog> passphrase(login(QStringLiteral("Enter passphrase for key '/x/id_ed25519': "), false, &repo));
+        QVERIFY(!passphrase->findChild<QCheckBox *>(QStringLiteral("rememberSignIn")));
+        QVERIFY(!passphrase->remember());
+
+        QVERIFY(git(dir.path(), {"config", "credential.https://example.com.helper", "store"}));
+        std::unique_ptr<LoginDialog> kept(login(userPrompt, false, &repo));
+        QVERIFY(!kept->findChild<QCheckBox *>(QStringLiteral("rememberSignIn")));
+        QVERIFY(says(kept.get(), QStringLiteral("Remembered by git's credential helper (store)")));
+
+        CredentialKeeper::setHelper(QStringLiteral("omagit-no-such-helper"));
+        std::unique_ptr<LoginDialog> without(
+            login(QStringLiteral("Username for 'https://other.example': "), false, &repo));
+        QVERIFY(!without->findChild<QCheckBox *>(QStringLiteral("rememberSignIn")));
+        QVERIFY(says(without.get(), QStringLiteral("Not remembered")));
+    }
+
     // The note names a helper by its program, not by its whole command line:
     // `store --file=/somewhere/long` would otherwise fill the dialog.
     void credentialHelpersAreNamedShort()
@@ -14645,6 +14694,10 @@ int main(int argc, char **argv)
     app.setApplicationName("ui-test");
     g_theme = std::make_unique<OmarchyTheme>();
     g_theme->apply(app);
+    // A helper no machine has, so the sign-in's "Remember" offer does not come
+    // and go with whether this one has libsecret; the tests of the offer name
+    // a helper of their own.
+    CredentialKeeper::setHelper(QStringLiteral("omagit-no-such-helper"));
     UiTest test;
     return QTest::qExec(&test, argc, argv);
 }

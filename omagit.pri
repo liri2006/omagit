@@ -7,12 +7,14 @@
 # here may reach for QtGui or QtWidgets.
 OMAGIT_CORE_SOURCES = \
     $$PWD/src/AskPass.cpp \
+    $$PWD/src/CredentialKeeper.cpp \
     $$PWD/src/GitRepo.cpp \
     $$PWD/src/RemoteSync.cpp \
     $$PWD/src/CommitMessageAgent.cpp
 
 OMAGIT_CORE_HEADERS = \
     $$PWD/src/AskPass.h \
+    $$PWD/src/CredentialKeeper.h \
     $$PWD/src/GitRepo.h \
     $$PWD/src/RemoteSync.h \
     $$PWD/src/CommitMessageAgent.h \

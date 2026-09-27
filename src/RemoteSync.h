@@ -107,6 +107,9 @@ signals:
     void finished(RemoteSync::Op op, bool ok, bool automatic, const QString &message);
     // Refs or the git directory changed from outside (debounced).
     void repositoryChanged();
+    // The operation that just finished worked, and signed in with logins the
+    // user asked to have remembered (AskPass::loginsToKeep()).
+    void loginsToKeep(const QList<KeptLogin> &logins);
 
 private:
     void start(Op op, const QStringList &args);

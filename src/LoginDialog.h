@@ -6,6 +6,7 @@
 #include <QStringList>
 
 class GitRepo;
+class QCheckBox;
 class SecretEdit;
 class QHBoxLayout;
 class QLabel;
@@ -80,6 +81,9 @@ public:
     // any other single-field) prompt the answer is the password.
     QString username() const;
     QString password() const;
+    // Whether the user asked for the login to be remembered: the box offered,
+    // ticked from the start, when nothing would keep the login otherwise.
+    bool remember() const;
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -95,12 +99,14 @@ private:
     // prompt could be about and they are not kept by the same helper, so the
     // note can hedge instead of promising one of the two answers.
     QString noteText(const QString &credentialHelper, bool forEveryRemote) const;
+    QString shownNote() const;
     static QString credentialHelperFor(GitRepo *repo, const AskPassRequest &request, bool *forEveryRemote);
     bool wantsUsername() const;
 
     AskPassRequest m_request;
     QString m_note;
     QString m_noteTip; // the helper's whole command, where the note shortens it
+    bool m_offerRemember = false;
 
     QLabel *m_heading;
     QLabel *m_hint;
@@ -109,6 +115,8 @@ private:
     QLabel *m_secretCaption;
     SecretEdit *m_secretEdit;
     QLabel *m_noteLabel;
+    QCheckBox *m_remember = nullptr;
+    QVBoxLayout *m_footLayout; // the remember box and the note
     QPushButton *m_cancelButton, *m_signInButton;
     QVBoxLayout *m_headLayout;   // the heading and its hint
     QVBoxLayout *m_fieldsLayout; // the captions and their fields

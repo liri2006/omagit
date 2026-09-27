@@ -373,7 +373,7 @@ bool AskPass::isCurrent(int id) const
     return m_current && id == m_request.id;
 }
 
-void AskPass::answerLogin(int id, const QString &username, const QString &password)
+void AskPass::answerLogin(int id, const QString &username, const QString &password, bool remember)
 {
     if (!isCurrent(id))
         return;
@@ -387,6 +387,10 @@ void AskPass::answerLogin(int id, const QString &username, const QString &passwo
     // prompt with nothing at all; the password alone still gets git going.
     if (!user.isEmpty())
         m_logins.insert(m_request.context, {user, password});
+    if (remember && !user.isEmpty())
+        m_keep.insert(m_request.context, {m_request.context, user, password});
+    else
+        m_keep.remove(m_request.context);
     m_answered.insert(answeredKey(m_request));
     reply(m_request.kind == AskPassRequest::Password ? password : username, true);
 }
@@ -444,6 +448,7 @@ void AskPass::endOperation()
         socket->deleteLater();
     }
     m_logins.clear();
+    m_keep.clear();
     m_answered.clear();
     m_cancelled = false;
 }

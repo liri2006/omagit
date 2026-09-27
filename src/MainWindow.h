@@ -5,6 +5,7 @@
 #include "GitRepo.h"
 #include "Grid.h"
 #include "PaneLayout.h"
+#include "CredentialKeeper.h"
 #include "RemoteSync.h"
 #include "TopBar.h"
 
@@ -66,6 +67,9 @@ public:
     // The repository was cloned just before the window opened on it: the
     // clone was its fetch, so the first automatic one waits a whole interval.
     void markFreshClone();
+    // Sign-ins the user asked to have remembered, from a clone made before the
+    // window opened: git keeps them (CredentialKeeper).
+    void keepLogins(const QList<KeptLogin> &logins);
     // The --files-view override: the commit page lists its files as `key`
     // ("compact", "tree" or "table") spells it, for this run only.
     void setFilesView(const QString &key);
@@ -251,6 +255,7 @@ private:
 
     GitRepo *m_repo;
     RemoteSync *m_sync;
+    CredentialKeeper *m_keeper;
     Mode m_mode = CommitMode;
     PaneLayout m_layout = PaneLayout::Docked;
     CommitPage *m_commitPage;

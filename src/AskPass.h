@@ -58,6 +58,13 @@ AskPassRequest parseAskPassPrompt(const QString &prompt);
 // helper says "no answer", and git then fails instead of hanging.
 int askPassClient(const QString &socketPath, const QString &prompt, QIODevice *out);
 
+// A sign-in the user asked to have remembered: the credential context it was
+// given for (AskPassRequest::context) and the login. CredentialKeeper hands it
+// to git once the operation it signed in worked.
+struct KeptLogin {
+    QString context, username, password;
+};
+
 // The app's end of that conversation: a local socket the helper processes of
 // one git run connect to, one at a time.
 //
@@ -120,8 +127,9 @@ public:
     // goes back now and both halves stay for the rest of the operation, so
     // nothing asking for this user on this context asks again. answerSecret()
     // answers a passphrase, or a question of git's own, with the one thing it
-    // wanted; that is not kept.
-    void answerLogin(int id, const QString &username, const QString &password);
+    // wanted; that is not kept. `remember` marks a login the user asked to
+    // have remembered past the operation (loginsToKeep()).
+    void answerLogin(int id, const QString &username, const QString &password, bool remember = false);
     void answerSecret(int id, const QString &secret);
     // The user closed the dialog: the helper exits 1 and git gives up — and
     // so does every further prompt of this operation, without asking again.
@@ -132,6 +140,10 @@ public:
     // Whether a sign-in was cancelled since the last endOperation(), so the
     // failure that follows can be reported quietly instead of as an error.
     bool cancelled() const { return m_cancelled; }
+    // The logins of this operation the user asked to have remembered. Only
+    // worth keeping once the operation worked — git keeps no login it turned
+    // down — and endOperation() forgets them, so they are taken first.
+    QList<KeptLogin> loginsToKeep() const { return m_keep.values(); }
     // The operation that prompted is over: forget the logins it collected,
     // what was answered and the cancelled flag. The prompt on screen goes with
     // it, and so does every helper still waiting its turn behind that one —
@@ -173,6 +185,7 @@ private:
     // context → the sign-in of this operation. One per context: signing in as
     // somebody else there replaces it, which is what git does anyway.
     QHash<QString, Login> m_logins;
+    QHash<QString, KeptLogin> m_keep; // context → a login to remember
     // Questions an answer was already given for, as context and user, so that
     // being asked again can be told from being asked about somebody else.
     QSet<QString> m_answered;

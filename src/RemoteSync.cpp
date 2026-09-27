@@ -325,6 +325,8 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     // password turns it down; the user's own fetch would have asked.
     QString signInHost;
     const bool signInNeeded = !ok && automatic && op == Fetch && needsSignIn(err, &signInHost);
+    // Logins to remember are only worth remembering once they worked.
+    const QList<KeptLogin> keep = ok ? m_askPass->loginsToKeep() : QList<KeptLogin>();
     m_askPass->endOperation();
     m_op = None;
     m_autoOp = false;
@@ -389,5 +391,7 @@ void RemoteSync::onFinished(Op op, int code, const QByteArray &out, const QByteA
     if (!ok && message.isEmpty())
         message = tr("git exited with status %1").arg(code);
     emit finished(op, ok, automatic, message);
+    if (!keep.isEmpty())
+        emit loginsToKeep(keep);
     scheduleAutoFetch();
 }

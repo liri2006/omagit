@@ -162,12 +162,14 @@ int main(int argc, char *argv[])
         }
     }
     bool freshClone = false;
+    QList<KeptLogin> loginsToKeep;
     if (root.isEmpty()) {
         CloneDialog dialog(CloneDialog::defaultFolder(), nullptr, true);
         if (dialog.exec() != QDialog::Accepted)
             return 0;
         root = dialog.repositoryPath();
         freshClone = dialog.cloned();
+        loginsToKeep = dialog.loginsToKeep();
     }
 
     GitRepo repo(root);
@@ -190,6 +192,7 @@ int main(int argc, char *argv[])
         window.setAutoFetchEnabled(false);
     if (freshClone)
         window.markFreshClone();
+    window.keepLogins(loginsToKeep);
     // Whatever page the flags above asked for: the override only changes how
     // the commit dialog lists its files, never which page is on.
     if (!filesView.isEmpty())

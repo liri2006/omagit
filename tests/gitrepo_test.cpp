@@ -2,6 +2,7 @@
 // Build: cd tests && qmake6 tests.pro && make && ./gitrepo_test
 #include "../src/AskPass.h"
 #include "../src/CommitMessageAgent.h"
+#include "../src/CredentialKeeper.h"
 #include "../src/GitRepo.h"
 #include "../src/DesktopExec.h"
 #include "../src/RemoteSync.h"
@@ -1372,6 +1373,124 @@ static void testAskPassKeepsLiveSockets()
     CHECK(result.out == "back\n");
 }
 
+// An environment variable set for the rest of a scope, then put back.
+struct EnvGuard {
+    QByteArray name, old;
+    bool existed;
+    EnvGuard(const char *key, const QByteArray &value) : name(key), old(qgetenv(key)), existed(qEnvironmentVariableIsSet(key))
+    {
+        qputenv(key, value);
+    }
+    ~EnvGuard()
+    {
+        if (existed)
+            qputenv(name.constData(), old);
+        else
+            qunsetenv(name.constData());
+    }
+};
+
+static bool writeScript(const QString &path, const QByteArray &body)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        return false;
+    f.write(body);
+    f.close();
+    return f.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+}
+
+// A remembered sign-in is git's to keep: the helper is named for that one
+// server in the global configuration, and the login goes to it through
+// `git credential approve`. A helper that cannot store it takes the entry
+// added for it back out. The helper here is a script standing in for
+// libsecret, and the global configuration a file of the test's own.
+static void testCredentialKeeper()
+{
+    QTemporaryDir dir;
+    CHECK(dir.isValid());
+    const QString bin = dir.filePath("bin");
+    CHECK(QDir().mkpath(bin));
+    const QString stored = dir.filePath("stored");
+    CHECK(writeScript(bin + "/git-credential-omagittest",
+                      "#!/bin/sh\n[ \"$1\" = store ] && cat > \"" + stored.toUtf8() + "\"\nexit 0\n"));
+    CHECK(writeScript(bin + "/git-credential-omagitfail",
+                      "#!/bin/sh\n[ \"$1\" = store ] && echo 'no keyring to store in' >&2 && exit 1\nexit 0\n"));
+    const QString config = dir.filePath("gitconfig");
+    CHECK(writeScript(config, ""));
+    EnvGuard global("GIT_CONFIG_GLOBAL", config.toUtf8());
+    EnvGuard system("GIT_CONFIG_NOSYSTEM", "1");
+    EnvGuard path("PATH", bin.toUtf8() + ':' + qgetenv("PATH"));
+    const auto named = [](const QString &key) {
+        QProcess p;
+        p.start("git", {"config", "--global", "--get-all", key});
+        p.waitForFinished();
+        return QString::fromUtf8(p.readAllStandardOutput()).split('\n', Qt::SkipEmptyParts);
+    };
+
+    CHECK(CredentialKeeper::configKey("http://localhost:3300") == "credential.http://localhost:3300.helper");
+    CHECK(CredentialKeeper::configKey("https://example.com:8443/team/repo")
+          == "credential.https://example.com:8443.helper");
+    CHECK(CredentialKeeper::configKey("/home/me/.ssh/id_ed25519").isEmpty());
+
+    CredentialKeeper::setHelper("omagittest");
+    CHECK(CredentialKeeper::helperAvailable());
+    const KeptLogin login{"http://127.0.0.1:3300", "alice", "s3cret"};
+    CHECK(CredentialKeeper::keepNow({login}).isEmpty());
+    CHECK(named("credential.http://127.0.0.1:3300.helper") == QStringList{"omagittest"});
+    QFile store(stored);
+    CHECK(store.open(QIODevice::ReadOnly));
+    const QByteArray description = store.readAll();
+    for (const char *line : {"protocol=http\n", "host=127.0.0.1:3300\n", "username=alice\n", "password=s3cret\n"})
+        CHECK(description.contains(line));
+    // A second sign-in to the server names the helper once, not twice.
+    CHECK(CredentialKeeper::keepNow({login}).isEmpty());
+    CHECK(named("credential.http://127.0.0.1:3300.helper") == QStringList{"omagittest"});
+
+    // In the background too, with the outcome as a signal.
+    {
+        CredentialKeeper keeper;
+        bool done = false;
+        QStringList errors{"not yet"};
+        QObject::connect(&keeper, &CredentialKeeper::finished, &keeper, [&](const QStringList &e) {
+            errors = e;
+            done = true;
+        });
+        keeper.keep({KeptLogin{"https://example.org", "bob", "tok"}});
+        QElapsedTimer clock;
+        clock.start();
+        while (!done && clock.elapsed() < 20000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        CHECK(done && errors.isEmpty());
+        CHECK(named("credential.https://example.org.helper") == QStringList{"omagittest"});
+    }
+
+    // Nowhere to store it: said so, and git is not left pointing at the helper.
+    CredentialKeeper::setHelper("omagitfail");
+    const QStringList errors = CredentialKeeper::keepNow({KeptLogin{"https://fail.example", "carol", "pw"}});
+    CHECK(errors.size() == 1 && errors.constFirst().contains("no keyring to store in"));
+    CHECK(named("credential.https://fail.example.helper").isEmpty());
+
+    CredentialKeeper::setHelper("omagit-no-such-helper");
+    CHECK(!CredentialKeeper::helperAvailable());
+    CredentialKeeper::setHelper("libsecret");
+
+    // What AskPass collects for it: the logins the user asked to have
+    // remembered, under the context they were given for, until the operation ends.
+    AskPass askPass;
+    CHECK(askPass.listen());
+    QObject::connect(&askPass, &AskPass::requestReceived, &askPass, [&](const AskPassRequest &request) {
+        askPass.answerLogin(request.id, "dave", "pw", true);
+    });
+    const auto result = runAskPassClient(askPass.socketPath(), "Username for 'https://example.net': ");
+    CHECK(result.code == 0);
+    const QList<KeptLogin> keep = askPass.loginsToKeep();
+    CHECK(keep.size() == 1 && keep.constFirst().context == "https://example.net"
+          && keep.constFirst().username == "dave" && keep.constFirst().password == "pw");
+    askPass.endOperation();
+    CHECK(askPass.loginsToKeep().isEmpty());
+}
+
 static void testAskPassServer()
 {
     AskPass askPass;
@@ -1634,6 +1753,7 @@ int main(int argc, char **argv)
     testAskPassPrompts();
     testAskPassServer();
     testAskPassKeepsLiveSockets();
+    testCredentialKeeper();
     if (failures == 0)
         printf("all checks passed\n");
     return failures == 0 ? 0 : 1;

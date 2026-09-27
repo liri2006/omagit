@@ -1,11 +1,12 @@
 #pragma once
 
+#include "AskPass.h"
+
 #include <QDialog>
 #include <QProcess>
 #include <QString>
 #include <functional>
 
-class AskPass;
 class QBoxLayout;
 class QFrame;
 class QHBoxLayout;
@@ -32,6 +33,9 @@ public:
     // Whether repositoryPath() is a clone made just now, and not an existing
     // repository the dialog was asked to open.
     bool cloned() const { return m_cloned; }
+    // The sign-ins of that clone the user asked to have remembered, for
+    // whoever opens it to hand to CredentialKeeper.
+    QList<KeptLogin> loginsToKeep() const { return m_loginsToKeep; }
     static QString defaultFolder(const QString &repositoryRoot = QString());
     static QString repositoryName(const QString &url);
 
@@ -97,6 +101,7 @@ private:
     int m_visible = 0; // repositories the filter leaves on the list
     bool m_statusIsAlert = false;
     bool m_cloned = false;
+    QList<KeptLogin> m_loginsToKeep;
     bool m_refitPending = false;
     bool m_cloning = false;
     bool m_loading = false;

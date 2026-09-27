@@ -355,7 +355,7 @@ CloneDialog::CloneDialog(const QString &folder, QWidget *parent, bool allowOpen)
         auto *dialog = new LoginDialog(request, &outside, this);
         connect(dialog, &QDialog::accepted, m_askPass, [this, dialog, request] {
             if (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password)
-                m_askPass->answerLogin(request.id, dialog->username(), dialog->password());
+                m_askPass->answerLogin(request.id, dialog->username(), dialog->password(), dialog->remember());
             else
                 m_askPass->answerSecret(request.id, dialog->password());
         });
@@ -861,6 +861,8 @@ void CloneDialog::clone()
     setStatus(tr("Cloning %1…").arg(repositoryName(url)));
     run(QStringLiteral("git"), args, [this](bool ok, const QByteArray &, const QString &error) {
         const bool cancelled = m_askPass->cancelled();
+        // Logins to remember are only worth remembering once the clone worked.
+        m_loginsToKeep = ok ? m_askPass->loginsToKeep() : QList<KeptLogin>();
         m_askPass->endOperation();
         m_cloning = false;
         setBusy(false);

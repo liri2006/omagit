@@ -201,6 +201,15 @@ void MainWindow::buildUi()
     // git or ssh asked the app (its own askpass helper) for a login: the
     // dialog answers, RemoteSync hands the answer back to the waiting git.
     connect(m_sync->askPass(), &AskPass::requestReceived, this, &MainWindow::onAskPassRequest);
+    // A sign-in the user asked to have remembered, once the operation it was
+    // for worked: git keeps it, through its credential helper.
+    m_keeper = new CredentialKeeper(this);
+    connect(m_sync, &RemoteSync::loginsToKeep, m_keeper, &CredentialKeeper::keep);
+    connect(m_keeper, &CredentialKeeper::finished, this, [this](const QStringList &errors) {
+        if (!errors.isEmpty())
+            showStatus(tr("The sign-in could not be remembered: %1").arg(errors.constFirst().section(QLatin1Char('\n'), 0, 0)),
+                       kErrorStatusMs);
+    });
     // Merge opens the merge view; its badge says when a merge waits with conflicts.
     m_mergeButton = m_topBar->mergeButton();
 
@@ -758,6 +767,11 @@ void MainWindow::setAutoFetchEnabled(bool on)
 void MainWindow::markFreshClone()
 {
     m_sync->markFetched();
+}
+
+void MainWindow::keepLogins(const QList<KeptLogin> &logins)
+{
+    m_keeper->keep(logins);
 }
 
 // --files-view: this run lists the pending files the given way, whatever the
@@ -1340,7 +1354,7 @@ void MainWindow::onAskPassRequest(const AskPassRequest &request)
         // A passphrase (or any other question) is answered as it was asked.
         const AskPassRequest::Kind kind = dialog->request().kind;
         if (kind == AskPassRequest::Username || kind == AskPassRequest::Password)
-            askPass->answerLogin(id, dialog->username(), dialog->password());
+            askPass->answerLogin(id, dialog->username(), dialog->password(), dialog->remember());
         else
             askPass->answerSecret(id, dialog->password());
     });
@@ -1566,6 +1580,7 @@ void MainWindow::showCloneDialog()
     auto *dialog = new CloneDialog(CloneDialog::defaultFolder(m_repo->root()), this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     connect(dialog, &QDialog::accepted, this, [this, dialog] {
+        m_keeper->keep(dialog->loginsToKeep());
         if (openRepository(dialog->repositoryPath()) && dialog->cloned())
             m_sync->markFetched();
     });

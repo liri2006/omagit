@@ -1,8 +1,10 @@
 #include "LoginDialog.h"
+#include "CredentialKeeper.h"
 #include "GitRepo.h"
 #include "OmarchyTheme.h"
 #include "UiHelpers.h"
 
+#include <QCheckBox>
 #include <QHBoxLayout>
 #include <QHostAddress>
 #include <QLabel>
@@ -283,6 +285,11 @@ LoginDialog::LoginDialog(const AskPassRequest &request, GitRepo *repo, QWidget *
     // A clone has no repository configuration to inspect yet.
     if (!repo && (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password))
         m_note = tr("Git's configured credential helpers manage saved credentials.");
+    // Nothing would keep this login: git is offered the helper to keep it
+    // with, ticked, where git has that helper (CredentialKeeper).
+    m_offerRemember = repo && helper.isEmpty()
+        && (request.kind == AskPassRequest::Username || request.kind == AskPassRequest::Password)
+        && CredentialKeeper::helperAvailable();
 
     buildUi();
     applyTheme();
@@ -491,10 +498,30 @@ void LoginDialog::buildUi()
         m_userEdit->setToolTip(tr("The user the remote's URL names"));
     }
 
-    m_noteLabel = ui::dimLabel(m_note);
+    // The offer to remember the login, with the note under it saying what
+    // that means — or, with nothing to offer, the note alone.
+    auto *foot = m_footLayout = new QVBoxLayout;
+    foot->setContentsMargins(0, 0, 0, 0);
+    if (m_offerRemember) {
+        m_remember = new QCheckBox(tr("Remember this sign-in"));
+        m_remember->setObjectName(QStringLiteral("rememberSignIn"));
+        m_remember->setChecked(true);
+        m_remember->setCursor(Qt::PointingHandCursor);
+        m_remember->setToolTip(tr("Adds %1 = %2 to your git configuration; git's %2 helper keeps the login")
+                                   .arg(CredentialKeeper::configKey(m_request.context), CredentialKeeper::helper()));
+        foot->addWidget(m_remember);
+    }
+    m_noteLabel = ui::dimLabel(shownNote());
     m_noteLabel->setWordWrap(true);
     m_noteLabel->setToolTip(m_noteTip);
-    layout->addWidget(m_noteLabel);
+    foot->addWidget(m_noteLabel);
+    layout->addLayout(foot);
+    if (m_remember) {
+        connect(m_remember, &QCheckBox::toggled, this, [this] {
+            m_noteLabel->setText(shownNote());
+            fitToContent();
+        });
+    }
     layout->addStretch(1);
 
     auto *buttons = m_buttonRow = new QHBoxLayout;
@@ -524,7 +551,12 @@ void LoginDialog::buildUi()
 
     setFixedWidth(ui::space(kDialogWidth));
     setTabOrder(m_userEdit, m_secretEdit);
-    setTabOrder(m_secretEdit, m_signInButton);
+    if (m_remember) {
+        setTabOrder(m_secretEdit, m_remember);
+        setTabOrder(m_remember, m_signInButton);
+    } else {
+        setTabOrder(m_secretEdit, m_signInButton);
+    }
     setTabOrder(m_signInButton, m_cancelButton);
 }
 
@@ -536,6 +568,9 @@ void LoginDialog::applyTheme()
     layout()->setSpacing(ui::space(ui::gap::group));
     m_headLayout->setSpacing(ui::space(ui::gap::caption));
     m_fieldsLayout->setSpacing(ui::space(ui::gap::caption));
+    m_footLayout->setSpacing(ui::space(ui::gap::caption));
+    if (m_remember)
+        m_remember->setFont(t->uiFont());
     m_fieldsGap->changeSize(0, ui::space(ui::gap::group) - ui::space(ui::gap::caption), QSizePolicy::Minimum,
                             QSizePolicy::Fixed);
     m_buttonRow->setSpacing(ui::space(ui::gap::item));
@@ -560,6 +595,22 @@ void LoginDialog::updateAcceptable()
 {
     const bool haveUser = !wantsUsername() || !m_userEdit->text().trimmed().isEmpty();
     m_signInButton->setEnabled(haveUser && !m_secretEdit->text().isEmpty());
+}
+
+bool LoginDialog::remember() const
+{
+    return m_remember && m_remember->isChecked();
+}
+
+// What the foot of the dialog says: where a remembered login goes and what is
+// best kept there, or else whether anything keeps it at all.
+QString LoginDialog::shownNote() const
+{
+    if (!remember())
+        return m_note;
+    return tr("Kept in your keyring by git's %1 helper. A personal access token is safer to keep "
+              "there than your account password.")
+        .arg(CredentialKeeper::helper());
 }
 
 QString LoginDialog::username() const
