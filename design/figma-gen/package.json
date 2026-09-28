@@ -1,14 +1,9 @@
 {
-  "name": "gen",
+  "name": "omagit-figma-gen",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
+  "description": "Generates Omagit's Figma design from its layout and control definitions",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "@mdi/js": "^7.4.47"

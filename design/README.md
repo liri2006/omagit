@@ -5,6 +5,8 @@ The tiling-aware redesign lives in Figma
 generated from [`figma-gen/`](figma-gen/README.md): `kit.js` holds the
 controls, `screens.js` the layouts and their metrics. Those numbers are the
 source of truth for the Qt app — read them there rather than measuring Figma.
+The frames draw their icons from [Material Design Icons](https://pictogrammers.com/library/mdi/)
+by Pictogrammers (`@mdi/js`, Apache-2.0).
 
 All design pixels are meant for a 12 px base font. The app follows the Omarchy
 text size, so every one of them goes through `ui::space(px)` and is re-applied
@@ -60,7 +62,7 @@ tile widths (Wide, Half, Third, Eighth).
 | 6 | Agent settings popover | done |
 | 7 | Stacked layouts | done |
 | 8 | Diff pane toolbar | done |
-| 10 | The 4 px grid (sizes, padding, density) | done (brief `docs/briefs/2026-09-24-design-grid.md`) |
+| 10 | The 4 px grid (sizes, padding, density) | done |
 
 ### 1. Kit primitives
 
@@ -319,8 +321,7 @@ coloured summary (`Modified +4 −2`).
 
 ### Gap fixes (after phase 9)
 
-Done 2026-09-23 (brief `docs/briefs/2026-09-23-design-rework-gaps.md`,
-record `docs/reviews/2026-09-23-design-rework-gaps.md`):
+Done 2026-09-23:
 
 - The sync buttons' badge is the design's square hanging over the top-right
   corner (`space(4)` past the right edge, `space(5)` above the top, kit.js
@@ -337,8 +338,7 @@ record `docs/reviews/2026-09-23-design-rework-gaps.md`):
 
 ### History page
 
-Done 2026-09-24 (brief `docs/briefs/2026-09-24-history-view-design.md`,
-record `docs/reviews/2026-09-24-history-view-design.md`): `historyPage()`,
+Done 2026-09-24: `historyPage()`,
 `commitsTable()` and `commitDetails()` in the app.
 
 - The filter row: the field's magnifier is its own glyph and stays while

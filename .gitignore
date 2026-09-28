@@ -15,3 +15,7 @@ __pycache__/
 /packaging/**/*.pkg.tar.*
 /packaging/**/*.tar.gz
 /packaging/aur/omagit-git/omagit/
+# Working notes kept locally: agent briefs and review records
+/docs/briefs/
+/docs/reviews/
+node_modules/

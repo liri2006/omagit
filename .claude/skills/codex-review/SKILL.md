@@ -65,5 +65,5 @@ Hard cap: 3 full cycles. If findings still remain after cycle 3, fix the remaind
 
 ## Finalize
 
-- Save a review record to `docs/reviews/YYYY-MM-DD-<short-slug>.md` (create the folder if missing): scope, cycles run, findings by origin (yours / Codex's), disputes and how they were resolved, fixes applied, verification results, anything left open. Give the user the path.
+- Save a review record to `docs/reviews/YYYY-MM-DD-<short-slug>.md` (create the folder if missing; git ignores it, so the record stays local): scope, cycles run, findings by origin (yours / Codex's), disputes and how they were resolved, fixes applied, verification results, anything left open. Give the user the path.
 - Summarize in chat: total findings, who caught what, notable disagreements, and the final state of verification.

@@ -7,23 +7,23 @@ Adds `omagit`, [Omagit](https://github.com/liri2006/omagit) 0.2.0: an Omarchy-na
 GUI built for tiling window managers.
 
 A tiled window seldom keeps its size: a browser opened beside it halves it, a terminal
-quarters it. As its tile shrinks, Omagit rearranges itself instead of clipping. Labels turn
-into icons, less-used buttons move into a menu, the side-by-side diff becomes one column,
-and below 700 px it shows one thing at a time (Changes, Diff or History) behind tabs.
-Committing, reviewing diffs, browsing the history and syncing keep working down to a
-340 px tile, and widening the window brings the full layout back with the same selection
-and place in the diff. It reads the active Omarchy theme (`colors.toml`, the shell font and
-text size, `icons.theme`) and follows `omarchy theme set` and `omarchy display text size`
-live. The keys follow lazygit's letters with Ctrl.
+quarters it. As its tile shrinks, Omagit rearranges itself instead of cutting things off.
+Labels turn into icons, less-used buttons move into a menu, and in a narrow tile it shows
+one thing at a time (Changes, Diff or History) behind tabs. Committing, reviewing diffs,
+browsing the history and syncing keep working in the smallest tiles, and widening the
+window brings the full layout back with the same selection and place in the diff. It
+reads the active Omarchy theme (`colors.toml`, the shell font and text size,
+`icons.theme`) and follows `omarchy theme set` and `omarchy display text size` live. The
+keys follow lazygit's letters with Ctrl.
 
-It covers the commit dialog (tree, compact or table file list, a side-by-side
+It covers the commit dialog (tree, compact or table file list, a side-by-side or unified
 diff, amend, discard, an optional message from Claude Code or Codex), the history with a
 branch graph and search, branches with a merge preview, fetch, pull and push with HTTPS and
 SSH sign-in, and cloning.
 
 ![Omagit full width](https://raw.githubusercontent.com/liri2006/omagit/main/docs/screenshots/commit.png)
 
-![Omagit as a half tile and as two 470 px tiles](https://raw.githubusercontent.com/liri2006/omagit/main/docs/screenshots/tiles.png)
+![Omagit in a half tile and in two narrow tiles](https://raw.githubusercontent.com/liri2006/omagit/main/docs/screenshots/tiles.png)
 
 ## Package
 

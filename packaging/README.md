@@ -26,10 +26,23 @@ The release tarball leaves out `design/`, `docs/`, `.claude/` and `packaging/`
 
 ## Once, before the first release
 
-1. Make [liri2006/omagit](https://github.com/liri2006/omagit) public: every recipe
-   downloads from it.
-2. Give the GitHub repository its description, *Omarchy-native git GUI built for tiling
-   window managers*, and topics such as `omarchy`, `hyprland`, `git`, `git-gui`, `qt6`.
+1. Publish the repository; every recipe downloads from it. The history was rewritten
+   on 2026-09-27 (noreply email, no agent notes), so publish it as a fresh repository
+   rather than force-pushing and making the private one public — GitHub keeps the old
+   commits reachable by their hashes. Rename (or delete) the private one first:
+   ```bash
+   gh repo rename omagit-private -R liri2006/omagit
+   git remote remove origin
+   gh repo create liri2006/omagit --public --source . --remote origin --push
+   git config user.email 2411723+liri2006@users.noreply.github.com   # future commits too
+   ```
+2. Give the GitHub repository its description and topics:
+   ```bash
+   gh repo edit liri2006/omagit \
+     --description "Omarchy-native git GUI built for tiling window managers: it stays usable as its tile shrinks." \
+     --add-topic omarchy --add-topic hyprland --add-topic tiling-window-manager \
+     --add-topic git --add-topic git-gui --add-topic qt6
+   ```
 3. An AUR account with your SSH public key: <https://aur.archlinux.org/account>.
 
 ## Releasing a version

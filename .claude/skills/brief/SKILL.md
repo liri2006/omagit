@@ -22,7 +22,7 @@ Write `$SCRATCH/brief-task.md` containing:
   - C++17 / Qt 6 Widgets, built with `qmake6` (`qmake6 omagit.pro && make -j$(nproc)`); source lists live in `omagit.pri` — `OMAGIT_CORE_*` (git wrapper, `RemoteSync`, `AskPass`, …) must stay free of QtGui because `tests/gitrepo_test` builds with `QT -= gui`; `OMAGIT_WIDGET_*` is the app minus `main.cpp`. New files are registered there.
   - `MainWindow` is the composition root; pages are separate widgets (`CommitPage`, `DiffPane`, `Footer`, `HistoryView`, `MergeDialog`, `KeybindingsPanel`, `LoginDialog`); shared widget helpers live in `src/UiHelpers.*` (namespace `ui`); every QSettings key is a constant in `src/Settings.h`; colours, fonts and light/dark mode come from `OmarchyTheme` and are never hard-coded; keyboard shortcuts are declared in `MainWindow::bindings()` so they show in the keybindings panel.
   - Refresh (F5, watcher, fetch) must preserve selection, scroll offsets and the diff position; unchanged data must not reset models.
-  - Tests: `tests/run.sh [gitrepo|mergedialog|ui]`; git-wrapper behaviour is tested in `tests/gitrepo_test.cpp` against throw-away repos, widget logic in `tests/ui_test.cpp`, the merge view in `tests/mergedialog_test.cpp`. Screenshot checks run offscreen with `XDG_CONFIG_HOME` pointed at a scratch dir and `--no-fetch`.
+  - Tests: `tests/run.sh [gitrepo|mergedialog|ui]`; git-wrapper behaviour is tested in `tests/gitrepo_test.cpp` against throw-away repos, widgets in `tests/ui/` (one `<area>_test.cpp` per area, shared fixtures in `tests/ui/fixtures.*`), the merge view in `tests/mergedialog_test.cpp`. Screenshot checks run offscreen with `XDG_CONFIG_HOME` pointed at a scratch dir and `--no-fetch`.
   - Every feature is written from scratch; no code is copied from other git GUIs.
 - All taste decisions if the work is user-facing: exact label and status strings, layout, which `ui::` helpers, Nerd Font glyphs, which keybinding (lazygit letter + Ctrl) — decide these yourself first, never leave them to Codex.
 - This instruction, verbatim, at the end:
@@ -62,6 +62,6 @@ Capture the session id for the loop: `grep -m1 "session id:" "$SCRATCH/brief-run
 
 ## Finalize
 
-- Save the agreed brief (with any final rulings edited in) to `docs/briefs/YYYY-MM-DD-<short-slug>.md` in the repo (create `docs/briefs/` if missing). This is the user-visible artifact — working drafts and critiques stay in `$SCRATCH`, but the final brief always lands here. Give the user the file path in your summary.
+- Save the agreed brief (with any final rulings edited in) to `docs/briefs/YYYY-MM-DD-<short-slug>.md` in the repo (create `docs/briefs/` if missing; git ignores it, so the brief stays local). This is the user-visible artifact — working drafts and critiques stay in `$SCRATCH`, but the final brief always lands here. Give the user the file path in your summary.
 - Summarize for the user: goal, files to change, test plan in one line, any contested points and how they resolved.
 - Ask the user whether to proceed to implementation. If yes, hand the saved brief file's contents to `opus-implementer` (Agent tool, `subagent_type: "opus-implementer"`, no `model` override; announce the delegation, BRIEF markers, review the diff after).
