@@ -814,6 +814,9 @@ private slots:
         QVERIFY(f.window);
         QVERIFY(QTest::qWaitForWindowExposed(f.window.get()));
         f.window->setMode(MainWindow::HistoryMode);
+        // The window's first git runs lay it out again when they end; on a
+        // slow machine that would undo the resizes below.
+        QTRY_VERIFY(f.repo->findChildren<QProcess *>().isEmpty());
         settle();
         auto *history = f.window->findChild<HistoryView *>();
         QLineEdit *field = history->filterField();

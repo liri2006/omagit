@@ -1,10 +1,10 @@
-# Maintainer: Andras Munkacsi <devnull2006 at gmail dot com>
+# Maintainer: Andras Munkacsi
 
 pkgname=omagit-git
 _pkgname=omagit
-pkgver=0.2.0.r0.g0000000
+pkgver=0.9.0.r0.g0000000
 pkgrel=1
-pkgdesc='Omarchy-native git GUI built for tiling window managers (latest commit)'
+pkgdesc='Omarchy-native git GUI designed for tiling window managers (latest commit)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/liri2006/omagit'
 license=('MIT')
@@ -15,6 +15,7 @@ depends=(
   'libgcc'
   'libstdc++'
   'qt6-base'
+  'qt6-svg'
   'ttf-font-nerd'
 )
 makedepends=('git')
@@ -34,7 +35,7 @@ sha256sums=('SKIP')
 
 pkgver() {
   cd "$_pkgname"
-  # v0.2.0-3-gabc1234 → 0.2.0.r3.gabc1234; before the first tag, r<count>.<hash>.
+  # v0.9.0-3-gabc1234 → 0.9.0.r3.gabc1234; before the first tag, r<count>.<hash>.
   ( set -o pipefail
     git describe --long --tags --abbrev=7 2>/dev/null |
       sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
@@ -56,8 +57,10 @@ build() {
 
 check() {
   cd "$_pkgname"
-  # Offscreen, with a throw-away config and runtime directory of their own.
-  tests/run.sh
+  # The git wrapper and merge preview suites, with a throw-away config and
+  # runtime directory. The widget suite checks pixel sizes against the
+  # design, which depend on fonts and timing; it runs in development.
+  tests/run.sh gitrepo mergedialog
 }
 
 package() {

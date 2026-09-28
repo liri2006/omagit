@@ -1,6 +1,6 @@
 pkgbase = omagit
-	pkgdesc = Omarchy-native git GUI built for tiling window managers
-	pkgver = 0.2.0
+	pkgdesc = Omarchy-native git GUI designed for tiling window managers
+	pkgver = 0.9.0
 	pkgrel = 1
 	url = https://github.com/liri2006/omagit
 	arch = x86_64
@@ -12,6 +12,7 @@ pkgbase = omagit
 	depends = libgcc
 	depends = libstdc++
 	depends = qt6-base
+	depends = qt6-svg
 	depends = ttf-font-nerd
 	optdepends = openssh: ssh remotes and SSH key sign-in
 	optdepends = libsecret: remember sign-ins in the keyring
@@ -20,7 +21,7 @@ pkgbase = omagit
 	optdepends = claude-code: write commit messages with Claude Code
 	optdepends = openai-codex: write commit messages with Codex
 	options = !debug
-	source = omagit-0.2.0.tar.gz::https://github.com/liri2006/omagit/archive/refs/tags/v0.2.0.tar.gz
+	source = omagit-0.9.0.tar.gz::https://github.com/liri2006/omagit/archive/refs/tags/v0.9.0.tar.gz
 	sha256sums = 0000000000000000000000000000000000000000000000000000000000000000
 
 pkgname = omagit

@@ -19,3 +19,5 @@ __pycache__/
 /docs/briefs/
 /docs/reviews/
 node_modules/
+# The README pictures script also makes an MP4 for posting; it stays out of the repository
+/docs/screenshots/*.mp4

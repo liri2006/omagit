@@ -1,0 +1,18 @@
+#!/bin/sh
+# Stand-in for Claude Code in the screenshots: answers the model probe and writes
+# a fixed commit message at once.
+case "$1" in
+--help)
+    cat <<'HELP'
+Usage: claude [options] [command] [prompt]
+  --model <model>   Model for the current session. Provide an alias for the latest model (e.g. 'fable', 'opus' or 'sonnet') or a model's full name.
+  --effort <level>  Effort level for the current session (low, medium, high, xhigh, max)
+HELP
+    ;;
+*)
+    cat >/dev/null
+    printf '%s\n' "Add hour marks to the tide chart" "" \
+        "- Move the chart into its own module with a mark every third hour" \
+        "- Add a chart_hours setting; 0 hides the chart"
+    ;;
+esac

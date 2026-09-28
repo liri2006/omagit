@@ -256,8 +256,8 @@ how to build, run and test it, and where the code lives.
 
 ## Building from source
 
-Omagit needs `qt6-base`, `git` and a Nerd Font for its icons (every Omarchy install has
-one). Optional: `openssh` for SSH remotes, `libsecret` to remember sign-ins,
+Omagit needs `qt6-base`, `qt6-svg`, `git` and a Nerd Font for its icons (every Omarchy
+install has one). Optional: `openssh` for SSH remotes, `libsecret` to remember sign-ins,
 `github-cli` to clone from your GitHub list, `nautilus-python` for the Nautilus entry, and
 Claude Code or Codex for generated commit messages.
 
@@ -328,12 +328,24 @@ shown, `diff` the diff pane's `…` view options, only where the pane is narrow 
 that button, `newbranch` the New branch card from the current branch), `--screenshot-keys
 m,a,Down,Return` (development builds only, see Install) then types into it — or, without a menu, sends the keys to the window, so
 `--screenshot-keys Ctrl+G --screenshot-after 45000` shows a generated message; `@changesTable`
-and `@changesTree` in that list focus the list on show, so the keys reach it),
+and `@changesTree` in that list focus the list on show, so the keys reach it, and
+`@allBranches,Space,@QLineEdit` turns on *All branches* in the history),
 `--files-view tree|compact|table` lists the pending files that way for one run (exactly those
 three lowercase names; anything else is a usage error and exits 2), whatever is remembered and
 without remembering it — it works on its own as well as with `--screenshot`, and with
 `--history` or `--mini` it only sets up the commit page,
 and `OMAGIT_THEME_DIR=/usr/share/omarchy/themes/tokyo-night` previews another theme.
+
+The README's pictures come from `docs/screenshots/make/make.sh [tiles] [themes] [tiling]`,
+which builds *tidewatch*, a fictional repository with fixed authors and dates
+(`demo-repo.sh`), and renders it offscreen at 2× with these flags (`shot.sh`, in a
+throw-away profile and HOME, with a stand-in `claude` that writes the commit message).
+`tiles.png` is four tiles of one 1920×1280 screen with Omarchy's gaps and borders on
+Tokyo Night's default wallpaper, `themes.png` the commit view in five themes, and
+`tiling.webp` (with `tiling.mp4` for posting) four Omagit windows opening, switching
+views and closing with Hyprland's dwindle layout and Omarchy's animation curves
+(`tiling.py`). It needs the development build in the repository root, ImageMagick and
+ffmpeg, and runs the PNGs through oxipng when it is installed (lossless).
 
 ## Tests
 

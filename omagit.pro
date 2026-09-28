@@ -6,7 +6,7 @@ CONFIG   += c++17
 TARGET    = omagit
 TEMPLATE  = app
 
-DEFINES += QT_DEPRECATED_WARNINGS OMAGIT_VERSION=\\\"0.2.0\\\"
+DEFINES += QT_DEPRECATED_WARNINGS OMAGIT_VERSION=\\\"0.9.0\\\"
 
 # --screenshot-keys types into the window the way the window system would,
 # which takes Qt's private QPA API. That API is tied to the exact Qt release

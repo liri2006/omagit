@@ -1,9 +1,9 @@
-# Maintainer: Andras Munkacsi <devnull2006 at gmail dot com>
+# Maintainer: Andras Munkacsi
 
 pkgname=omagit
-pkgver=0.2.0
+pkgver=0.9.0
 pkgrel=1
-pkgdesc='Omarchy-native git GUI built for tiling window managers'
+pkgdesc='Omarchy-native git GUI designed for tiling window managers'
 arch=('x86_64' 'aarch64')
 url='https://github.com/liri2006/omagit'
 license=('MIT')
@@ -14,6 +14,7 @@ depends=(
   'libgcc'
   'libstdc++'
   'qt6-base'
+  'qt6-svg'
   'ttf-font-nerd'
 )
 optdepends=(
@@ -43,8 +44,10 @@ build() {
 
 check() {
   cd "$pkgname-$pkgver"
-  # Offscreen, with a throw-away config and runtime directory of their own.
-  tests/run.sh
+  # The git wrapper and merge preview suites, with a throw-away config and
+  # runtime directory. The widget suite checks pixel sizes against the
+  # design, which depend on fonts and timing; it runs in development.
+  tests/run.sh gitrepo mergedialog
 }
 
 package() {

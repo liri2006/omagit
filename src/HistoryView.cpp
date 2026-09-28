@@ -433,6 +433,7 @@ HistoryView::HistoryView(GitRepo *repo, QWidget *parent)
     m_filterRow->addItem(m_allRefsGap);
     m_allRefs = toolButton<KitButton>(QString());
     m_allRefs->setAccessibleName(tr("All branches"));
+    m_allRefs->setObjectName(QStringLiteral("allBranches"));
     m_allRefs->setCheckable(true);
     applyAllRefsForm();
     m_filterRow->addWidget(m_allRefs);

@@ -2,11 +2,10 @@
 Type=Application
 Name=Omagit
 GenericName=Git GUI
-Comment=Omarchy-native git GUI built for tiling windows
+Comment=Omarchy-native git GUI designed for tiling window managers
 Exec=omagit %f
 Icon=omagit
 Terminal=false
 Categories=Development;RevisionControl;Qt;
 Keywords=git;diff;commit;history;branch;merge;
 StartupWMClass=omagit
-MimeType=inode/directory;

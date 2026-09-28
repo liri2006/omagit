@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Point the package recipes at a release that is on GitHub:
-#   packaging/release.sh 0.2.0
+#   packaging/release.sh 0.9.0
 # Downloads the v<version> tarball GitHub serves, writes pkgver, pkgrel and
 # sha256sums into the release recipes, and regenerates the AUR .SRCINFO
 # files. It publishes nothing; see packaging/README.md for the steps after.
@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 version=${1:-}
-[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: packaging/release.sh <version, e.g. 0.2.0>" >&2; exit 2; }
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: packaging/release.sh <version, e.g. 0.9.0>" >&2; exit 2; }
 
 built=$(grep -o 'OMAGIT_VERSION=[^ ]*' ../omagit.pro | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 [[ $built == "$version" ]] || { echo "omagit.pro builds $built, not $version: set OMAGIT_VERSION first" >&2; exit 1; }

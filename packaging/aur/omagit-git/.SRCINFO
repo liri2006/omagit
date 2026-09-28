@@ -1,6 +1,6 @@
 pkgbase = omagit-git
-	pkgdesc = Omarchy-native git GUI built for tiling window managers (latest commit)
-	pkgver = 0.2.0.r0.g0000000
+	pkgdesc = Omarchy-native git GUI designed for tiling window managers (latest commit)
+	pkgver = 0.9.0.r0.g0000000
 	pkgrel = 1
 	url = https://github.com/liri2006/omagit
 	arch = x86_64
@@ -13,6 +13,7 @@ pkgbase = omagit-git
 	depends = libgcc
 	depends = libstdc++
 	depends = qt6-base
+	depends = qt6-svg
 	depends = ttf-font-nerd
 	optdepends = openssh: ssh remotes and SSH key sign-in
 	optdepends = libsecret: remember sign-ins in the keyring

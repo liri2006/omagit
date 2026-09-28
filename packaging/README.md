@@ -15,8 +15,10 @@ All three:
   and linker flags, and install with `make INSTALL_ROOT="$pkgdir" install`. The switch
   leaves out the test-only `--screenshot-keys`, the only user of Qt's private API, so
   the binary uses Qt's public API alone and keeps working across `qt6-base` updates;
-- run the three test suites in `check()` (`tests/run.sh`: offscreen, with a
-  throw-away config and runtime directory; about three minutes);
+- run the git wrapper and merge preview suites in `check()` (`tests/run.sh gitrepo
+  mergedialog`: offscreen, with a throw-away config and runtime directory; about half a
+  minute). The widget suite checks pixel sizes against the design, which depend on fonts
+  and timing, so it runs in development only;
 - install `/usr/bin/omagit`, the desktop entry, the icon, `LICENSE` and `README.md`,
   and nothing in a home directory. The Nautilus entry is added from the app's Settings,
   only when asked for.
@@ -39,7 +41,7 @@ The release tarball leaves out `design/`, `docs/`, `.claude/` and `packaging/`
 2. Give the GitHub repository its description and topics:
    ```bash
    gh repo edit liri2006/omagit \
-     --description "Omarchy-native git GUI built for tiling window managers: it stays usable as its tile shrinks." \
+     --description "An Omarchy-native git GUI designed for tiling window managers." \
      --add-topic omarchy --add-topic hyprland --add-topic tiling-window-manager \
      --add-topic git --add-topic git-gui --add-topic qt6
    ```
@@ -50,17 +52,17 @@ The release tarball leaves out `design/`, `docs/`, `.claude/` and `packaging/`
 1. Set `OMAGIT_VERSION` in `omagit.pro` and commit.
 2. Tag and push:
    ```bash
-   git tag -a v0.2.0 -m "Omagit 0.2.0"
-   git push origin main v0.2.0
+   git tag -a v0.9.0 -m "Omagit 0.9.0"
+   git push origin main v0.9.0
    ```
 3. Make a GitHub release for the tag. The Omarchy repository's upstream watch reads
    GitHub *releases*, not bare tags:
    ```bash
-   gh release create v0.2.0 --title "Omagit 0.2.0" --generate-notes
+   gh release create v0.9.0 --title "Omagit 0.9.0" --generate-notes
    ```
 4. Point the recipes at it, then build the result once:
    ```bash
-   packaging/release.sh 0.2.0            # checksums, pkgver, .SRCINFO
+   packaging/release.sh 0.9.0            # checksums, pkgver, .SRCINFO
    (cd packaging/aur/omagit && makepkg -fsc && namcap PKGBUILD *.pkg.tar.zst)
    ```
 5. Commit the recipe changes.
@@ -72,7 +74,7 @@ The first time, each package's AUR repository is created by pushing to it:
 ```bash
 git clone ssh://aur@aur.archlinux.org/omagit.git /tmp/aur-omagit
 cp packaging/aur/omagit/{PKGBUILD,.SRCINFO} /tmp/aur-omagit/
-cd /tmp/aur-omagit && git add PKGBUILD .SRCINFO && git commit -m "omagit 0.2.0" && git push
+cd /tmp/aur-omagit && git add PKGBUILD .SRCINFO && git commit -m "omagit 0.9.0" && git push
 ```
 
 `omagit-git` works the same way (`ssh://aur@aur.archlinux.org/omagit-git.git`); it only
@@ -96,7 +98,7 @@ Manager for Omarchy (#579).
    ```
 2. Check it with their tools:
    ```bash
-   python helpers/upstream-watch.py check pkgbuilds/omagit   # finds the GitHub release
+   python helpers/upstream-watch.py check pkgbuilds/omagit   # a day after the release (24 h hold)
    bin/repo build --local --dry-run --package omagit
    ```
 3. Commit (`Add Omagit`), push, and open the pull request with
