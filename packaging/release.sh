@@ -40,6 +40,8 @@ for dir in aur/omagit aur/omagit-git; do
 done
 
 # Same name in every release, so releases/latest/download/<name> finds the newest.
+# makepkg gets the tarball summed above, never one left from an earlier build.
+cp "$tmp/source.tar.gz" "aur/omagit/omagit-$version.tar.gz"
 (cd aur/omagit && makepkg -fsc)
 asset="$tmp/omagit-$(uname -m).pkg.tar.zst"
 cp "$(cd aur/omagit && makepkg --packagelist)" "$asset"

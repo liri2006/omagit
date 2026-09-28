@@ -1,8 +1,5 @@
 # Add Omagit
 
-<!-- Draft description for the pull request to omacom/omarchy-pkgs.
-     Fill in the TODOs before opening it. -->
-
 Adds `omagit`, [Omagit](https://github.com/liri2006/omagit) 0.9.0: an Omarchy-native git
 GUI designed for tiling window managers.
 
@@ -66,6 +63,10 @@ and SSH sign-in, and cloning.
 - `validate_package_metadata pkgbuilds/omagit` passes, and
   `bin/repo build --local --dry-run --package omagit` plans `omagit` 0.9.0-1 for edge
   x86_64. `tests/pinned-sources.sh` passes.
-- TODO: `python helpers/upstream-watch.py check pkgbuilds/omagit` (a day after the GitHub
-  release, because of the 24-hour hold)
-- TODO: `namcap PKGBUILD omagit-0.9.0-1-x86_64.pkg.tar.zst`
+- `python helpers/upstream-watch.py check pkgbuilds/omagit` finds the v0.9.0 release and
+  reports it as current (with `BYPASS_MIN_RELEASE_AGE=1`, as the release is less than a
+  day old; without it the check is held by the 24-hour rule, as intended).
+- `namcap` has no warnings on the PKGBUILD. On the package it lists `git`, `qt6-svg` and
+  `ttf-font-nerd` as possibly unneeded, because it only sees linked libraries: Omagit
+  runs `git`, Qt loads the SVG image plugin at runtime, and the icons come from the
+  Nerd Font.

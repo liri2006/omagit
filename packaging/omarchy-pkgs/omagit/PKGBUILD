@@ -27,7 +27,7 @@ optdepends=(
   'openai-codex: write commit messages with Codex'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('3498a11ddde6c32829040c5cbc8fbcb5f08db5fe070a1e828115bc18d981eb9a')
+sha256sums=('393d98398c39e2acef38a7d9dab25c7d2e6da6b02ba9825a29ed195183f9c313')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"

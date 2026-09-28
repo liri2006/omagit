@@ -2,7 +2,7 @@
 
 pkgname=omagit-git
 _pkgname=omagit
-pkgver=0.9.0.r0.g5212037
+pkgver=0.9.0.r0.gbd0e10b
 pkgrel=1
 pkgdesc='Omarchy-native git GUI designed for tiling window managers (latest commit)'
 arch=('x86_64' 'aarch64')
