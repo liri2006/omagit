@@ -33,14 +33,15 @@ You can do everything from the keyboard. Press **Ctrl+K** to see all shortcuts.
 
 ## Install
 
-On Omarchy, install it from the AUR:
+On Omarchy, download the package from the latest release and install it:
 
 ```bash
-omarchy pkg aur add omagit
+curl -fLO https://github.com/liri2006/omagit/releases/latest/download/omagit-x86_64.pkg.tar.zst
+sudo pacman -U omagit-x86_64.pkg.tar.zst
 ```
 
-For unreleased changes, install `omagit-git` instead. To build Omagit yourself, see
-[Building from source](docs/development.md#building-from-source).
+Run the same two lines again to update. `sudo pacman -R omagit` removes it. To build
+Omagit yourself, see [Building from source](docs/development.md#building-from-source).
 
 ## License
 

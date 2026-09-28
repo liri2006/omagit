@@ -26,6 +26,12 @@ All three:
 The release tarball leaves out `design/`, `docs/`, `.claude/` and `packaging/`
 (`.gitattributes`), which takes it from about 14 MB to about 0.5 MB.
 
+Every GitHub release also carries a prebuilt package, `omagit-x86_64.pkg.tar.zst`, built
+from `aur/omagit/` by `release.sh`. Its name stays the same from release to release, so
+`releases/latest/download/omagit-x86_64.pkg.tar.zst` always serves the newest one; the
+README installs from it. That is the install route while the AUR has no `omagit` (AUR
+registration was closed in September 2026) and until the Omarchy repository has it.
+
 ## Once, before the first release
 
 1. Publish the repository; every recipe downloads from it. The history was rewritten
@@ -45,7 +51,8 @@ The release tarball leaves out `design/`, `docs/`, `.claude/` and `packaging/`
      --add-topic omarchy --add-topic hyprland --add-topic tiling-window-manager \
      --add-topic git --add-topic git-gui --add-topic qt6
    ```
-3. An AUR account with your SSH public key: <https://aur.archlinux.org/account>.
+3. For the AUR, an account with your SSH public key: <https://aur.archlinux.org/account>.
+   `ssh aur@aur.archlinux.org help` lists commands once the key is accepted.
 
 ## Releasing a version
 
@@ -60,10 +67,10 @@ The release tarball leaves out `design/`, `docs/`, `.claude/` and `packaging/`
    ```bash
    gh release create v0.9.0 --title "Omagit 0.9.0" --generate-notes
    ```
-4. Point the recipes at it, then build the result once:
+4. Point the recipes at it and attach the prebuilt package to the release:
    ```bash
-   packaging/release.sh 0.9.0            # checksums, pkgver, .SRCINFO
-   (cd packaging/aur/omagit && makepkg -fsc && namcap PKGBUILD *.pkg.tar.zst)
+   packaging/release.sh 0.9.0   # checksums, pkgver, .SRCINFO, then builds and uploads
+   namcap packaging/aur/omagit/PKGBUILD packaging/aur/omagit/*.pkg.tar.zst   # optional lint
    ```
 5. Commit the recipe changes.
 
