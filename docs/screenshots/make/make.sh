@@ -4,7 +4,8 @@
 #   themes.png  the commit view in five Omarchy themes, cut into diagonal bands
 #   tiling.webp Omagit windows opening, switching views and closing on a Hyprland
 #               screen (and tiling.mp4 for posting)
-# Usage: make.sh [tiles] [themes] [tiling]   (all three without arguments)
+#   social.png  GitHub's social preview: the name and tagline beside Omagit's tiles
+# Usage: make.sh [tiles] [themes] [tiling] [social]   (all four without arguments)
 # Needs the development build in the repository root (qmake6 omagit.pro && make),
 # ImageMagick, ffmpeg with libx264 and libwebp, and Omarchy's themes and fonts;
 # oxipng, when installed, shrinks the PNGs without changing a pixel.
@@ -109,11 +110,43 @@ tiling() {
     "$here/tiling.py" "$dest"
 }
 
-for part in "${@:-tiles themes tiling}"; do
+# GitHub's social preview, 1280×640: a 2560×1280 screen at scale 2, shrunk to a
+# quarter. The name and tagline fill the first tile, then the history, the commit view
+# (active) and the two eighths.
+social() {
+    local t=$WORK/social
+    mkdir -p "$t"
+    magick "$WALLPAPER" -resize 5120x2560^ -gravity center -extent 5120x2560 +repage "$t/wallpaper.png"
+    CONF=$'[window]\nleftWidth=470\n[diff]\ntwoPane=false' \
+        shot "$t/history.png" 700x1256 --history --screenshot-keys "$ALL_BRANCHES" --screenshot-after 2000 &
+    shot "$t/commit.png" 941x621 --select src/render.rs --screenshot-keys Ctrl+G --screenshot-after 2500 &
+    shot "$t/mini.png" 463x621 --select src/render.rs --mini --screenshot-menu commit \
+        --screenshot-keys Ctrl+G --screenshot-after 1500 &
+    shot "$t/branch.png" 464x621 --select src/render.rs --screenshot-menu branch --screenshot-after 1500 &
+    wait
+    # The text tile at 4× the card: 40 px padding, the icon's graph lined up with the
+    # "O", the group centred, the tiling half of the tagline in the accent colour.
+    local pad=160 top=444
+    magick -background none -density 2400 "$here/../../../data/omagit.svg" -resize 416x416 "$t/icon.png"
+    magick -size 1734x2512 xc:'#1a1b26' "$t/icon.png" -geometry "+$((pad - 72))+$top" -composite \
+        -font JetBrainsMono-NF-Bold -pointsize 352 -fill '#c0caf5' -annotate "+$pad+$((top + 770))" Omagit \
+        -font "$FONT" -pointsize 120 -fill '#a9b1d6' \
+        -annotate "+$pad+$((top + 1040))" 'An Omarchy-native' -annotate "+$pad+$((top + 1200))" 'git GUI designed' \
+        -fill "$ACTIVE" \
+        -annotate "+$pad+$((top + 1360))" 'for tiling window' -annotate "+$pad+$((top + 1520))" 'managers.' \
+        "$t/text.png"
+    place "$t/screen.png" "$t/wallpaper.png" "$t/text.png:24:24:$INACTIVE" "$t/history.png:1786:24:$INACTIVE" \
+        "$t/commit.png:3214:24:$ACTIVE" "$t/mini.png:3214:1294:$INACTIVE" "$t/branch.png:4168:1294:$INACTIVE"
+    magick "$t/screen.png" -filter Lanczos -resize 1280x640 "$dest/social.png"
+    optimize "$dest/social.png"
+    echo "social.png"
+}
+
+for part in "${@:-tiles themes tiling social}"; do
     for p in $part; do
         case $p in
-            tiles | themes | tiling) "$p" ;;
-            *) echo "usage: make.sh [tiles] [themes] [tiling]" >&2; exit 2 ;;
+            tiles | themes | tiling | social) "$p" ;;
+            *) echo "usage: make.sh [tiles] [themes] [tiling] [social]" >&2; exit 2 ;;
         esac
     done
 done
