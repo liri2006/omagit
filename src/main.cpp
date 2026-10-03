@@ -25,6 +25,10 @@
 #include <QTimer>
 #include <QWindow>
 
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
 namespace {
 
 // Is this process the askpass helper of a git or ssh run of ours, and what is
@@ -69,6 +73,15 @@ int main(int argc, char *argv[])
             return 1;
         return askPassClient(qEnvironmentVariable("OMAGIT_ASKPASS_SOCKET"), prompt, &out);
     }
+
+#ifdef __GLIBC__
+    // glibc raises its mmap threshold to the size of each large block freed
+    // (a big diff's git output, up to 32 MB) and its trim threshold to twice
+    // that, so the next big diff comes from the heap and the heap keeps it
+    // for good. Its default threshold, fixed, keeps large blocks mapped and
+    // the heap trimmed: the memory goes back once the diff is gone.
+    mallopt(M_MMAP_THRESHOLD, 128 * 1024);
+#endif
 
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("omagit"));

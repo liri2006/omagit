@@ -17,7 +17,12 @@
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QStyleOptionSlider>
+#include <QTimer>
 #include <QWheelEvent>
+
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 // The design's diff (screens.js diffPane()), on the grid of Grid.h: each
 // side's file header a 24 px row, its hairline its last row and its text 8
@@ -37,6 +42,8 @@ static constexpr int kRibbonWidth = 3;     // change marks beside the scroll thu
 static constexpr qreal kSelectionAlpha = 0.35;
 static constexpr int kMinFontPx = 7;  // Ctrl+wheel zoom limits for the diff text
 static constexpr int kMaxFontPx = 40;
+// A diff this long leaves the heap holding enough freed pages to give back.
+static constexpr int kTrimAfterLines = 10000;
 
 // Keep the native thumb and interactions, with change ranges beside the thumb.
 class DiffScrollBar : public QScrollBar
@@ -289,7 +296,15 @@ void DiffView::rebuildLayout()
 // work off the expanded text and its column map without allocating.
 void DiffView::rebuildLineLayouts()
 {
-    m_lineLayouts.clear();
+#ifdef __GLIBC__
+    // glibc hands back only the top of its heap by itself: what a long diff
+    // freed below whatever was allocated after it stays with the process.
+    if (m_lineLayouts.size() >= kTrimAfterLines)
+        QTimer::singleShot(0, this, [] { malloc_trim(0); });
+#endif
+    // A new vector, not clear(): Qt 6 keeps the capacity, and the longest
+    // diff ever shown would keep its layouts' room allocated.
+    m_lineLayouts = QVector<LineLayout>();
     m_lineLayouts.reserve(m_doc.lines.size());
     m_maxCols = 0;
     for (const DiffLine &l : m_doc.lines) {

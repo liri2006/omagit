@@ -19,6 +19,10 @@ static const QString kWholeFileContext = QStringLiteral("-U1000000");
 // How much of an untracked file is read to count its lines; beyond that the
 // count would cost more than it is worth.
 static constexpr qint64 kUntrackedProbeBytes = 8 * 1024 * 1024;
+// ...a block at a time: QIODevice::read(max) allocates for all of max up
+// front (16 MB for these 8), and that allocation per untracked file and
+// refresh left glibc keeping the heap that much bigger for good.
+static constexpr qint64 kUntrackedBlockBytes = 64 * 1024;
 
 QString FileChange::statusText() const
 {
@@ -1058,16 +1062,35 @@ QList<FileChange> GitRepo::status() const
         applyNumstat(numstat, result);
 
     // Untracked files count all lines as added.
+    QByteArray block;
     for (FileChange &c : result) {
         if (c.kind == FileChange::Untracked) {
             QFile f(QDir(m_root).filePath(c.path));
             if (f.open(QIODevice::ReadOnly)) {
-                const QByteArray data = f.read(kUntrackedProbeBytes);
-                if (data.contains('\0')) {
+                if (block.isEmpty())
+                    block.resize(kUntrackedBlockBytes);
+                qint64 total = 0;
+                qsizetype lines = 0;
+                char last = '\n';
+                bool binary = false;
+                while (total < kUntrackedProbeBytes) {
+                    const qint64 n = f.read(block.data(), qMin(kUntrackedBlockBytes, kUntrackedProbeBytes - total));
+                    if (n <= 0)
+                        break;
+                    const QByteArrayView data(block.constData(), n);
+                    if (data.contains('\0')) {
+                        binary = true;
+                        break;
+                    }
+                    lines += data.count('\n');
+                    last = data.back();
+                    total += n;
+                }
+                if (binary) {
                     c.binary = true;
                     c.linesAdded = c.linesRemoved = 0;
                 } else {
-                    c.linesAdded = data.count('\n') + ((!data.isEmpty() && !data.endsWith('\n')) ? 1 : 0);
+                    c.linesAdded = int(lines) + (last != '\n' ? 1 : 0);
                     c.linesRemoved = 0;
                 }
             }

@@ -257,6 +257,44 @@ static void testAmendRoot(const QString &base)
     CHECK(repo.headCommit().parents.isEmpty());
 }
 
+// Untracked files are read a block at a time to count their lines: counts
+// across block boundaries, a NUL past the first block, and the 8 MB cap.
+static void testUntrackedLineCounts(const QString &base)
+{
+    const QString dir = initRepo(base + "/untracked");
+    write(dir, "seed.txt", "seed\n");
+    git(dir, {"add", "."});
+    git(dir, {"commit", "-q", "-m", "seed"});
+    const auto writeBytes = [&dir](const QString &name, const QByteArray &bytes) {
+        QFile f(QDir(dir).filePath(name));
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            f.write(bytes);
+    };
+    writeBytes("lines.txt", "a\nb\nc\n");
+    writeBytes("no-newline.txt", "a\nb");
+    writeBytes("empty.txt", "");
+    QByteArray longText;
+    for (int i = 0; i < 20000; ++i)
+        longText += QByteArray::number(i).rightJustified(10, '0') + '\n';
+    writeBytes("long.txt", longText); // 220 KB: four blocks
+    writeBytes("late-nul.bin", QByteArray(100 * 1024, 'x') + '\0' + "\n");
+    writeBytes("huge.txt", (QByteArray(15, 'y') + '\n').repeated(600000)); // 9.6 MB of 16-byte lines
+
+    GitRepo repo(dir);
+    const QList<FileChange> st = repo.status();
+    const auto added = [&st](const char *name) {
+        const FileChange *c = find(st, QString::fromLatin1(name));
+        return c ? c->linesAdded : -2;
+    };
+    CHECK(added("lines.txt") == 3);
+    CHECK(added("no-newline.txt") == 2);
+    CHECK(added("empty.txt") == 0);
+    CHECK(added("long.txt") == 20000);
+    CHECK(find(st, "late-nul.bin") && find(st, "late-nul.bin")->binary && added("late-nul.bin") == 0);
+    CHECK(find(st, "long.txt") && !find(st, "long.txt")->binary);
+    CHECK(added("huge.txt") == 8 * 1024 * 1024 / 16); // the lines of the first 8 MB
+}
+
 static void testStatusAndHistory(const QString &base)
 {
     const QString dir = initRepo(base + "/history");
@@ -1897,6 +1935,7 @@ int main(int argc, char **argv)
     testAmend(tmp.path());
     testAmendRoot(tmp.path());
     testCommitIgnoredDeletion(tmp.path());
+    testUntrackedLineCounts(tmp.path());
     testStatusAndHistory(tmp.path());
     testLogStreamParser();
     testLogStream(tmp.path());
